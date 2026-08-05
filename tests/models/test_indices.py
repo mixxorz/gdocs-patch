@@ -52,6 +52,45 @@ def test_detached_node_has_width_but_no_indices() -> None:
         _ = run.end_index
 
 
+def test_unpaired_surrogate_has_one_utf16_code_unit() -> None:
+    assert TextRun(content="\ud800").utf16_width == 1
+
+
+def test_semantic_tree_constructors_retain_supplied_children_lists() -> None:
+    paragraph = Paragraph(elements=[])
+    cell_content = [paragraph]
+    cell = TableCell(content=cell_content)
+    cells = [cell]
+    row = TableRow(cells=cells)
+    rows = [row]
+    table = Table(rows=rows)
+    toc_content = [Paragraph(elements=[])]
+    toc = TableOfContents(content=toc_content)
+    body_content = [table, toc]
+    body = Body(content=body_content)
+    segment_content = [Paragraph(elements=[])]
+    segment = Segment(segment_id="header", content=segment_content)
+
+    assert cell.content is cell_content
+    assert row.cells is cells
+    assert table.rows is rows
+    assert toc.content is toc_content
+    assert body.content is body_content
+    assert segment.content is segment_content
+    assert paragraph.parent is cell
+    assert cell.parent is row
+    assert row.parent is table
+    assert table.parent is body
+    assert toc.parent is body
+    assert segment_content[0].parent is segment
+
+    added = Paragraph(elements=[])
+    segment_content.append(added)
+
+    assert segment.content[-1] is added
+    assert added.parent is None
+
+
 def test_table_boundaries_and_nested_content_are_derived_from_children() -> None:
     cell_paragraph = Paragraph(elements=[TextRun(content="x\n")])
     first_cell = TableCell(content=[cell_paragraph])

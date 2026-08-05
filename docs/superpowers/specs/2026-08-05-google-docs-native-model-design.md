@@ -35,7 +35,7 @@ All Python model attributes use idiomatic `snake_case`. JSON boundary code maps 
 
 ## Tree ownership and dynamic indices
 
-Indexed content uses the simple `TreeNode` API: each node has `parent`, ordered `children`, sibling lookup, and `add_child()`. Constructors establish parent links by adding each supplied semantic child through `add_child()`; semantic properties such as `Body.content`, `Paragraph.elements`, `Table.rows`, `TableRow.cells`, and `TableCell.content` directly alias `children`. Direct mutation of these ordinary lists is not intercepted, so callers that need ownership established must use constructors or `add_child()`.
+Indexed content uses the simple `TreeNode` API: each node has `parent`, ordered `children`, sibling lookup, and `add_child()`. Constructors retain each supplied semantic child list as the public `children` list and establish parent links for the children initially present. Semantic properties such as `Body.content`, `Paragraph.elements`, `Table.rows`, `TableRow.cells`, and `TableCell.content` directly alias that same list. Direct list mutation is reflected by the semantic property but does not establish parent links; callers must use `add_child()` when parent correctness is required.
 
 `Body` and every header, footer, or footnote `Segment` are independent index roots whose first child starts at zero. For any indexed node, `start_index` is its parent's `children_start_index` when it has no previous sibling, otherwise the previous sibling's `end_index`; `end_index = start_index + utf16_width`. A paragraph's children start at its own start and its width is the sum of paragraph-element widths. A text run's width is the number of UTF-16 code units in its content; every other supported paragraph element has width one. A section break has width one. Tables, rows, cells, and tables of contents reserve wrapper units: table width is `2 + sum(row widths)`, while row, cell, and table-of-contents width is `1 + sum(child widths)`; their children start at `start_index + 1`.
 
@@ -776,7 +776,7 @@ Classes are grouped into semantic vertical slices rather than horizontal technic
 gdocs_patch/models/
 ├── __init__.py       # public re-exports
 ├── base.py           # Model, UNSET, UnsetType, Dimension, Color
-├── document.py       # Document, Tab, DocumentTab, Segment,
+├── document.py       # Document, Tab, DocumentTab, Body, Segment,
 │                     # DocumentStyle, StructuralElement, TableOfContents
 ├── paragraph.py      # Paragraph, Bullet, ParagraphStyle,
 │                     # ParagraphBorder, TabStop, all paragraph elements,

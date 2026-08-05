@@ -4,7 +4,7 @@
 
 Parse an already-decoded Google Docs API v1 `documents.get` response into the native mutable model tree. The public entry point is `document_parser.parse(value)`. Concrete parser instances are exported from their semantic parser modules for direct use.
 
-The parser supports the modern tab response produced with `includeTabsContent=true`. It intentionally does not decode JSON text, serialize models, calculate document indices, add traversal or parent links, retain unsupported fields, or support the legacy top-level tab representation.
+The parser supports the modern tab response produced with `includeTabsContent=true`. It intentionally does not decode JSON text, serialize models, perform index arithmetic or traversal, retain unsupported fields, or support the legacy top-level tab representation. Parsed model constructors establish parent links, and model properties derive indices dynamically from the resulting tree.
 
 ## Model revisions required by parsing
 
@@ -13,7 +13,7 @@ Before adding parsers, align the existing models with the final indexing and tab
 - Remove `Document.legacy_tab`. `Document.tabs` remains required.
 - Remove `start_offset` and `end_offset` from `ParagraphElement`, every concrete paragraph element, `TableRow`, and `TableCell`.
 - No model stores Google's `startIndex` or `endIndex` values.
-- Index calculation, traversal, and parent ownership remain separate future designs.
+- Parsers do no index arithmetic and carry no traversal or parent context; model constructors establish parent links and model properties calculate indices dynamically.
 
 The native model design specification must be updated in the same change so it no longer describes offsets or legacy tab storage.
 
@@ -202,7 +202,8 @@ The parser layer does not validate runtime JSON types, literal membership, requi
 - An absent optional model field becomes `UNSET`.
 - A present empty style object creates the corresponding empty style model; it is not treated as absent.
 - An omitted intrinsic repeated child collection becomes an empty list.
-- Supplied collection objects are newly assembled parsed collections; model constructors retain their intentional collection-aliasing behavior.
+- Supplied collection objects are newly assembled parsed collections; model constructors retain each exact list object as the public semantic collection and establish parent links for its initially supplied children.
+- Direct mutation of a retained semantic list is reflected by the model but does not establish parent links; callers use `add_child()` when parent correctness is required.
 - Dictionary insertion order and list order are preserved.
 - Dictionary keys supplied by Google are never inferred from IDs inside values.
 
@@ -327,8 +328,8 @@ This work does not add:
 - parsing from JSON text or files;
 - legacy tab responses;
 - serialization;
-- model traversal or parent ownership;
-- dynamic index calculation;
+- parser-side traversal, parent context, or parent-link arithmetic;
+- parser-side index calculation;
 - mutation or `batchUpdate` generation;
 - suggestion models;
 - named ranges or object resources;
