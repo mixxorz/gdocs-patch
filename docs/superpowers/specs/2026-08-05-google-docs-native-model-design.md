@@ -24,7 +24,7 @@ The discovery schema currently contains 170 schemas. There are 111 schemas trans
   - `UNSET` means the provider field was absent.
   - `None` is used only where the model assigns it explicit semantic meaning, notably a transparent `OptionalColor`; it is not a universal synonym for `UNSET`.
   - Do not mechanically expose `UNSET` for every field marked optional by the discovery schema. A class may require a field or normalize an omitted proto-default value when that produces a clearer valid model.
-- Google enumerated strings remain strings and use inline, field-specific `Literal[...]` annotations directly on class attributes and constructor parameters. The model does not define a global enum or separate aliases for these values.
+- Google enumerated strings remain strings and use inline, field-specific `Literal[...]` annotations directly in constructor signatures. The model does not define a global enum or separate aliases for these values.
 - Closely related Google wrapper schemas may be absorbed into a deeper class when their original JSON nesting can be reconstructed exactly.
 - Dictionary keys supplied by Google remain distinct from IDs repeated inside dictionary values. The serializer must not infer one from the other.
 - Suggestion fields, named ranges, and inline/positioned object resource maps are not represented in the model. Their values are ignored and discarded during parsing. Paragraph-level object references remain modeled so edits preserve object anchors.
