@@ -36,6 +36,14 @@ class TableOfContents(StructuralElement):
     def content(self) -> list[StructuralElement]:
         return cast("list[StructuralElement]", self.children)
 
+    @property
+    def children_start_index(self) -> int:
+        return self.start_index + 1
+
+    @property
+    def utf16_width(self) -> int:
+        return 1 + sum(element.utf16_width for element in self.content)
+
 
 class DocumentStyle(Model):
     def __init__(

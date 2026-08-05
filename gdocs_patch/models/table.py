@@ -1,6 +1,6 @@
 from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, UnsetType
 from .document import StructuralElement
 
 
@@ -64,7 +64,7 @@ class TableCellStyle(Model):
         self.content_alignment = content_alignment
 
 
-class TableCell(TreeNode):
+class TableCell(IndexedNode):
     def __init__(
         self,
         *,
@@ -80,8 +80,16 @@ class TableCell(TreeNode):
     def content(self) -> list[StructuralElement]:
         return cast("list[StructuralElement]", self.children)
 
+    @property
+    def children_start_index(self) -> int:
+        return self.start_index + 1
 
-class TableRow(TreeNode):
+    @property
+    def utf16_width(self) -> int:
+        return 1 + sum(element.utf16_width for element in self.content)
+
+
+class TableRow(IndexedNode):
     def __init__(
         self,
         *,
@@ -100,6 +108,14 @@ class TableRow(TreeNode):
     @property
     def cells(self) -> list[TableCell]:
         return cast("list[TableCell]", self.children)
+
+    @property
+    def children_start_index(self) -> int:
+        return self.start_index + 1
+
+    @property
+    def utf16_width(self) -> int:
+        return 1 + sum(cell.utf16_width for cell in self.cells)
 
 
 class TableColumn(Model):
@@ -136,3 +152,11 @@ class Table(StructuralElement):
     @property
     def rows(self) -> list[TableRow]:
         return cast("list[TableRow]", self.children)
+
+    @property
+    def children_start_index(self) -> int:
+        return self.start_index + 1
+
+    @property
+    def utf16_width(self) -> int:
+        return 2 + sum(row.utf16_width for row in self.rows)
