@@ -386,9 +386,9 @@ class Paragraph(StructuralElement):
         positioned_object_ids: list[str] | UnsetType = UNSET,
     ) -> None:
         super().__init__()
-        self.children = cast("list[TreeNode]", elements)
         for child in elements:
-            child.parent = self
+            self.add_child(child)
+        self.children = cast("list[TreeNode]", elements)
         self.style = style
         self.bullet = bullet
         self.positioned_object_ids = positioned_object_ids

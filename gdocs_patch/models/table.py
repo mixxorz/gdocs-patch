@@ -72,9 +72,9 @@ class TableCell(IndexedNode):
         style: TableCellStyle | UnsetType = UNSET,
     ) -> None:
         super().__init__()
-        self.children = cast("list[TreeNode]", content)
         for child in content:
-            child.parent = self
+            self.add_child(child)
+        self.children = cast("list[TreeNode]", content)
         self.style = style
 
     @property
@@ -100,9 +100,9 @@ class TableRow(IndexedNode):
         is_header: bool | UnsetType = UNSET,
     ) -> None:
         super().__init__()
-        self.children = cast("list[TreeNode]", cells)
         for child in cells:
-            child.parent = self
+            self.add_child(child)
+        self.children = cast("list[TreeNode]", cells)
         self.min_height = min_height
         self.prevent_overflow = prevent_overflow
         self.is_header = is_header
@@ -147,9 +147,9 @@ class Table(StructuralElement):
         column_styles: list[TableColumn] | UnsetType = UNSET,
     ) -> None:
         super().__init__()
-        self.children = cast("list[TreeNode]", rows)
         for child in rows:
-            child.parent = self
+            self.add_child(child)
+        self.children = cast("list[TreeNode]", rows)
         self.column_styles = column_styles
 
     @property
