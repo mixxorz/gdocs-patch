@@ -303,7 +303,11 @@ class ParagraphParser(GDocParser[Paragraph]):
             bullet=(
                 Bullet.gdoc_parser.parse(data["bullet"]) if "bullet" in data else UNSET
             ),
-            positioned_object_ids=data.get("positionedObjectIds", UNSET),
+            positioned_object_ids=(
+                [object_id for object_id in data["positionedObjectIds"]]
+                if "positionedObjectIds" in data
+                else UNSET
+            ),
         )
 
     @staticmethod

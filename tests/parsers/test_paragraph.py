@@ -387,6 +387,17 @@ def test_parses_paragraph_presentation_model(
     assert parser.parse(payload) == expected
 
 
+def test_paragraph_copies_positioned_object_ids() -> None:
+    positioned_object_ids = ["positioned-1"]
+
+    paragraph = Paragraph.gdoc_parser.parse(
+        {"positionedObjectIds": positioned_object_ids}
+    )
+    positioned_object_ids.append("positioned-2")
+
+    assert paragraph.positioned_object_ids == ["positioned-1"]
+
+
 def test_text_style_normalizes_deprecated_bookmark_link() -> None:
     assert TextStyle.gdoc_parser.parse({"link": {"bookmarkId": "legacy"}}) == TextStyle(
         link=BookmarkLink(bookmark_id="legacy")
