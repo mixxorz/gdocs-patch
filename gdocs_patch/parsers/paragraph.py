@@ -360,10 +360,40 @@ class RichLinkParser(GDocParser[RichLink]):
 
 class ParagraphParser(GDocParser[Paragraph]):
     def parse(self, data: Any) -> Paragraph:
+        elements: list[ParagraphElement] = []
+        for element in data.get("elements", []):
+            if "textRun" in element:
+                elements.append(TextRun.gdoc_parser.parse(element["textRun"]))
+            elif "autoText" in element:
+                elements.append(AutoText.gdoc_parser.parse(element["autoText"]))
+            elif "columnBreak" in element:
+                elements.append(ColumnBreak.gdoc_parser.parse(element["columnBreak"]))
+            elif "dateElement" in element:
+                elements.append(DateElement.gdoc_parser.parse(element["dateElement"]))
+            elif "equation" in element:
+                elements.append(Equation.gdoc_parser.parse(element["equation"]))
+            elif "footnoteReference" in element:
+                elements.append(
+                    FootnoteReference.gdoc_parser.parse(element["footnoteReference"])
+                )
+            elif "horizontalRule" in element:
+                elements.append(
+                    HorizontalRule.gdoc_parser.parse(element["horizontalRule"])
+                )
+            elif "inlineObjectElement" in element:
+                elements.append(
+                    InlineObjectReference.gdoc_parser.parse(
+                        element["inlineObjectElement"]
+                    )
+                )
+            elif "pageBreak" in element:
+                elements.append(PageBreak.gdoc_parser.parse(element["pageBreak"]))
+            elif "person" in element:
+                elements.append(PersonReference.gdoc_parser.parse(element["person"]))
+            else:
+                elements.append(RichLink.gdoc_parser.parse(element["richLink"]))
         return Paragraph(
-            elements=[
-                self._parse_element(element) for element in data.get("elements", [])
-            ],
+            elements=elements,
             style=(
                 ParagraphStyle.gdoc_parser.parse(data["paragraphStyle"])
                 if "paragraphStyle" in data
@@ -378,30 +408,6 @@ class ParagraphParser(GDocParser[Paragraph]):
                 else UNSET
             ),
         )
-
-    @staticmethod
-    def _parse_element(data: Any) -> ParagraphElement:
-        if "textRun" in data:
-            return TextRun.gdoc_parser.parse(data["textRun"])
-        if "autoText" in data:
-            return AutoText.gdoc_parser.parse(data["autoText"])
-        if "columnBreak" in data:
-            return ColumnBreak.gdoc_parser.parse(data["columnBreak"])
-        if "dateElement" in data:
-            return DateElement.gdoc_parser.parse(data["dateElement"])
-        if "equation" in data:
-            return Equation.gdoc_parser.parse(data["equation"])
-        if "footnoteReference" in data:
-            return FootnoteReference.gdoc_parser.parse(data["footnoteReference"])
-        if "horizontalRule" in data:
-            return HorizontalRule.gdoc_parser.parse(data["horizontalRule"])
-        if "inlineObjectElement" in data:
-            return InlineObjectReference.gdoc_parser.parse(data["inlineObjectElement"])
-        if "pageBreak" in data:
-            return PageBreak.gdoc_parser.parse(data["pageBreak"])
-        if "person" in data:
-            return PersonReference.gdoc_parser.parse(data["person"])
-        return RichLink.gdoc_parser.parse(data["richLink"])
 
 
 class NamedStyleParser(GDocParser[NamedStyle]):
