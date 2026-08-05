@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
 from gdocs_patch.models.document import (
     Document,
     DocumentStyle,
@@ -15,33 +15,65 @@ from gdocs_patch.models.paragraph import NamedStyle, Paragraph
 from gdocs_patch.models.section import SectionBreak
 from gdocs_patch.models.table import Table
 
-from .base import GDocParser, parse_optional_color
+from .base import GDocParser
 
 
 class DocumentStyleParser(GDocParser[DocumentStyle]):
     def parse(self, data: Any) -> DocumentStyle:
-        background = data.get("background", UNSET)
-        document_format = data.get("documentFormat", UNSET)
-        page_size = data.get("pageSize", UNSET)
+        background = data.get("background", {})
+        document_format = data.get("documentFormat", {})
+        page_size = data.get("pageSize", {})
         return DocumentStyle(
             background_color=(
-                UNSET
-                if isinstance(background, UnsetType) or "color" not in background
-                else parse_optional_color(background["color"])
+                None
+                if background.get("color", UNSET) == {}
+                else (
+                    Color.gdoc_parser.parse(background["color"]["color"])
+                    if "color" in background
+                    else UNSET
+                )
             ),
-            document_mode=(
-                UNSET
-                if isinstance(document_format, UnsetType)
-                else document_format.get("documentMode", UNSET)
+            document_mode=document_format.get("documentMode", UNSET),
+            page_width=(
+                Dimension.gdoc_parser.parse(page_size["width"])
+                if "width" in page_size
+                else UNSET
             ),
-            page_width=self._optional_nested_dimension(page_size, "width"),
-            page_height=self._optional_nested_dimension(page_size, "height"),
-            margin_top=self._optional_dimension(data, "marginTop"),
-            margin_bottom=self._optional_dimension(data, "marginBottom"),
-            margin_left=self._optional_dimension(data, "marginLeft"),
-            margin_right=self._optional_dimension(data, "marginRight"),
-            margin_header=self._optional_dimension(data, "marginHeader"),
-            margin_footer=self._optional_dimension(data, "marginFooter"),
+            page_height=(
+                Dimension.gdoc_parser.parse(page_size["height"])
+                if "height" in page_size
+                else UNSET
+            ),
+            margin_top=(
+                Dimension.gdoc_parser.parse(data["marginTop"])
+                if "marginTop" in data
+                else UNSET
+            ),
+            margin_bottom=(
+                Dimension.gdoc_parser.parse(data["marginBottom"])
+                if "marginBottom" in data
+                else UNSET
+            ),
+            margin_left=(
+                Dimension.gdoc_parser.parse(data["marginLeft"])
+                if "marginLeft" in data
+                else UNSET
+            ),
+            margin_right=(
+                Dimension.gdoc_parser.parse(data["marginRight"])
+                if "marginRight" in data
+                else UNSET
+            ),
+            margin_header=(
+                Dimension.gdoc_parser.parse(data["marginHeader"])
+                if "marginHeader" in data
+                else UNSET
+            ),
+            margin_footer=(
+                Dimension.gdoc_parser.parse(data["marginFooter"])
+                if "marginFooter" in data
+                else UNSET
+            ),
             default_header_id=data.get("defaultHeaderId", UNSET),
             default_footer_id=data.get("defaultFooterId", UNSET),
             even_page_header_id=data.get("evenPageHeaderId", UNSET),
@@ -56,20 +88,6 @@ class DocumentStyleParser(GDocParser[DocumentStyle]):
             flip_page_orientation=data.get("flipPageOrientation", UNSET),
             page_number_start=data.get("pageNumberStart", UNSET),
         )
-
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
-
-    @staticmethod
-    def _optional_nested_dimension(
-        data: Any | UnsetType, key: str
-    ) -> Dimension | UnsetType:
-        if isinstance(data, UnsetType) or key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
 
 
 class SegmentParser(GDocParser[Segment]):
@@ -134,44 +152,52 @@ class DocumentTabParser(GDocParser[DocumentTab]):
                     )
         return DocumentTab(
             body=body,
-            headers=self._optional_segments(data, "headers"),
-            footers=self._optional_segments(data, "footers"),
-            footnotes=self._optional_segments(data, "footnotes"),
+            headers=(
+                {
+                    segment_id: Segment.gdoc_parser.parse(segment)
+                    for segment_id, segment in data["headers"].items()
+                }
+                if "headers" in data
+                else UNSET
+            ),
+            footers=(
+                {
+                    segment_id: Segment.gdoc_parser.parse(segment)
+                    for segment_id, segment in data["footers"].items()
+                }
+                if "footers" in data
+                else UNSET
+            ),
+            footnotes=(
+                {
+                    segment_id: Segment.gdoc_parser.parse(segment)
+                    for segment_id, segment in data["footnotes"].items()
+                }
+                if "footnotes" in data
+                else UNSET
+            ),
             document_style=(
                 DocumentStyle.gdoc_parser.parse(data["documentStyle"])
                 if "documentStyle" in data
                 else UNSET
             ),
-            named_styles=self._optional_named_styles(data),
-            lists=self._optional_lists(data),
+            named_styles=(
+                [
+                    NamedStyle.gdoc_parser.parse(style)
+                    for style in data["namedStyles"].get("styles", [])
+                ]
+                if "namedStyles" in data
+                else UNSET
+            ),
+            lists=(
+                {
+                    list_id: ListDefinition.gdoc_parser.parse(definition)
+                    for list_id, definition in data["lists"].items()
+                }
+                if "lists" in data
+                else UNSET
+            ),
         )
-
-    @staticmethod
-    def _optional_segments(data: Any, key: str) -> dict[str, Segment] | UnsetType:
-        if key not in data:
-            return UNSET
-        return {
-            segment_id: Segment.gdoc_parser.parse(segment)
-            for segment_id, segment in data[key].items()
-        }
-
-    @staticmethod
-    def _optional_named_styles(data: Any) -> list[NamedStyle] | UnsetType:
-        if "namedStyles" not in data:
-            return UNSET
-        return [
-            NamedStyle.gdoc_parser.parse(style)
-            for style in data["namedStyles"].get("styles", [])
-        ]
-
-    @staticmethod
-    def _optional_lists(data: Any) -> dict[str, ListDefinition] | UnsetType:
-        if "lists" not in data:
-            return UNSET
-        return {
-            list_id: ListDefinition.gdoc_parser.parse(definition)
-            for list_id, definition in data["lists"].items()
-        }
 
 
 class TabParser(GDocParser[Tab]):

@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Dimension
 from gdocs_patch.models.section import SectionBreak, SectionColumn, SectionStyle
 
 from .base import GDocParser
@@ -17,7 +17,14 @@ class SectionColumnParser(GDocParser[SectionColumn]):
 class SectionStyleParser(GDocParser[SectionStyle]):
     def parse(self, data: Any) -> SectionStyle:
         return SectionStyle(
-            columns=self._optional_columns(data),
+            columns=(
+                [
+                    SectionColumn.gdoc_parser.parse(column)
+                    for column in data["columnProperties"]
+                ]
+                if "columnProperties" in data
+                else UNSET
+            ),
             column_separator_style=data.get("columnSeparatorStyle", UNSET),
             content_direction=data.get("contentDirection", UNSET),
             section_type=data.get("sectionType", UNSET),
@@ -30,28 +37,37 @@ class SectionStyleParser(GDocParser[SectionStyle]):
             use_first_page_header_footer=data.get("useFirstPageHeaderFooter", UNSET),
             flip_page_orientation=data.get("flipPageOrientation", UNSET),
             page_number_start=data.get("pageNumberStart", UNSET),
-            margin_top=self._optional_dimension(data, "marginTop"),
-            margin_bottom=self._optional_dimension(data, "marginBottom"),
-            margin_left=self._optional_dimension(data, "marginLeft"),
-            margin_right=self._optional_dimension(data, "marginRight"),
-            margin_header=self._optional_dimension(data, "marginHeader"),
-            margin_footer=self._optional_dimension(data, "marginFooter"),
+            margin_top=(
+                Dimension.gdoc_parser.parse(data["marginTop"])
+                if "marginTop" in data
+                else UNSET
+            ),
+            margin_bottom=(
+                Dimension.gdoc_parser.parse(data["marginBottom"])
+                if "marginBottom" in data
+                else UNSET
+            ),
+            margin_left=(
+                Dimension.gdoc_parser.parse(data["marginLeft"])
+                if "marginLeft" in data
+                else UNSET
+            ),
+            margin_right=(
+                Dimension.gdoc_parser.parse(data["marginRight"])
+                if "marginRight" in data
+                else UNSET
+            ),
+            margin_header=(
+                Dimension.gdoc_parser.parse(data["marginHeader"])
+                if "marginHeader" in data
+                else UNSET
+            ),
+            margin_footer=(
+                Dimension.gdoc_parser.parse(data["marginFooter"])
+                if "marginFooter" in data
+                else UNSET
+            ),
         )
-
-    @staticmethod
-    def _optional_columns(data: Any) -> list[SectionColumn] | UnsetType:
-        if "columnProperties" not in data:
-            return UNSET
-        return [
-            SectionColumn.gdoc_parser.parse(column)
-            for column in data["columnProperties"]
-        ]
-
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
 
 
 class SectionBreakParser(GDocParser[SectionBreak]):

@@ -10,12 +10,6 @@ class GDocParser[T](ABC):
         raise NotImplementedError
 
 
-def parse_optional_color(data: Any) -> Color | None:
-    if not data:
-        return None
-    return Color.gdoc_parser.parse(data["color"])
-
-
 class DimensionParser(GDocParser[Dimension]):
     def parse(self, data: Any) -> Dimension:
         unit: Literal["UNIT_UNSPECIFIED", "PT"] = data.get("unit", "UNIT_UNSPECIFIED")

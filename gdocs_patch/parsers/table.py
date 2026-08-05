@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Color, Dimension
 from gdocs_patch.models.document import StructuralElement, TableOfContents
 from gdocs_patch.models.paragraph import Paragraph
 from gdocs_patch.models.section import SectionBreak
@@ -13,13 +13,17 @@ from gdocs_patch.models.table import (
     TableRow,
 )
 
-from .base import GDocParser, parse_optional_color
+from .base import GDocParser
 
 
 class TableCellBorderParser(GDocParser[TableCellBorder]):
     def parse(self, data: Any) -> TableCellBorder:
         return TableCellBorder(
-            color=parse_optional_color(data["color"]),
+            color=(
+                None
+                if data["color"] == {}
+                else Color.gdoc_parser.parse(data["color"]["color"])
+            ),
             width=Dimension.gdoc_parser.parse(data["width"]),
             dash_style=data["dashStyle"],
         )
@@ -30,35 +34,57 @@ class TableCellStyleParser(GDocParser[TableCellStyle]):
         return TableCellStyle(
             row_span=data.get("rowSpan", 1),
             column_span=data.get("columnSpan", 1),
-            background_color=self._optional_color(data),
-            border_left=self._optional_border(data, "borderLeft"),
-            border_right=self._optional_border(data, "borderRight"),
-            border_top=self._optional_border(data, "borderTop"),
-            border_bottom=self._optional_border(data, "borderBottom"),
-            padding_left=self._optional_dimension(data, "paddingLeft"),
-            padding_right=self._optional_dimension(data, "paddingRight"),
-            padding_top=self._optional_dimension(data, "paddingTop"),
-            padding_bottom=self._optional_dimension(data, "paddingBottom"),
+            background_color=(
+                None
+                if data.get("backgroundColor", UNSET) == {}
+                else (
+                    Color.gdoc_parser.parse(data["backgroundColor"]["color"])
+                    if "backgroundColor" in data
+                    else UNSET
+                )
+            ),
+            border_left=(
+                TableCellBorder.gdoc_parser.parse(data["borderLeft"])
+                if "borderLeft" in data
+                else UNSET
+            ),
+            border_right=(
+                TableCellBorder.gdoc_parser.parse(data["borderRight"])
+                if "borderRight" in data
+                else UNSET
+            ),
+            border_top=(
+                TableCellBorder.gdoc_parser.parse(data["borderTop"])
+                if "borderTop" in data
+                else UNSET
+            ),
+            border_bottom=(
+                TableCellBorder.gdoc_parser.parse(data["borderBottom"])
+                if "borderBottom" in data
+                else UNSET
+            ),
+            padding_left=(
+                Dimension.gdoc_parser.parse(data["paddingLeft"])
+                if "paddingLeft" in data
+                else UNSET
+            ),
+            padding_right=(
+                Dimension.gdoc_parser.parse(data["paddingRight"])
+                if "paddingRight" in data
+                else UNSET
+            ),
+            padding_top=(
+                Dimension.gdoc_parser.parse(data["paddingTop"])
+                if "paddingTop" in data
+                else UNSET
+            ),
+            padding_bottom=(
+                Dimension.gdoc_parser.parse(data["paddingBottom"])
+                if "paddingBottom" in data
+                else UNSET
+            ),
             content_alignment=data.get("contentAlignment", UNSET),
         )
-
-    @staticmethod
-    def _optional_color(data: Any) -> Color | None | UnsetType:
-        if "backgroundColor" not in data:
-            return UNSET
-        return parse_optional_color(data["backgroundColor"])
-
-    @staticmethod
-    def _optional_border(data: Any, key: str) -> TableCellBorder | UnsetType:
-        if key not in data:
-            return UNSET
-        return TableCellBorder.gdoc_parser.parse(data[key])
-
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
 
 
 class TableCellParser(GDocParser[TableCell]):
@@ -116,16 +142,16 @@ class TableColumnParser(GDocParser[TableColumn]):
 
 class TableParser(GDocParser[Table]):
     def parse(self, data: Any) -> Table:
-        if "tableStyle" not in data:
-            column_styles: list[TableColumn] | UnsetType = UNSET
-        else:
-            column_styles = [
-                TableColumn.gdoc_parser.parse(column)
-                for column in data["tableStyle"].get("tableColumnProperties", [])
-            ]
         return Table(
             rows=[TableRow.gdoc_parser.parse(row) for row in data.get("tableRows", [])],
-            column_styles=column_styles,
+            column_styles=(
+                [
+                    TableColumn.gdoc_parser.parse(column)
+                    for column in data["tableStyle"].get("tableColumnProperties", [])
+                ]
+                if "tableStyle" in data
+                else UNSET
+            ),
         )
 
 

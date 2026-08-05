@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Color, Dimension
 from gdocs_patch.models.paragraph import (
     AutoText,
     BookmarkLink,
@@ -12,7 +12,6 @@ from gdocs_patch.models.paragraph import (
     HeadingLink,
     HorizontalRule,
     InlineObjectReference,
-    Link,
     NamedStyle,
     PageBreak,
     Paragraph,
@@ -28,7 +27,7 @@ from gdocs_patch.models.paragraph import (
     UrlLink,
 )
 
-from .base import GDocParser, parse_optional_color
+from .base import GDocParser
 
 
 class UrlLinkParser(GDocParser[UrlLink]):
@@ -53,7 +52,22 @@ class HeadingLinkParser(GDocParser[HeadingLink]):
 
 class TextStyleParser(GDocParser[TextStyle]):
     def parse(self, data: Any) -> TextStyle:
-        weighted_font_family = data.get("weightedFontFamily", UNSET)
+        weighted_font_family = data.get("weightedFontFamily", {})
+        link = UNSET
+        if "link" in data:
+            wrapper = data["link"]
+            if "url" in wrapper:
+                link = UrlLink.gdoc_parser.parse(wrapper["url"])
+            elif "tabId" in wrapper:
+                link = TabLink.gdoc_parser.parse(wrapper["tabId"])
+            elif "bookmark" in wrapper:
+                link = BookmarkLink.gdoc_parser.parse(wrapper["bookmark"])
+            elif "heading" in wrapper:
+                link = HeadingLink.gdoc_parser.parse(wrapper["heading"])
+            elif "bookmarkId" in wrapper:
+                link = BookmarkLink(bookmark_id=wrapper["bookmarkId"])
+            else:
+                link = HeadingLink(heading_id=wrapper["headingId"])
         return TextStyle(
             bold=data.get("bold", UNSET),
             italic=data.get("italic", UNSET),
@@ -61,50 +75,33 @@ class TextStyleParser(GDocParser[TextStyle]):
             strikethrough=data.get("strikethrough", UNSET),
             small_caps=data.get("smallCaps", UNSET),
             baseline_offset=data.get("baselineOffset", UNSET),
-            font_size=self._optional_dimension(data, "fontSize"),
-            font_family=(
-                UNSET
-                if isinstance(weighted_font_family, UnsetType)
-                else weighted_font_family.get("fontFamily", UNSET)
+            font_size=(
+                Dimension.gdoc_parser.parse(data["fontSize"])
+                if "fontSize" in data
+                else UNSET
             ),
-            font_weight=(
-                UNSET
-                if isinstance(weighted_font_family, UnsetType)
-                else weighted_font_family.get("weight", UNSET)
+            font_family=weighted_font_family.get("fontFamily", UNSET),
+            font_weight=weighted_font_family.get("weight", UNSET),
+            foreground_color=(
+                None
+                if data.get("foregroundColor", UNSET) == {}
+                else (
+                    Color.gdoc_parser.parse(data["foregroundColor"]["color"])
+                    if "foregroundColor" in data
+                    else UNSET
+                )
             ),
-            foreground_color=self._optional_color(data, "foregroundColor"),
-            background_color=self._optional_color(data, "backgroundColor"),
-            link=self._optional_link(data),
+            background_color=(
+                None
+                if data.get("backgroundColor", UNSET) == {}
+                else (
+                    Color.gdoc_parser.parse(data["backgroundColor"]["color"])
+                    if "backgroundColor" in data
+                    else UNSET
+                )
+            ),
+            link=link,
         )
-
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
-
-    @staticmethod
-    def _optional_color(data: Any, key: str) -> Color | None | UnsetType:
-        if key not in data:
-            return UNSET
-        return parse_optional_color(data[key])
-
-    @staticmethod
-    def _optional_link(data: Any) -> Link | UnsetType:
-        if "link" not in data:
-            return UNSET
-        wrapper = data["link"]
-        if "url" in wrapper:
-            return UrlLink.gdoc_parser.parse(wrapper["url"])
-        if "tabId" in wrapper:
-            return TabLink.gdoc_parser.parse(wrapper["tabId"])
-        if "bookmark" in wrapper:
-            return BookmarkLink.gdoc_parser.parse(wrapper["bookmark"])
-        if "heading" in wrapper:
-            return HeadingLink.gdoc_parser.parse(wrapper["heading"])
-        if "bookmarkId" in wrapper:
-            return BookmarkLink(bookmark_id=wrapper["bookmarkId"])
-        return HeadingLink(heading_id=wrapper["headingId"])
 
 
 class BulletParser(GDocParser[Bullet]):
@@ -123,7 +120,11 @@ class BulletParser(GDocParser[Bullet]):
 class ParagraphBorderParser(GDocParser[ParagraphBorder]):
     def parse(self, data: Any) -> ParagraphBorder:
         return ParagraphBorder(
-            color=parse_optional_color(data["color"]),
+            color=(
+                None
+                if data["color"] == {}
+                else Color.gdoc_parser.parse(data["color"]["color"])
+            ),
             width=Dimension.gdoc_parser.parse(data["width"]),
             padding=Dimension.gdoc_parser.parse(data["padding"]),
             dash_style=data["dashStyle"],
@@ -148,22 +149,70 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
                 float(data["lineSpacing"]) if "lineSpacing" in data else UNSET
             ),
             spacing_mode=data.get("spacingMode", UNSET),
-            space_above=self._optional_dimension(data, "spaceAbove"),
-            space_below=self._optional_dimension(data, "spaceBelow"),
-            indent_first_line=self._optional_dimension(data, "indentFirstLine"),
-            indent_start=self._optional_dimension(data, "indentStart"),
-            indent_end=self._optional_dimension(data, "indentEnd"),
+            space_above=(
+                Dimension.gdoc_parser.parse(data["spaceAbove"])
+                if "spaceAbove" in data
+                else UNSET
+            ),
+            space_below=(
+                Dimension.gdoc_parser.parse(data["spaceBelow"])
+                if "spaceBelow" in data
+                else UNSET
+            ),
+            indent_first_line=(
+                Dimension.gdoc_parser.parse(data["indentFirstLine"])
+                if "indentFirstLine" in data
+                else UNSET
+            ),
+            indent_start=(
+                Dimension.gdoc_parser.parse(data["indentStart"])
+                if "indentStart" in data
+                else UNSET
+            ),
+            indent_end=(
+                Dimension.gdoc_parser.parse(data["indentEnd"])
+                if "indentEnd" in data
+                else UNSET
+            ),
             keep_lines_together=data.get("keepLinesTogether", UNSET),
             keep_with_next=data.get("keepWithNext", UNSET),
             avoid_widow_and_orphan=data.get("avoidWidowAndOrphan", UNSET),
             page_break_before=data.get("pageBreakBefore", UNSET),
             heading_id=data.get("headingId", UNSET),
-            border_between=self._optional_border(data, "borderBetween"),
-            border_top=self._optional_border(data, "borderTop"),
-            border_bottom=self._optional_border(data, "borderBottom"),
-            border_left=self._optional_border(data, "borderLeft"),
-            border_right=self._optional_border(data, "borderRight"),
-            shading_color=self._optional_shading(data),
+            border_between=(
+                ParagraphBorder.gdoc_parser.parse(data["borderBetween"])
+                if "borderBetween" in data
+                else UNSET
+            ),
+            border_top=(
+                ParagraphBorder.gdoc_parser.parse(data["borderTop"])
+                if "borderTop" in data
+                else UNSET
+            ),
+            border_bottom=(
+                ParagraphBorder.gdoc_parser.parse(data["borderBottom"])
+                if "borderBottom" in data
+                else UNSET
+            ),
+            border_left=(
+                ParagraphBorder.gdoc_parser.parse(data["borderLeft"])
+                if "borderLeft" in data
+                else UNSET
+            ),
+            border_right=(
+                ParagraphBorder.gdoc_parser.parse(data["borderRight"])
+                if "borderRight" in data
+                else UNSET
+            ),
+            shading_color=(
+                None
+                if data.get("shading", {}).get("backgroundColor", UNSET) == {}
+                else (
+                    Color.gdoc_parser.parse(data["shading"]["backgroundColor"]["color"])
+                    if "shading" in data and "backgroundColor" in data["shading"]
+                    else UNSET
+                )
+            ),
             tab_stops=(
                 [TabStop.gdoc_parser.parse(item) for item in data["tabStops"]]
                 if "tabStops" in data
@@ -171,61 +220,59 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
             ),
         )
 
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
-
-    @staticmethod
-    def _optional_border(data: Any, key: str) -> ParagraphBorder | UnsetType:
-        if key not in data:
-            return UNSET
-        return ParagraphBorder.gdoc_parser.parse(data[key])
-
-    @staticmethod
-    def _optional_shading(data: Any) -> Color | None | UnsetType:
-        if "shading" not in data or "backgroundColor" not in data["shading"]:
-            return UNSET
-        return parse_optional_color(data["shading"]["backgroundColor"])
-
 
 class TextRunParser(GDocParser[TextRun]):
     def parse(self, data: Any) -> TextRun:
-        return TextRun(content=data["content"], text_style=_optional_text_style(data))
+        return TextRun(
+            content=data["content"],
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
+        )
 
 
 class AutoTextParser(GDocParser[AutoText]):
     def parse(self, data: Any) -> AutoText:
         return AutoText(
-            auto_text_type=data["type"], text_style=_optional_text_style(data)
+            auto_text_type=data["type"],
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
 
 
 class ColumnBreakParser(GDocParser[ColumnBreak]):
     def parse(self, data: Any) -> ColumnBreak:
-        return ColumnBreak(text_style=_optional_text_style(data))
+        return ColumnBreak(
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            )
+        )
 
 
 class DateElementParser(GDocParser[DateElement]):
     def parse(self, data: Any) -> DateElement:
-        properties = data.get("dateElementProperties", UNSET)
+        properties = data.get("dateElementProperties", {})
         return DateElement(
             date_id=data["dateId"],
-            date_format=self._optional_property(properties, "dateFormat"),
-            display_text=self._optional_property(properties, "displayText"),
-            locale=self._optional_property(properties, "locale"),
-            time_format=self._optional_property(properties, "timeFormat"),
-            time_zone_id=self._optional_property(properties, "timeZoneId"),
-            timestamp=self._optional_property(properties, "timestamp"),
-            text_style=_optional_text_style(data),
+            date_format=properties.get("dateFormat", UNSET),
+            display_text=properties.get("displayText", UNSET),
+            locale=properties.get("locale", UNSET),
+            time_format=properties.get("timeFormat", UNSET),
+            time_zone_id=properties.get("timeZoneId", UNSET),
+            timestamp=properties.get("timestamp", UNSET),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
-
-    @staticmethod
-    def _optional_property(data: Any | UnsetType, key: str) -> Any | UnsetType:
-        if isinstance(data, UnsetType):
-            return UNSET
-        return data.get(key, UNSET)
 
 
 class EquationParser(GDocParser[Equation]):
@@ -238,43 +285,61 @@ class FootnoteReferenceParser(GDocParser[FootnoteReference]):
         return FootnoteReference(
             footnote_id=data["footnoteId"],
             footnote_number=data["footnoteNumber"],
-            text_style=_optional_text_style(data),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
 
 
 class HorizontalRuleParser(GDocParser[HorizontalRule]):
     def parse(self, data: Any) -> HorizontalRule:
-        return HorizontalRule(text_style=_optional_text_style(data))
+        return HorizontalRule(
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            )
+        )
 
 
 class InlineObjectReferenceParser(GDocParser[InlineObjectReference]):
     def parse(self, data: Any) -> InlineObjectReference:
         return InlineObjectReference(
             inline_object_id=data["inlineObjectId"],
-            text_style=_optional_text_style(data),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
 
 
 class PageBreakParser(GDocParser[PageBreak]):
     def parse(self, data: Any) -> PageBreak:
-        return PageBreak(text_style=_optional_text_style(data))
+        return PageBreak(
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            )
+        )
 
 
 class PersonReferenceParser(GDocParser[PersonReference]):
     def parse(self, data: Any) -> PersonReference:
-        properties = data.get("personProperties", UNSET)
+        properties = data.get("personProperties", {})
         return PersonReference(
             person_id=data["personId"],
-            email=self._optional_property(properties, "email"),
-            name=self._optional_property(properties, "name"),
-            text_style=_optional_text_style(data),
+            email=properties.get("email", UNSET),
+            name=properties.get("name", UNSET),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
-
-    @staticmethod
-    def _optional_property(data: Any | UnsetType, key: str) -> Any | UnsetType:
-        if isinstance(data, UnsetType):
-            return UNSET
-        return data.get(key, UNSET)
 
 
 class RichLinkParser(GDocParser[RichLink]):
@@ -285,7 +350,11 @@ class RichLinkParser(GDocParser[RichLink]):
             uri=properties["uri"],
             title=properties.get("title", UNSET),
             mime_type=properties.get("mimeType", UNSET),
-            text_style=_optional_text_style(data),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
         )
 
 
@@ -339,19 +408,17 @@ class NamedStyleParser(GDocParser[NamedStyle]):
     def parse(self, data: Any) -> NamedStyle:
         return NamedStyle(
             named_style_type=data["namedStyleType"],
-            text_style=_optional_text_style(data),
+            text_style=(
+                TextStyle.gdoc_parser.parse(data["textStyle"])
+                if "textStyle" in data
+                else UNSET
+            ),
             paragraph_style=(
                 ParagraphStyle.gdoc_parser.parse(data["paragraphStyle"])
                 if "paragraphStyle" in data
                 else UNSET
             ),
         )
-
-
-def _optional_text_style(data: Any) -> TextStyle | UnsetType:
-    if "textStyle" not in data:
-        return UNSET
-    return TextStyle.gdoc_parser.parse(data["textStyle"])
 
 
 UrlLink.gdoc_parser = UrlLinkParser()

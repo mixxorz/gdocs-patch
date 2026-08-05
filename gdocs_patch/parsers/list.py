@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Dimension
 from gdocs_patch.models.list import ListDefinition, ListLevel
 from gdocs_patch.models.paragraph import TextStyle
 
@@ -14,8 +14,16 @@ class ListLevelParser(GDocParser[ListLevel]):
             glyph_type=data.get("glyphType", UNSET),
             glyph_symbol=data.get("glyphSymbol", UNSET),
             alignment=data.get("bulletAlignment", "BULLET_ALIGNMENT_UNSPECIFIED"),
-            indent_first_line=self._optional_dimension(data, "indentFirstLine"),
-            indent_start=self._optional_dimension(data, "indentStart"),
+            indent_first_line=(
+                Dimension.gdoc_parser.parse(data["indentFirstLine"])
+                if "indentFirstLine" in data
+                else UNSET
+            ),
+            indent_start=(
+                Dimension.gdoc_parser.parse(data["indentStart"])
+                if "indentStart" in data
+                else UNSET
+            ),
             start_number=data.get("startNumber", 0),
             text_style=(
                 TextStyle.gdoc_parser.parse(data["textStyle"])
@@ -23,12 +31,6 @@ class ListLevelParser(GDocParser[ListLevel]):
                 else UNSET
             ),
         )
-
-    @staticmethod
-    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
-        if key not in data:
-            return UNSET
-        return Dimension.gdoc_parser.parse(data[key])
 
 
 class ListDefinitionParser(GDocParser[ListDefinition]):
