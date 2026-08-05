@@ -423,19 +423,60 @@ git commit -m "feat: calculate table content indices"
 
 ---
 
-### Task 3: Parser integration, documentation, and real-sample validation
+### Task 3: Maximal parser parity, documentation, and real-sample validation
 
 **Files:**
+- Modify: `tests/parsers/fixtures/maximal_document.json`
 - Modify: `tests/parsers/test_document.py`
 - Modify: `docs/superpowers/specs/2026-08-05-google-docs-native-model-design.md`
 
-**Produces:** end-to-end evidence that parsers establish the simple parent tree and calculated indices match Google output.
+**Produces:** end-to-end evidence that parsers establish the simple parent tree and every supported retained index in the maximal document matches the calculated model index.
 
-- [ ] **Step 1: Add one parser integration test**
+- [ ] **Step 1: Make the maximal fixture internally index-consistent**
 
-Parse a compact synthetic modern-tab response containing a body, paragraph elements, table row/cell content, header, footer, and footnote. Assert representative parent links and dynamic ranges. Do not assert parser delegation or provider-index retention.
+Update all supported `startIndex` and `endIndex` values in `tests/parsers/fixtures/maximal_document.json` to these half-open ranges:
 
-The expected ownership assertions are:
+```text
+body rich paragraph                    [0, 14)
+  TextRun("Text")                      [0, 4)
+  ten non-text paragraph elements      [4, 5) through [13, 14)
+body section break                     [14, 15)
+body table                             [15, 40)
+  row                                  [16, 39)
+    first cell                         [17, 38)
+      Paragraph("Cell")                [18, 22)
+      nested table                     [22, 37)
+        nested row                     [23, 36)
+          nested cell                  [24, 36)
+            Paragraph("Nested cell")   [25, 36)
+      nested table of contents         [37, 38)
+        empty paragraph                [38, 38)
+    second cell                        [38, 39)
+      empty paragraph                  [39, 39)
+body table of contents                 [40, 41)
+  empty paragraph                      [41, 41)
+header empty paragraph                 [0, 0)
+footnote empty paragraph               [0, 0)
+```
+
+Add missing end values to these supported wrappers. Keep suggestion data and unsupported top-level legacy/range indices as ignored fixture data.
+
+- [ ] **Step 2: Recursively compare the parsed maximal model with the fixture**
+
+Extend `tests/parsers/test_document.py` with a test-local recursive comparison that walks the decoded fixture and parsed model in parallel.
+
+It must compare every present supported `startIndex` and `endIndex` on:
+
+- structural-element wrappers;
+- paragraph-element wrappers;
+- table rows;
+- table cells;
+- recursively nested table-cell and table-of-contents content;
+- body, header, footer, and footnote index spaces.
+
+The helper must return the number of compared values. Assert that the count is nonzero so an accidentally empty traversal cannot pass. Do not compare unsupported top-level generic `range` data.
+
+The same test must assert representative ownership:
 
 ```python
 assert body.parent is None
@@ -446,16 +487,18 @@ assert table.rows[0].cells[0].parent is table.rows[0]
 assert table.rows[0].cells[0].content[0].parent is table.rows[0].cells[0]
 ```
 
-- [ ] **Step 2: Run parser and full tests**
+This is behavior verification: the parser still discards provider indices, and the model independently recalculates values that must match them.
+
+- [ ] **Step 3: Run maximal parser parity and full tests**
 
 ```bash
 uv run pytest tests/parsers/test_document.py -q
 uv run pytest -q
 ```
 
-Expected: pass without parser index context because constructors call `add_child()`.
+Expected: every retained maximal supported index matches and all tests pass without parser index context.
 
-- [ ] **Step 3: Update current model documentation**
+- [ ] **Step 4: Update current model documentation**
 
 Update the native model design to state:
 
@@ -469,13 +512,13 @@ Update the native model design to state:
 
 Remove statements claiming tree traversal and index calculation are unimplemented. Do not document custom collections, mutation interception, metadata, paths, or caching.
 
-- [ ] **Step 4: Validate the real sample**
+- [ ] **Step 5: Validate the real sample**
 
 Run a one-off script against the untracked `documents.get` sample. Recursively compare every present provider `startIndex` and `endIndex` for structural elements, paragraph elements, rows, and cells against the model properties. Do not copy or commit the sample.
 
 Expected: nonzero comparisons and no assertion failures.
 
-- [ ] **Step 5: Run all project checks**
+- [ ] **Step 6: Run all project checks**
 
 ```bash
 uv sync
@@ -489,10 +532,11 @@ uv run pre-commit run --all-files
 
 Expected: all clean.
 
-- [ ] **Step 6: Commit and request whole-branch review**
+- [ ] **Step 7: Commit and request whole-branch review**
 
 ```bash
-git add tests/parsers/test_document.py \
+git add tests/parsers/fixtures/maximal_document.json \
+  tests/parsers/test_document.py \
   docs/superpowers/specs/2026-08-05-google-docs-native-model-design.md
 git commit -m "test: verify simple dynamic document indices"
 ```
