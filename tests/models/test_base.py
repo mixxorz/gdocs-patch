@@ -38,6 +38,23 @@ def test_tree_node_adds_child_and_sets_its_parent() -> None:
     assert child.parent is root
 
 
+def test_tree_node_exposes_adjacent_siblings() -> None:
+    root = TreeNode()
+    first = TreeNode()
+    middle = TreeNode()
+    last = TreeNode()
+    root.add_child(first)
+    root.add_child(middle)
+    root.add_child(last)
+
+    assert first.previous_sibling is None
+    assert first.next_sibling is middle
+    assert middle.previous_sibling is first
+    assert middle.next_sibling is last
+    assert last.previous_sibling is middle
+    assert last.next_sibling is None
+
+
 def test_dimension_uses_proto_defaults() -> None:
     dimension = Dimension()
 

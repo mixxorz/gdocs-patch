@@ -44,6 +44,26 @@ class TreeNode(Model):
         child.parent = self
         self.children.append(child)
 
+    @property
+    def previous_sibling(self) -> "TreeNode | None":
+        if self.parent is None:
+            return None
+        previous = None
+        for child in self.parent.children:
+            if child is self:
+                return previous
+            previous = child
+        return None
+
+    @property
+    def next_sibling(self) -> "TreeNode | None":
+        if self.parent is None:
+            return None
+        for index, child in enumerate(self.parent.children):
+            if child is self and index + 1 < len(self.parent.children):
+                return self.parent.children[index + 1]
+        return None
+
 
 class Dimension(Model):
     """A Google Docs measurement and its unit."""
