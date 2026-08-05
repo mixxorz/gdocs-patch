@@ -19,7 +19,7 @@ The discovery schema currently contains 170 schemas. There are 111 schemas trans
 
 - Use ordinary, hand-written Python classes, not dataclasses and not generated classes.
 - Instances and their child collections are mutable.
-- A future parser will reject unrecognized JSON fields rather than retaining an extension mapping. Recognized but explicitly unsupported fields may be ignored. Parser implementation is outside this phase.
+- JSON boundary code ignores unrecognized and explicitly unsupported fields rather than retaining an extension mapping. Parser details are specified separately.
 - Use an `UNSET` sentinel when field absence is semantically meaningful.
   - `UNSET` means the provider field was absent.
   - `None` is used only where the model assigns it explicit semantic meaning, notably a transparent `OptionalColor`; it is not a universal synonym for `UNSET`.
@@ -28,16 +28,15 @@ The discovery schema currently contains 170 schemas. There are 111 schemas trans
 - Closely related Google wrapper schemas may be absorbed into a deeper class when their original JSON nesting can be reconstructed exactly.
 - Dictionary keys supplied by Google remain distinct from IDs repeated inside dictionary values. The serializer must not infer one from the other.
 - Suggestion fields, named ranges, and inline/positioned object resource maps are not represented in the model. Their values are ignored and discarded during parsing. Paragraph-level object references remain modeled so edits preserve object anchors.
-- `StructuralElement` objects do not store Google's absolute `startIndex` or `endIndex` values. Their positions and extents will be derived dynamically from document structure.
-- Indices stored by descendants inside a structural element use coordinates relative to that containing structural element. Parsing converts Google's absolute indices to relative indices; serialization converts them back using the structural element's derived absolute position.
-- Moving or editing structural elements must therefore shift serialized absolute indices without requiring an index-rewrite pass over the model.
+- No model stores Google's `startIndex` or `endIndex` values. Positions and extents will be derived dynamically from document structure.
+- Moving or editing content therefore requires no index-rewrite pass over the model.
 
 All Python model attributes use idiomatic `snake_case`. JSON boundary code maps them to and from Google's `camelCase` keys.
 - Every concrete class has an explicit, fully typed, keyword-only constructor. Required fields have no default; optional fields default to `UNSET` or their approved semantic default. Constructors and classes are hand-written rather than generated.
 - All model classes inherit a small `Model` base that supplies structural equality and readable representation. Mutable model objects are unhashable. Parsing, serialization, validation, and traversal do not belong to this base.
 - Constructors store supplied list and dictionary objects directly rather than copying them. Container aliasing is intentional for implementation simplicity.
 - Intrinsic collections such as paragraph elements, table rows, row cells, and list levels are required constructor arguments. Collections whose complete provider field may be absent default to `UNSET`. Constructors do not use mutable collection defaults or normalize through `None`.
-- Constructor requiredness follows semantic meaning: identity, concrete variant payloads, and intrinsic child collections are required; meaningful proto defaults use approved Python defaults; optional presentation metadata and provider-omittable offsets use `UNSET`. Concrete link targets are required except bookmark/heading `tab_id`, which may be `UNSET` for legacy links.
+- Constructor requiredness follows semantic meaning: identity, concrete variant payloads, and intrinsic child collections are required; meaningful proto defaults use approved Python defaults; optional presentation metadata uses `UNSET`. Concrete link targets are required except bookmark/heading `tab_id`, which may be `UNSET` for legacy links.
 - Constructors enforce semantic invariants that annotations cannot express, including color bounds, list glyph exclusivity, positive table spans, and fixed-width column consistency. They do not duplicate Pyright with exhaustive runtime `isinstance` checks. Invariant failures raise built-in `ValueError` with field-specific messages; no custom model exception hierarchy is introduced.
 
 ## Approved classes
@@ -57,23 +56,10 @@ Document
 │     "PREVIEW_SUGGESTIONS_ACCEPTED",
 │     "PREVIEW_WITHOUT_SUGGESTIONS"
 │   ] | UNSET
-├── tabs: list[Tab]
-└── legacy_tab: DocumentTab | UNSET
+└── tabs: list[Tab]
 ```
 
-Google exposes first-tab content through legacy fields directly on `Document` when `includeTabsContent` is false or omitted. The model groups these fields into `legacy_tab`:
-
-```text
-body
-documentStyle
-headers
-footers
-footnotes
-lists
-namedStyles
-```
-
-When serializing `Document`, the fields of `legacy_tab` are emitted at the document's top level. The modern `tabs` representation remains separate, so a response containing both representations can preserve both.
+Only modern tab responses requested with `includeTabsContent=true` are supported. Legacy content fields exposed directly on `Document` are not represented.
 
 ### `Tab`
 
@@ -112,7 +98,7 @@ Each absent metadata field remains `UNSET`; it is not replaced with a default.
 
 ### `DocumentTab`
 
-Container for the content and referenced resources belonging to a modern tab or to `Document.legacy_tab`.
+Container for the content and referenced resources belonging to a modern tab.
 
 ```text
 DocumentTab
@@ -185,7 +171,7 @@ TableOfContents(StructuralElement)
 
 `StructuralElement` defines the shared structural protocol but stores no `start_index` or `end_index` fields. Each concrete element will eventually calculate its extent from its content. A document traversal will calculate its absolute position from the extents of preceding elements and containing structures.
 
-Each concrete class serializes its fields inside the corresponding Google variant key (`paragraph`, `sectionBreak`, `table`, or `tableOfContents`). Any descendant indices are stored relative to the concrete structural element and translated at the JSON boundary.
+Each concrete class serializes its fields inside the corresponding Google variant key (`paragraph`, `sectionBreak`, `table`, or `tableOfContents`). Google indices are calculated at the JSON boundary rather than stored on descendants.
 
 ### `Paragraph`
 
@@ -199,7 +185,7 @@ Paragraph(StructuralElement)
 └── positioned_object_ids: list[str] | UNSET
 ```
 
-`Paragraph` has no absolute position fields. Its future extent is calculated from its paragraph elements. Each paragraph element stores indices relative to this paragraph. Google suggestion fields on a paragraph are ignored during parsing.
+`Paragraph` has no position fields. Its future extent is calculated from its paragraph elements. Google suggestion and index fields on a paragraph are ignored during parsing.
 
 `Bullet` retains Google's API name. It records a paragraph's membership in a list; it does not directly represent the rendered glyph. Its `list_id` refers to `DocumentTab.lists`, and the selected list nesting level defines glyph and indentation behavior.
 
@@ -218,8 +204,6 @@ Google's tagged `ParagraphElement` wrapper is absorbed into a base class and ele
 
 ```text
 ParagraphElement
-├── start_offset: int | UNSET
-└── end_offset: int | UNSET
 
 TextRun(ParagraphElement)
 AutoText(ParagraphElement)
@@ -234,7 +218,7 @@ PersonReference(ParagraphElement)
 RichLink(ParagraphElement)
 ```
 
-`start_offset` and `end_offset` are relative to the containing `Paragraph`, not absolute Google document indices. Either may be `UNSET` if absent in the source. During serialization, the paragraph's dynamically derived absolute start is added to these offsets.
+Paragraph elements do not store Google index fields. Their future extents and positions are derived from paragraph content and element semantics.
 
 The names `InlineObjectReference` and `PersonReference` replace Google's `InlineObjectElement` and `Person` schema names to describe their roles more precisely. Each concrete class recreates the corresponding Google variant key when serialized.
 
@@ -242,13 +226,11 @@ The names `InlineObjectReference` and `PersonReference` replace Google's `Inline
 
 ```text
 TextRun(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── content: str
 └── text_style: TextStyle | UNSET
 ```
 
-Suggestion fields are discarded. Both offsets are retained rather than inferred from `content`; index-unit and boundary calculations belong to the later indexing design.
+Suggestion and index fields are discarded. Index-unit and boundary calculations belong to the later indexing design.
 
 ### `TextStyle`
 
@@ -303,8 +285,6 @@ The concrete class determines whether JSON uses `url`, `tabId`, `bookmark`, or `
 
 ```text
 AutoText(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── auto_text_type: Literal["TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"]
 └── text_style: TextStyle | UNSET
 ```
@@ -315,8 +295,6 @@ The literal values are written inline in `AutoText`; no `AutoTextType` alias is 
 
 ```text
 ColumnBreak(ParagraphElement)
-├── start_offset
-├── end_offset
 └── text_style: TextStyle | UNSET
 ```
 
@@ -328,8 +306,6 @@ The concrete class identifies the control element as a column break. Suggestion 
 
 ```text
 DateElement(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── date_id: str
 ├── date_format: Literal[
 │     "DATE_FORMAT_UNSPECIFIED",
@@ -358,18 +334,14 @@ All date-property fields may be `UNSET`. `timestamp` remains Google's RFC 3339 s
 
 ```text
 Equation(ParagraphElement)
-├── start_offset
-└── end_offset
 ```
 
-The Docs API does not expose an equation expression or tree. It returns only an equation marker and its index span; the equation payload otherwise contains suggestion IDs, which this model discards. The relative offsets therefore preserve all equation information exposed within the supported scope.
+The Docs API does not expose an equation expression or tree. Its payload otherwise contains only suggestion and index fields, which this model discards. The concrete marker is all supported equation information.
 
 ### `FootnoteReference`
 
 ```text
 FootnoteReference(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── footnote_id: str
 ├── footnote_number: str
 └── text_style: TextStyle | UNSET
@@ -381,8 +353,6 @@ FootnoteReference(ParagraphElement)
 
 ```text
 HorizontalRule(ParagraphElement)
-├── start_offset
-├── end_offset
 └── text_style: TextStyle | UNSET
 ```
 
@@ -392,8 +362,6 @@ The concrete class identifies the control element. Google exposes no additional 
 
 ```text
 InlineObjectReference(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── inline_object_id: str
 └── text_style: TextStyle | UNSET
 ```
@@ -404,8 +372,6 @@ InlineObjectReference(ParagraphElement)
 
 ```text
 PageBreak(ParagraphElement)
-├── start_offset
-├── end_offset
 └── text_style: TextStyle | UNSET
 ```
 
@@ -417,8 +383,6 @@ The concrete class identifies the page break. Google exposes no other supported 
 
 ```text
 PersonReference(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── person_id: str
 ├── email: str | UNSET
 ├── name: str | UNSET
@@ -433,8 +397,6 @@ A rich link is a Google smart chip, distinct from a normal `TextStyle.link`. It 
 
 ```text
 RichLink(ParagraphElement)
-├── start_offset
-├── end_offset
 ├── rich_link_id: str
 ├── uri: str
 ├── title: str | UNSET
@@ -611,27 +573,23 @@ There is no `TableStyle` class. Its only API field, `tableColumnProperties`, is 
 
 ```text
 TableRow
-├── start_offset
-├── end_offset
 ├── cells: list[TableCell]
 ├── min_height: Dimension | UNSET
 ├── prevent_overflow: bool | UNSET
 └── is_header: bool | UNSET
 ```
 
-Offsets are relative to the containing `Table`. The final three attributes serialize inside `tableRowStyle`; there is no separate `TableRowStyle` class. Suggestion fields are discarded.
+The final three attributes serialize inside `tableRowStyle`; there is no separate `TableRowStyle` class. Suggestion and index fields are discarded.
 
 ### `TableCell`
 
 ```text
 TableCell
-├── start_offset
-├── end_offset
 ├── content: list[StructuralElement]
 └── style: TableCellStyle | UNSET
 ```
 
-Offsets use the containing `Table` coordinate system. Cell content recursively uses the same structural-element hierarchy as the body. Suggestion fields are discarded.
+Cell content recursively uses the same structural-element hierarchy as the body. Suggestion and index fields are discarded.
 
 ### `TableCellStyle`
 
