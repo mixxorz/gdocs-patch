@@ -467,7 +467,7 @@ Add `test_maximal_document_indices_match_fixture()` to `tests/parsers/test_docum
 
 The test loads `fixtures/maximal_document.json`, parses it with `document_parser`, and uses a test-local recursive comparison that walks the decoded fixture and parsed model in parallel.
 
-It must compare every present supported `startIndex` and `endIndex` on:
+It must compare every present supported `startIndex`, `endIndex`, and derived width on:
 
 - structural-element wrappers;
 - paragraph-element wrappers;
@@ -476,13 +476,22 @@ It must compare every present supported `startIndex` and `endIndex` on:
 - recursively nested table-cell and table-of-contents content;
 - body, header, footer, and footnote index spaces.
 
-The helper must return the number of compared index values. The maximal fixture contains 31 supported indexed nodes after normalization, each with both a start and end value, so assert:
+For every supported node, assert:
 
 ```python
+assert node.start_index == raw["startIndex"]
+assert node.end_index == raw["endIndex"]
+assert node.utf16_width == raw["endIndex"] - raw["startIndex"]
+```
+
+The helper must return both the number of compared nodes and index values. The normalized maximal fixture contains 31 supported indexed nodes, each with both a start and end value, so assert:
+
+```python
+assert compared_nodes == 31
 assert compared_index_values == 62
 ```
 
-This exact assertion prevents a partial or accidentally empty traversal from passing. Do not compare unsupported top-level generic `range` data.
+These exact assertions prevent a partial or accidentally empty traversal from passing. Do not compare unsupported top-level generic `range` data.
 
 The same test must assert representative ownership:
 
@@ -522,7 +531,7 @@ Remove statements claiming tree traversal and index calculation are unimplemente
 
 - [ ] **Step 5: Validate the real sample**
 
-Run a one-off script against the untracked `documents.get` sample. Recursively compare every present provider `startIndex` and `endIndex` for structural elements, paragraph elements, rows, and cells against the model properties. Do not copy or commit the sample.
+Run a one-off script against the untracked `documents.get` sample. Recursively compare every present provider `startIndex` and `endIndex` for structural elements, paragraph elements, rows, and cells against the model properties. Whenever `endIndex` is present, also compare `utf16_width` with `endIndex - startIndex`, treating an omitted proto-default `startIndex` as zero. Do not copy or commit the sample.
 
 Expected: nonzero comparisons and no assertion failures.
 
