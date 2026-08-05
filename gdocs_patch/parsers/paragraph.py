@@ -289,25 +289,29 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
         )
 
     @staticmethod
-    def _optional_number(value: JsonObject, key: str, path: str):
+    def _optional_number(value: JsonObject, key: str, path: str) -> float | UnsetType:
         if key not in value:
             return UNSET
         return number_value(value[key], field_path(path, key))
 
     @staticmethod
-    def _optional_dimension(value: JsonObject, key: str, path: str):
+    def _optional_dimension(
+        value: JsonObject, key: str, path: str
+    ) -> Dimension | UnsetType:
         if key not in value:
             return UNSET
         return _parse_dimension(value[key], field_path(path, key))
 
     @staticmethod
-    def _optional_border(value: JsonObject, key: str, path: str):
+    def _optional_border(
+        value: JsonObject, key: str, path: str
+    ) -> ParagraphBorder | UnsetType:
         if key not in value:
             return UNSET
         return ParagraphBorder.gdoc_parser.parse(value[key], path=field_path(path, key))
 
     @staticmethod
-    def _optional_shading(value: JsonObject, path: str):
+    def _optional_shading(value: JsonObject, path: str) -> Color | None | UnsetType:
         if "shading" not in value:
             return UNSET
         shading_path = field_path(path, "shading")
@@ -318,7 +322,7 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
         )
 
     @staticmethod
-    def _optional_tab_stops(value: JsonObject, path: str):
+    def _optional_tab_stops(value: JsonObject, path: str) -> list[TabStop] | UnsetType:
         if "tabStops" not in value:
             return UNSET
         tab_stops_path = field_path(path, "tabStops")
