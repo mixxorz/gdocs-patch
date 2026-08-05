@@ -211,84 +211,192 @@ def test_maximal_document_indices_match_fixture() -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "maximal_document.json"
     decoded = json.loads(fixture_path.read_text())
     document = document_parser.parse(decoded)
-    raw_tab = decoded["tabs"][0]["documentTab"]
     tab = document.tabs[0].content
-
-    def compare_node(raw: dict[str, object], node: object) -> tuple[int, int]:
-        assert node.start_index == raw["startIndex"]
-        assert node.end_index == raw["endIndex"]
-        assert node.utf16_width == raw["endIndex"] - raw["startIndex"]
-        return 1, 2
-
-    def compare_content(
-        raw_content: list[dict[str, object]], content: list[object]
-    ) -> tuple[int, int]:
-        compared_nodes = 0
-        compared_index_values = 0
-        assert len(content) == len(raw_content)
-        for raw, node in zip(raw_content, content, strict=True):
-            nodes, values = compare_node(raw, node)
-            compared_nodes += nodes
-            compared_index_values += values
-
-            if "paragraph" in raw:
-                raw_elements = raw["paragraph"].get("elements", [])
-                assert isinstance(node, Paragraph)
-                for raw_element, element in zip(
-                    raw_elements, node.elements, strict=True
-                ):
-                    nodes, values = compare_node(raw_element, element)
-                    compared_nodes += nodes
-                    compared_index_values += values
-            elif "table" in raw:
-                assert isinstance(node, Table)
-                raw_rows = raw["table"].get("tableRows", [])
-                for raw_row, row in zip(raw_rows, node.rows, strict=True):
-                    nodes, values = compare_node(raw_row, row)
-                    compared_nodes += nodes
-                    compared_index_values += values
-                    raw_cells = raw_row.get("tableCells", [])
-                    for raw_cell, cell in zip(raw_cells, row.cells, strict=True):
-                        nodes, values = compare_node(raw_cell, cell)
-                        compared_nodes += nodes
-                        compared_index_values += values
-                        nodes, values = compare_content(
-                            raw_cell.get("content", []), cell.content
-                        )
-                        compared_nodes += nodes
-                        compared_index_values += values
-            elif "tableOfContents" in raw:
-                assert isinstance(node, TableOfContents)
-                nodes, values = compare_content(
-                    raw["tableOfContents"].get("content", []), node.content
-                )
-                compared_nodes += nodes
-                compared_index_values += values
-
-        return compared_nodes, compared_index_values
-
-    compared_nodes, compared_index_values = compare_content(
-        raw_tab["body"]["content"], tab.body.content
-    )
-    for collection_name in ("headers", "footers", "footnotes"):
-        raw_segments = raw_tab.get(collection_name, {})
-        segments = getattr(tab, collection_name)
-        for key, raw_segment in raw_segments.items():
-            nodes, values = compare_content(
-                raw_segment.get("content", []), segments[key].content
-            )
-            compared_nodes += nodes
-            compared_index_values += values
-
-    assert compared_nodes == 31
-    assert compared_index_values == 62
-
+    assert isinstance(tab, DocumentTab)
+    assert isinstance(tab.body, Body)
     body = tab.body
+
     paragraph = body.content[0]
+    assert isinstance(paragraph, Paragraph)
+    assert (paragraph.start_index, paragraph.end_index, paragraph.utf16_width) == (
+        0,
+        14,
+        14,
+    )
+    assert (
+        paragraph.elements[0].start_index,
+        paragraph.elements[0].end_index,
+        paragraph.elements[0].utf16_width,
+    ) == (0, 4, 4)
+    assert (
+        paragraph.elements[1].start_index,
+        paragraph.elements[1].end_index,
+        paragraph.elements[1].utf16_width,
+    ) == (4, 5, 1)
+    assert (
+        paragraph.elements[2].start_index,
+        paragraph.elements[2].end_index,
+        paragraph.elements[2].utf16_width,
+    ) == (5, 6, 1)
+    assert (
+        paragraph.elements[3].start_index,
+        paragraph.elements[3].end_index,
+        paragraph.elements[3].utf16_width,
+    ) == (6, 7, 1)
+    assert (
+        paragraph.elements[4].start_index,
+        paragraph.elements[4].end_index,
+        paragraph.elements[4].utf16_width,
+    ) == (7, 8, 1)
+    assert (
+        paragraph.elements[5].start_index,
+        paragraph.elements[5].end_index,
+        paragraph.elements[5].utf16_width,
+    ) == (8, 9, 1)
+    assert (
+        paragraph.elements[6].start_index,
+        paragraph.elements[6].end_index,
+        paragraph.elements[6].utf16_width,
+    ) == (9, 10, 1)
+    assert (
+        paragraph.elements[7].start_index,
+        paragraph.elements[7].end_index,
+        paragraph.elements[7].utf16_width,
+    ) == (10, 11, 1)
+    assert (
+        paragraph.elements[8].start_index,
+        paragraph.elements[8].end_index,
+        paragraph.elements[8].utf16_width,
+    ) == (11, 12, 1)
+    assert (
+        paragraph.elements[9].start_index,
+        paragraph.elements[9].end_index,
+        paragraph.elements[9].utf16_width,
+    ) == (12, 13, 1)
+    assert (
+        paragraph.elements[10].start_index,
+        paragraph.elements[10].end_index,
+        paragraph.elements[10].utf16_width,
+    ) == (13, 14, 1)
+
+    section_break = body.content[1]
+    assert (
+        section_break.start_index,
+        section_break.end_index,
+        section_break.utf16_width,
+    ) == (14, 15, 1)
+
     table = body.content[2]
+    assert isinstance(table, Table)
+    assert (table.start_index, table.end_index, table.utf16_width) == (15, 40, 25)
+    row = table.rows[0]
+    assert (row.start_index, row.end_index, row.utf16_width) == (16, 39, 23)
+    first_cell = row.cells[0]
+    assert (
+        first_cell.start_index,
+        first_cell.end_index,
+        first_cell.utf16_width,
+    ) == (17, 38, 21)
+    cell_paragraph = first_cell.content[0]
+    assert isinstance(cell_paragraph, Paragraph)
+    assert (
+        cell_paragraph.start_index,
+        cell_paragraph.end_index,
+        cell_paragraph.utf16_width,
+    ) == (18, 22, 4)
+    assert (
+        cell_paragraph.elements[0].start_index,
+        cell_paragraph.elements[0].end_index,
+        cell_paragraph.elements[0].utf16_width,
+    ) == (18, 22, 4)
+
+    nested_table = first_cell.content[1]
+    assert isinstance(nested_table, Table)
+    assert (
+        nested_table.start_index,
+        nested_table.end_index,
+        nested_table.utf16_width,
+    ) == (22, 37, 15)
+    nested_row = nested_table.rows[0]
+    assert (
+        nested_row.start_index,
+        nested_row.end_index,
+        nested_row.utf16_width,
+    ) == (23, 36, 13)
+    nested_cell = nested_row.cells[0]
+    assert (
+        nested_cell.start_index,
+        nested_cell.end_index,
+        nested_cell.utf16_width,
+    ) == (24, 36, 12)
+    nested_paragraph = nested_cell.content[0]
+    assert isinstance(nested_paragraph, Paragraph)
+    assert (
+        nested_paragraph.start_index,
+        nested_paragraph.end_index,
+        nested_paragraph.utf16_width,
+    ) == (25, 36, 11)
+    assert (
+        nested_paragraph.elements[0].start_index,
+        nested_paragraph.elements[0].end_index,
+        nested_paragraph.elements[0].utf16_width,
+    ) == (25, 36, 11)
+
+    cell_toc = first_cell.content[2]
+    assert isinstance(cell_toc, TableOfContents)
+    assert (cell_toc.start_index, cell_toc.end_index, cell_toc.utf16_width) == (
+        37,
+        38,
+        1,
+    )
+    cell_toc_paragraph = cell_toc.content[0]
+    assert (
+        cell_toc_paragraph.start_index,
+        cell_toc_paragraph.end_index,
+        cell_toc_paragraph.utf16_width,
+    ) == (38, 38, 0)
+
+    second_cell = row.cells[1]
+    assert (
+        second_cell.start_index,
+        second_cell.end_index,
+        second_cell.utf16_width,
+    ) == (38, 39, 1)
+    second_cell_paragraph = second_cell.content[0]
+    assert (
+        second_cell_paragraph.start_index,
+        second_cell_paragraph.end_index,
+        second_cell_paragraph.utf16_width,
+    ) == (39, 39, 0)
+
+    toc = body.content[3]
+    assert isinstance(toc, TableOfContents)
+    assert (toc.start_index, toc.end_index, toc.utf16_width) == (40, 41, 1)
+    toc_paragraph = toc.content[0]
+    assert (
+        toc_paragraph.start_index,
+        toc_paragraph.end_index,
+        toc_paragraph.utf16_width,
+    ) == (41, 41, 0)
+
+    assert isinstance(tab.headers, dict)
+    header_paragraph = tab.headers["header-map-key"].content[0]
+    assert (
+        header_paragraph.start_index,
+        header_paragraph.end_index,
+        header_paragraph.utf16_width,
+    ) == (0, 0, 0)
+    assert isinstance(tab.footnotes, dict)
+    footnote_paragraph = tab.footnotes["footnote-1"].content[0]
+    assert (
+        footnote_paragraph.start_index,
+        footnote_paragraph.end_index,
+        footnote_paragraph.utf16_width,
+    ) == (0, 0, 0)
+
     assert body.parent is None
-    assert body.content[0].parent is body
+    assert paragraph.parent is body
     assert paragraph.elements[0].parent is paragraph
-    assert table.rows[0].parent is table
-    assert table.rows[0].cells[0].parent is table.rows[0]
-    assert table.rows[0].cells[0].content[0].parent is table.rows[0].cells[0]
+    assert row.parent is table
+    assert first_cell.parent is row
+    assert cell_paragraph.parent is first_cell
