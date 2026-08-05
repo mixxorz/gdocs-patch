@@ -1,9 +1,6 @@
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
-
-if TYPE_CHECKING:
-    from gdocs_patch.parsers.base import GDocParser
 
 if TYPE_CHECKING:
     from .list import ListDefinition
@@ -15,15 +12,11 @@ class StructuralElement(Model):
 
 
 class TableOfContents(StructuralElement):
-    gdoc_parser: ClassVar["GDocParser[TableOfContents]"]
-
     def __init__(self, *, content: list[StructuralElement]) -> None:
         self.content = content
 
 
 class DocumentStyle(Model):
-    gdoc_parser: ClassVar["GDocParser[DocumentStyle]"]
-
     def __init__(
         self,
         *,
@@ -78,8 +71,6 @@ class DocumentStyle(Model):
 
 
 class Segment(Model):
-    gdoc_parser: ClassVar["GDocParser[Segment]"]
-
     def __init__(
         self,
         *,
@@ -91,8 +82,6 @@ class Segment(Model):
 
 
 class DocumentTab(Model):
-    gdoc_parser: ClassVar["GDocParser[DocumentTab]"]
-
     def __init__(
         self,
         *,
@@ -114,8 +103,6 @@ class DocumentTab(Model):
 
 
 class Tab(Model):
-    gdoc_parser: ClassVar["GDocParser[Tab]"]
-
     def __init__(
         self,
         *,
@@ -139,8 +126,6 @@ class Tab(Model):
 
 
 class Document(Model):
-    gdoc_parser: ClassVar["GDocParser[Document]"]
-
     def __init__(
         self,
         *,

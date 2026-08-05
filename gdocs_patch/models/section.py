@@ -1,15 +1,10 @@
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import Literal
 
 from .base import UNSET, Dimension, Model, UnsetType
 from .document import StructuralElement
 
-if TYPE_CHECKING:
-    from gdocs_patch.parsers.base import GDocParser
-
 
 class SectionColumn(Model):
-    gdoc_parser: ClassVar["GDocParser[SectionColumn]"]
-
     def __init__(
         self,
         *,
@@ -21,8 +16,6 @@ class SectionColumn(Model):
 
 
 class SectionStyle(Model):
-    gdoc_parser: ClassVar["GDocParser[SectionStyle]"]
-
     def __init__(
         self,
         *,
@@ -83,7 +76,5 @@ class SectionStyle(Model):
 
 
 class SectionBreak(StructuralElement):
-    gdoc_parser: ClassVar["GDocParser[SectionBreak]"]
-
     def __init__(self, *, style: SectionStyle) -> None:
         self.style = style

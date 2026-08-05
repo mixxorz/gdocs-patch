@@ -26,5 +26,5 @@ class ColorParser(GDocParser[Color]):
         )
 
 
-Dimension.gdoc_parser = DimensionParser()
-Color.gdoc_parser = ColorParser()
+dimension_parser = DimensionParser()
+color_parser = ColorParser()

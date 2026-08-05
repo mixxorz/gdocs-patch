@@ -1,9 +1,7 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Color, Dimension
+from gdocs_patch.models.base import UNSET
 from gdocs_patch.models.document import StructuralElement, TableOfContents
-from gdocs_patch.models.paragraph import Paragraph
-from gdocs_patch.models.section import SectionBreak
 from gdocs_patch.models.table import (
     Table,
     TableCell,
@@ -13,7 +11,9 @@ from gdocs_patch.models.table import (
     TableRow,
 )
 
-from .base import GDocParser
+from .base import GDocParser, color_parser, dimension_parser
+from .paragraph import paragraph_parser
+from .section import section_break_parser
 
 
 class TableCellBorderParser(GDocParser[TableCellBorder]):
@@ -22,9 +22,9 @@ class TableCellBorderParser(GDocParser[TableCellBorder]):
             color=(
                 None
                 if data["color"] == {}
-                else Color.gdoc_parser.parse(data["color"]["color"])
+                else color_parser.parse(data["color"]["color"])
             ),
-            width=Dimension.gdoc_parser.parse(data["width"]),
+            width=dimension_parser.parse(data["width"]),
             dash_style=data["dashStyle"],
         )
 
@@ -38,48 +38,48 @@ class TableCellStyleParser(GDocParser[TableCellStyle]):
                 None
                 if data.get("backgroundColor", UNSET) == {}
                 else (
-                    Color.gdoc_parser.parse(data["backgroundColor"]["color"])
+                    color_parser.parse(data["backgroundColor"]["color"])
                     if "backgroundColor" in data
                     else UNSET
                 )
             ),
             border_left=(
-                TableCellBorder.gdoc_parser.parse(data["borderLeft"])
+                table_cell_border_parser.parse(data["borderLeft"])
                 if "borderLeft" in data
                 else UNSET
             ),
             border_right=(
-                TableCellBorder.gdoc_parser.parse(data["borderRight"])
+                table_cell_border_parser.parse(data["borderRight"])
                 if "borderRight" in data
                 else UNSET
             ),
             border_top=(
-                TableCellBorder.gdoc_parser.parse(data["borderTop"])
+                table_cell_border_parser.parse(data["borderTop"])
                 if "borderTop" in data
                 else UNSET
             ),
             border_bottom=(
-                TableCellBorder.gdoc_parser.parse(data["borderBottom"])
+                table_cell_border_parser.parse(data["borderBottom"])
                 if "borderBottom" in data
                 else UNSET
             ),
             padding_left=(
-                Dimension.gdoc_parser.parse(data["paddingLeft"])
+                dimension_parser.parse(data["paddingLeft"])
                 if "paddingLeft" in data
                 else UNSET
             ),
             padding_right=(
-                Dimension.gdoc_parser.parse(data["paddingRight"])
+                dimension_parser.parse(data["paddingRight"])
                 if "paddingRight" in data
                 else UNSET
             ),
             padding_top=(
-                Dimension.gdoc_parser.parse(data["paddingTop"])
+                dimension_parser.parse(data["paddingTop"])
                 if "paddingTop" in data
                 else UNSET
             ),
             padding_bottom=(
-                Dimension.gdoc_parser.parse(data["paddingBottom"])
+                dimension_parser.parse(data["paddingBottom"])
                 if "paddingBottom" in data
                 else UNSET
             ),
@@ -92,21 +92,21 @@ class TableCellParser(GDocParser[TableCell]):
         parsed_content: list[StructuralElement] = []
         for wrapper in data.get("content", []):
             if "paragraph" in wrapper:
-                parsed_content.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+                parsed_content.append(paragraph_parser.parse(wrapper["paragraph"]))
             elif "sectionBreak" in wrapper:
                 parsed_content.append(
-                    SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"])
+                    section_break_parser.parse(wrapper["sectionBreak"])
                 )
             elif "table" in wrapper:
-                parsed_content.append(Table.gdoc_parser.parse(wrapper["table"]))
+                parsed_content.append(table_parser.parse(wrapper["table"]))
             else:
                 parsed_content.append(
-                    TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
+                    table_of_contents_parser.parse(wrapper["tableOfContents"])
                 )
         return TableCell(
             content=parsed_content,
             style=(
-                TableCellStyle.gdoc_parser.parse(data["tableCellStyle"])
+                table_cell_style_parser.parse(data["tableCellStyle"])
                 if "tableCellStyle" in data
                 else UNSET
             ),
@@ -118,10 +118,10 @@ class TableRowParser(GDocParser[TableRow]):
         style = data.get("tableRowStyle", {})
         return TableRow(
             cells=[
-                TableCell.gdoc_parser.parse(cell) for cell in data.get("tableCells", [])
+                table_cell_parser.parse(cell) for cell in data.get("tableCells", [])
             ],
             min_height=(
-                Dimension.gdoc_parser.parse(style["minRowHeight"])
+                dimension_parser.parse(style["minRowHeight"])
                 if "minRowHeight" in style
                 else UNSET
             ),
@@ -134,19 +134,17 @@ class TableColumnParser(GDocParser[TableColumn]):
     def parse(self, data: Any) -> TableColumn:
         return TableColumn(
             width_type=data["widthType"],
-            width=(
-                Dimension.gdoc_parser.parse(data["width"]) if "width" in data else UNSET
-            ),
+            width=(dimension_parser.parse(data["width"]) if "width" in data else UNSET),
         )
 
 
 class TableParser(GDocParser[Table]):
     def parse(self, data: Any) -> Table:
         return Table(
-            rows=[TableRow.gdoc_parser.parse(row) for row in data.get("tableRows", [])],
+            rows=[table_row_parser.parse(row) for row in data.get("tableRows", [])],
             column_styles=(
                 [
-                    TableColumn.gdoc_parser.parse(column)
+                    table_column_parser.parse(column)
                     for column in data["tableStyle"].get("tableColumnProperties", [])
                 ]
                 if "tableStyle" in data
@@ -155,9 +153,29 @@ class TableParser(GDocParser[Table]):
         )
 
 
-TableCellBorder.gdoc_parser = TableCellBorderParser()
-TableCellStyle.gdoc_parser = TableCellStyleParser()
-TableCell.gdoc_parser = TableCellParser()
-TableRow.gdoc_parser = TableRowParser()
-TableColumn.gdoc_parser = TableColumnParser()
-Table.gdoc_parser = TableParser()
+class TableOfContentsParser(GDocParser[TableOfContents]):
+    def parse(self, data: Any) -> TableOfContents:
+        parsed_content: list[StructuralElement] = []
+        for wrapper in data.get("content", []):
+            if "paragraph" in wrapper:
+                parsed_content.append(paragraph_parser.parse(wrapper["paragraph"]))
+            elif "sectionBreak" in wrapper:
+                parsed_content.append(
+                    section_break_parser.parse(wrapper["sectionBreak"])
+                )
+            elif "table" in wrapper:
+                parsed_content.append(table_parser.parse(wrapper["table"]))
+            else:
+                parsed_content.append(
+                    table_of_contents_parser.parse(wrapper["tableOfContents"])
+                )
+        return TableOfContents(content=parsed_content)
+
+
+table_cell_border_parser = TableCellBorderParser()
+table_cell_style_parser = TableCellStyleParser()
+table_cell_parser = TableCellParser()
+table_row_parser = TableRowParser()
+table_column_parser = TableColumnParser()
+table_parser = TableParser()
+table_of_contents_parser = TableOfContentsParser()

@@ -1,10 +1,10 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Dimension
+from gdocs_patch.models.base import UNSET
 from gdocs_patch.models.list import ListDefinition, ListLevel
-from gdocs_patch.models.paragraph import TextStyle
 
-from .base import GDocParser
+from .base import GDocParser, dimension_parser
+from .paragraph import text_style_parser
 
 
 class ListLevelParser(GDocParser[ListLevel]):
@@ -15,18 +15,18 @@ class ListLevelParser(GDocParser[ListLevel]):
             glyph_symbol=data.get("glyphSymbol", UNSET),
             alignment=data.get("bulletAlignment", "BULLET_ALIGNMENT_UNSPECIFIED"),
             indent_first_line=(
-                Dimension.gdoc_parser.parse(data["indentFirstLine"])
+                dimension_parser.parse(data["indentFirstLine"])
                 if "indentFirstLine" in data
                 else UNSET
             ),
             indent_start=(
-                Dimension.gdoc_parser.parse(data["indentStart"])
+                dimension_parser.parse(data["indentStart"])
                 if "indentStart" in data
                 else UNSET
             ),
             start_number=data.get("startNumber", 0),
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -38,11 +38,11 @@ class ListDefinitionParser(GDocParser[ListDefinition]):
         properties = data.get("listProperties", {})
         return ListDefinition(
             levels=[
-                ListLevel.gdoc_parser.parse(level)
+                list_level_parser.parse(level)
                 for level in properties.get("nestingLevels", [])
             ]
         )
 
 
-ListLevel.gdoc_parser = ListLevelParser()
-ListDefinition.gdoc_parser = ListDefinitionParser()
+list_level_parser = ListLevelParser()
+list_definition_parser = ListDefinitionParser()

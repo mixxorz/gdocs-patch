@@ -16,6 +16,14 @@ from gdocs_patch.models import (
     Table,
     TableOfContents,
 )
+from gdocs_patch.parsers import document_parser
+from gdocs_patch.parsers.document import (
+    document_style_parser,
+    document_tab_parser,
+    segment_parser,
+    tab_parser,
+)
+from gdocs_patch.parsers.table import table_of_contents_parser
 from tests.parsers.maximal_document import expected_maximal_document
 
 
@@ -46,7 +54,7 @@ def test_parses_document_style() -> None:
         "pageNumberStart": 3,
     }
 
-    assert DocumentStyle.gdoc_parser.parse(decoded) == DocumentStyle(
+    assert document_style_parser.parse(decoded) == DocumentStyle(
         background_color=Color(red=0.1),
         document_mode="PAGES",
         page_width=Dimension(magnitude=8.5, unit="PT"),
@@ -77,7 +85,7 @@ def test_parses_segment() -> None:
         "content": [{"paragraph": {"elements": []}}],
     }
 
-    assert Segment.gdoc_parser.parse(decoded) == Segment(
+    assert segment_parser.parse(decoded) == Segment(
         segment_id="header-1", content=[Paragraph(elements=[])]
     )
 
@@ -90,7 +98,7 @@ def test_parses_table_of_contents() -> None:
         ]
     }
 
-    assert TableOfContents.gdoc_parser.parse(decoded) == TableOfContents(
+    assert table_of_contents_parser.parse(decoded) == TableOfContents(
         content=[Paragraph(elements=[]), Table(rows=[])]
     )
 
@@ -112,7 +120,7 @@ def test_parses_document_tab() -> None:
         },
     }
 
-    assert DocumentTab.gdoc_parser.parse(decoded) == DocumentTab(
+    assert document_tab_parser.parse(decoded) == DocumentTab(
         body=[Paragraph(elements=[])],
         headers={"header-1": Segment(segment_id="header-1", content=[])},
         footers={"footer-1": Segment(segment_id="footer-1", content=[])},
@@ -149,7 +157,7 @@ def test_parses_tab_recursively() -> None:
         ],
     }
 
-    assert Tab.gdoc_parser.parse(decoded) == Tab(
+    assert tab_parser.parse(decoded) == Tab(
         tab_id="tab-root",
         title="Root",
         index=0,
@@ -182,7 +190,7 @@ def test_parses_document_and_ignores_legacy_fields() -> None:
         "positionedObjects": {},
     }
 
-    assert Document.gdoc_parser.parse(decoded) == Document(
+    assert document_parser.parse(decoded) == Document(
         document_id="doc-1",
         title="Example",
         revision_id="revision-1",
@@ -195,4 +203,4 @@ def test_parses_maximal_document_response() -> None:
     fixture_path = Path(__file__).parent / "fixtures" / "maximal_document.json"
     decoded = json.loads(fixture_path.read_text())
 
-    assert Document.gdoc_parser.parse(decoded) == expected_maximal_document()
+    assert document_parser.parse(decoded) == expected_maximal_document()

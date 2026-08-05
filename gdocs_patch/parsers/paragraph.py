@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Color, Dimension
+from gdocs_patch.models.base import UNSET
 from gdocs_patch.models.paragraph import (
     AutoText,
     BookmarkLink,
@@ -27,7 +27,7 @@ from gdocs_patch.models.paragraph import (
     UrlLink,
 )
 
-from .base import GDocParser
+from .base import GDocParser, color_parser, dimension_parser
 
 
 class UrlLinkParser(GDocParser[UrlLink]):
@@ -57,13 +57,13 @@ class TextStyleParser(GDocParser[TextStyle]):
         if "link" in data:
             wrapper = data["link"]
             if "url" in wrapper:
-                link = UrlLink.gdoc_parser.parse(wrapper["url"])
+                link = url_link_parser.parse(wrapper["url"])
             elif "tabId" in wrapper:
-                link = TabLink.gdoc_parser.parse(wrapper["tabId"])
+                link = tab_link_parser.parse(wrapper["tabId"])
             elif "bookmark" in wrapper:
-                link = BookmarkLink.gdoc_parser.parse(wrapper["bookmark"])
+                link = bookmark_link_parser.parse(wrapper["bookmark"])
             elif "heading" in wrapper:
-                link = HeadingLink.gdoc_parser.parse(wrapper["heading"])
+                link = heading_link_parser.parse(wrapper["heading"])
             elif "bookmarkId" in wrapper:
                 link = BookmarkLink(bookmark_id=wrapper["bookmarkId"])
             else:
@@ -76,7 +76,7 @@ class TextStyleParser(GDocParser[TextStyle]):
             small_caps=data.get("smallCaps", UNSET),
             baseline_offset=data.get("baselineOffset", UNSET),
             font_size=(
-                Dimension.gdoc_parser.parse(data["fontSize"])
+                dimension_parser.parse(data["fontSize"])
                 if "fontSize" in data
                 else UNSET
             ),
@@ -86,7 +86,7 @@ class TextStyleParser(GDocParser[TextStyle]):
                 None
                 if data.get("foregroundColor", UNSET) == {}
                 else (
-                    Color.gdoc_parser.parse(data["foregroundColor"]["color"])
+                    color_parser.parse(data["foregroundColor"]["color"])
                     if "foregroundColor" in data
                     else UNSET
                 )
@@ -95,7 +95,7 @@ class TextStyleParser(GDocParser[TextStyle]):
                 None
                 if data.get("backgroundColor", UNSET) == {}
                 else (
-                    Color.gdoc_parser.parse(data["backgroundColor"]["color"])
+                    color_parser.parse(data["backgroundColor"]["color"])
                     if "backgroundColor" in data
                     else UNSET
                 )
@@ -110,7 +110,7 @@ class BulletParser(GDocParser[Bullet]):
             list_id=data["listId"],
             nesting_level=data.get("nestingLevel", 0),
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -123,10 +123,10 @@ class ParagraphBorderParser(GDocParser[ParagraphBorder]):
             color=(
                 None
                 if data["color"] == {}
-                else Color.gdoc_parser.parse(data["color"]["color"])
+                else color_parser.parse(data["color"]["color"])
             ),
-            width=Dimension.gdoc_parser.parse(data["width"]),
-            padding=Dimension.gdoc_parser.parse(data["padding"]),
+            width=dimension_parser.parse(data["width"]),
+            padding=dimension_parser.parse(data["padding"]),
             dash_style=data["dashStyle"],
         )
 
@@ -134,7 +134,7 @@ class ParagraphBorderParser(GDocParser[ParagraphBorder]):
 class TabStopParser(GDocParser[TabStop]):
     def parse(self, data: Any) -> TabStop:
         return TabStop(
-            offset=Dimension.gdoc_parser.parse(data["offset"]),
+            offset=dimension_parser.parse(data["offset"]),
             alignment=data["alignment"],
         )
 
@@ -150,27 +150,27 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
             ),
             spacing_mode=data.get("spacingMode", UNSET),
             space_above=(
-                Dimension.gdoc_parser.parse(data["spaceAbove"])
+                dimension_parser.parse(data["spaceAbove"])
                 if "spaceAbove" in data
                 else UNSET
             ),
             space_below=(
-                Dimension.gdoc_parser.parse(data["spaceBelow"])
+                dimension_parser.parse(data["spaceBelow"])
                 if "spaceBelow" in data
                 else UNSET
             ),
             indent_first_line=(
-                Dimension.gdoc_parser.parse(data["indentFirstLine"])
+                dimension_parser.parse(data["indentFirstLine"])
                 if "indentFirstLine" in data
                 else UNSET
             ),
             indent_start=(
-                Dimension.gdoc_parser.parse(data["indentStart"])
+                dimension_parser.parse(data["indentStart"])
                 if "indentStart" in data
                 else UNSET
             ),
             indent_end=(
-                Dimension.gdoc_parser.parse(data["indentEnd"])
+                dimension_parser.parse(data["indentEnd"])
                 if "indentEnd" in data
                 else UNSET
             ),
@@ -180,27 +180,27 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
             page_break_before=data.get("pageBreakBefore", UNSET),
             heading_id=data.get("headingId", UNSET),
             border_between=(
-                ParagraphBorder.gdoc_parser.parse(data["borderBetween"])
+                paragraph_border_parser.parse(data["borderBetween"])
                 if "borderBetween" in data
                 else UNSET
             ),
             border_top=(
-                ParagraphBorder.gdoc_parser.parse(data["borderTop"])
+                paragraph_border_parser.parse(data["borderTop"])
                 if "borderTop" in data
                 else UNSET
             ),
             border_bottom=(
-                ParagraphBorder.gdoc_parser.parse(data["borderBottom"])
+                paragraph_border_parser.parse(data["borderBottom"])
                 if "borderBottom" in data
                 else UNSET
             ),
             border_left=(
-                ParagraphBorder.gdoc_parser.parse(data["borderLeft"])
+                paragraph_border_parser.parse(data["borderLeft"])
                 if "borderLeft" in data
                 else UNSET
             ),
             border_right=(
-                ParagraphBorder.gdoc_parser.parse(data["borderRight"])
+                paragraph_border_parser.parse(data["borderRight"])
                 if "borderRight" in data
                 else UNSET
             ),
@@ -208,13 +208,13 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
                 None
                 if data.get("shading", {}).get("backgroundColor", UNSET) == {}
                 else (
-                    Color.gdoc_parser.parse(data["shading"]["backgroundColor"]["color"])
+                    color_parser.parse(data["shading"]["backgroundColor"]["color"])
                     if "shading" in data and "backgroundColor" in data["shading"]
                     else UNSET
                 )
             ),
             tab_stops=(
-                [TabStop.gdoc_parser.parse(item) for item in data["tabStops"]]
+                [tab_stop_parser.parse(item) for item in data["tabStops"]]
                 if "tabStops" in data
                 else UNSET
             ),
@@ -226,7 +226,7 @@ class TextRunParser(GDocParser[TextRun]):
         return TextRun(
             content=data["content"],
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -238,7 +238,7 @@ class AutoTextParser(GDocParser[AutoText]):
         return AutoText(
             auto_text_type=data["type"],
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -249,7 +249,7 @@ class ColumnBreakParser(GDocParser[ColumnBreak]):
     def parse(self, data: Any) -> ColumnBreak:
         return ColumnBreak(
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             )
@@ -268,7 +268,7 @@ class DateElementParser(GDocParser[DateElement]):
             time_zone_id=properties.get("timeZoneId", UNSET),
             timestamp=properties.get("timestamp", UNSET),
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -286,7 +286,7 @@ class FootnoteReferenceParser(GDocParser[FootnoteReference]):
             footnote_id=data["footnoteId"],
             footnote_number=data["footnoteNumber"],
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -297,7 +297,7 @@ class HorizontalRuleParser(GDocParser[HorizontalRule]):
     def parse(self, data: Any) -> HorizontalRule:
         return HorizontalRule(
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             )
@@ -309,7 +309,7 @@ class InlineObjectReferenceParser(GDocParser[InlineObjectReference]):
         return InlineObjectReference(
             inline_object_id=data["inlineObjectId"],
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -320,7 +320,7 @@ class PageBreakParser(GDocParser[PageBreak]):
     def parse(self, data: Any) -> PageBreak:
         return PageBreak(
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             )
@@ -335,7 +335,7 @@ class PersonReferenceParser(GDocParser[PersonReference]):
             email=properties.get("email", UNSET),
             name=properties.get("name", UNSET),
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -351,7 +351,7 @@ class RichLinkParser(GDocParser[RichLink]):
             title=properties.get("title", UNSET),
             mime_type=properties.get("mimeType", UNSET),
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
@@ -363,45 +363,39 @@ class ParagraphParser(GDocParser[Paragraph]):
         elements: list[ParagraphElement] = []
         for element in data.get("elements", []):
             if "textRun" in element:
-                elements.append(TextRun.gdoc_parser.parse(element["textRun"]))
+                elements.append(text_run_parser.parse(element["textRun"]))
             elif "autoText" in element:
-                elements.append(AutoText.gdoc_parser.parse(element["autoText"]))
+                elements.append(auto_text_parser.parse(element["autoText"]))
             elif "columnBreak" in element:
-                elements.append(ColumnBreak.gdoc_parser.parse(element["columnBreak"]))
+                elements.append(column_break_parser.parse(element["columnBreak"]))
             elif "dateElement" in element:
-                elements.append(DateElement.gdoc_parser.parse(element["dateElement"]))
+                elements.append(date_element_parser.parse(element["dateElement"]))
             elif "equation" in element:
-                elements.append(Equation.gdoc_parser.parse(element["equation"]))
+                elements.append(equation_parser.parse(element["equation"]))
             elif "footnoteReference" in element:
                 elements.append(
-                    FootnoteReference.gdoc_parser.parse(element["footnoteReference"])
+                    footnote_reference_parser.parse(element["footnoteReference"])
                 )
             elif "horizontalRule" in element:
-                elements.append(
-                    HorizontalRule.gdoc_parser.parse(element["horizontalRule"])
-                )
+                elements.append(horizontal_rule_parser.parse(element["horizontalRule"]))
             elif "inlineObjectElement" in element:
                 elements.append(
-                    InlineObjectReference.gdoc_parser.parse(
-                        element["inlineObjectElement"]
-                    )
+                    inline_object_reference_parser.parse(element["inlineObjectElement"])
                 )
             elif "pageBreak" in element:
-                elements.append(PageBreak.gdoc_parser.parse(element["pageBreak"]))
+                elements.append(page_break_parser.parse(element["pageBreak"]))
             elif "person" in element:
-                elements.append(PersonReference.gdoc_parser.parse(element["person"]))
+                elements.append(person_reference_parser.parse(element["person"]))
             else:
-                elements.append(RichLink.gdoc_parser.parse(element["richLink"]))
+                elements.append(rich_link_parser.parse(element["richLink"]))
         return Paragraph(
             elements=elements,
             style=(
-                ParagraphStyle.gdoc_parser.parse(data["paragraphStyle"])
+                paragraph_style_parser.parse(data["paragraphStyle"])
                 if "paragraphStyle" in data
                 else UNSET
             ),
-            bullet=(
-                Bullet.gdoc_parser.parse(data["bullet"]) if "bullet" in data else UNSET
-            ),
+            bullet=(bullet_parser.parse(data["bullet"]) if "bullet" in data else UNSET),
             positioned_object_ids=(
                 [object_id for object_id in data["positionedObjectIds"]]
                 if "positionedObjectIds" in data
@@ -415,37 +409,37 @@ class NamedStyleParser(GDocParser[NamedStyle]):
         return NamedStyle(
             named_style_type=data["namedStyleType"],
             text_style=(
-                TextStyle.gdoc_parser.parse(data["textStyle"])
+                text_style_parser.parse(data["textStyle"])
                 if "textStyle" in data
                 else UNSET
             ),
             paragraph_style=(
-                ParagraphStyle.gdoc_parser.parse(data["paragraphStyle"])
+                paragraph_style_parser.parse(data["paragraphStyle"])
                 if "paragraphStyle" in data
                 else UNSET
             ),
         )
 
 
-UrlLink.gdoc_parser = UrlLinkParser()
-TabLink.gdoc_parser = TabLinkParser()
-BookmarkLink.gdoc_parser = BookmarkLinkParser()
-HeadingLink.gdoc_parser = HeadingLinkParser()
-TextStyle.gdoc_parser = TextStyleParser()
-Bullet.gdoc_parser = BulletParser()
-ParagraphBorder.gdoc_parser = ParagraphBorderParser()
-TabStop.gdoc_parser = TabStopParser()
-ParagraphStyle.gdoc_parser = ParagraphStyleParser()
-TextRun.gdoc_parser = TextRunParser()
-AutoText.gdoc_parser = AutoTextParser()
-ColumnBreak.gdoc_parser = ColumnBreakParser()
-DateElement.gdoc_parser = DateElementParser()
-Equation.gdoc_parser = EquationParser()
-FootnoteReference.gdoc_parser = FootnoteReferenceParser()
-HorizontalRule.gdoc_parser = HorizontalRuleParser()
-InlineObjectReference.gdoc_parser = InlineObjectReferenceParser()
-PageBreak.gdoc_parser = PageBreakParser()
-PersonReference.gdoc_parser = PersonReferenceParser()
-RichLink.gdoc_parser = RichLinkParser()
-Paragraph.gdoc_parser = ParagraphParser()
-NamedStyle.gdoc_parser = NamedStyleParser()
+url_link_parser = UrlLinkParser()
+tab_link_parser = TabLinkParser()
+bookmark_link_parser = BookmarkLinkParser()
+heading_link_parser = HeadingLinkParser()
+text_style_parser = TextStyleParser()
+bullet_parser = BulletParser()
+paragraph_border_parser = ParagraphBorderParser()
+tab_stop_parser = TabStopParser()
+paragraph_style_parser = ParagraphStyleParser()
+text_run_parser = TextRunParser()
+auto_text_parser = AutoTextParser()
+column_break_parser = ColumnBreakParser()
+date_element_parser = DateElementParser()
+equation_parser = EquationParser()
+footnote_reference_parser = FootnoteReferenceParser()
+horizontal_rule_parser = HorizontalRuleParser()
+inline_object_reference_parser = InlineObjectReferenceParser()
+page_break_parser = PageBreakParser()
+person_reference_parser = PersonReferenceParser()
+rich_link_parser = RichLinkParser()
+paragraph_parser = ParagraphParser()
+named_style_parser = NamedStyleParser()

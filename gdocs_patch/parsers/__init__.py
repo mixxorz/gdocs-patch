@@ -1,11 +1,4 @@
-from importlib import import_module as _import_module
-
 from .base import GDocParser
+from .document import document_parser
 
-_import_module(".paragraph", __name__)
-_import_module(".list", __name__)
-_import_module(".section", __name__)
-_import_module(".table", __name__)
-_import_module(".document", __name__)
-
-__all__ = ["GDocParser"]
+__all__ = ["GDocParser", "document_parser"]

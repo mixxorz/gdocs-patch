@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, UnsetType
 from gdocs_patch.models.document import (
     Document,
     DocumentStyle,
@@ -8,14 +8,13 @@ from gdocs_patch.models.document import (
     Segment,
     StructuralElement,
     Tab,
-    TableOfContents,
 )
-from gdocs_patch.models.list import ListDefinition
-from gdocs_patch.models.paragraph import NamedStyle, Paragraph
-from gdocs_patch.models.section import SectionBreak
-from gdocs_patch.models.table import Table
 
-from .base import GDocParser
+from .base import GDocParser, color_parser, dimension_parser
+from .list import list_definition_parser
+from .paragraph import named_style_parser, paragraph_parser
+from .section import section_break_parser
+from .table import table_of_contents_parser, table_parser
 
 
 class DocumentStyleParser(GDocParser[DocumentStyle]):
@@ -28,49 +27,49 @@ class DocumentStyleParser(GDocParser[DocumentStyle]):
                 None
                 if background.get("color", UNSET) == {}
                 else (
-                    Color.gdoc_parser.parse(background["color"]["color"])
+                    color_parser.parse(background["color"]["color"])
                     if "color" in background
                     else UNSET
                 )
             ),
             document_mode=document_format.get("documentMode", UNSET),
             page_width=(
-                Dimension.gdoc_parser.parse(page_size["width"])
+                dimension_parser.parse(page_size["width"])
                 if "width" in page_size
                 else UNSET
             ),
             page_height=(
-                Dimension.gdoc_parser.parse(page_size["height"])
+                dimension_parser.parse(page_size["height"])
                 if "height" in page_size
                 else UNSET
             ),
             margin_top=(
-                Dimension.gdoc_parser.parse(data["marginTop"])
+                dimension_parser.parse(data["marginTop"])
                 if "marginTop" in data
                 else UNSET
             ),
             margin_bottom=(
-                Dimension.gdoc_parser.parse(data["marginBottom"])
+                dimension_parser.parse(data["marginBottom"])
                 if "marginBottom" in data
                 else UNSET
             ),
             margin_left=(
-                Dimension.gdoc_parser.parse(data["marginLeft"])
+                dimension_parser.parse(data["marginLeft"])
                 if "marginLeft" in data
                 else UNSET
             ),
             margin_right=(
-                Dimension.gdoc_parser.parse(data["marginRight"])
+                dimension_parser.parse(data["marginRight"])
                 if "marginRight" in data
                 else UNSET
             ),
             margin_header=(
-                Dimension.gdoc_parser.parse(data["marginHeader"])
+                dimension_parser.parse(data["marginHeader"])
                 if "marginHeader" in data
                 else UNSET
             ),
             margin_footer=(
-                Dimension.gdoc_parser.parse(data["marginFooter"])
+                dimension_parser.parse(data["marginFooter"])
                 if "marginFooter" in data
                 else UNSET
             ),
@@ -101,37 +100,18 @@ class SegmentParser(GDocParser[Segment]):
         parsed_content: list[StructuralElement] = []
         for wrapper in data.get("content", []):
             if "paragraph" in wrapper:
-                parsed_content.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+                parsed_content.append(paragraph_parser.parse(wrapper["paragraph"]))
             elif "sectionBreak" in wrapper:
                 parsed_content.append(
-                    SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"])
+                    section_break_parser.parse(wrapper["sectionBreak"])
                 )
             elif "table" in wrapper:
-                parsed_content.append(Table.gdoc_parser.parse(wrapper["table"]))
+                parsed_content.append(table_parser.parse(wrapper["table"]))
             else:
                 parsed_content.append(
-                    TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
+                    table_of_contents_parser.parse(wrapper["tableOfContents"])
                 )
         return Segment(segment_id=segment_id, content=parsed_content)
-
-
-class TableOfContentsParser(GDocParser[TableOfContents]):
-    def parse(self, data: Any) -> TableOfContents:
-        parsed_content: list[StructuralElement] = []
-        for wrapper in data.get("content", []):
-            if "paragraph" in wrapper:
-                parsed_content.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
-            elif "sectionBreak" in wrapper:
-                parsed_content.append(
-                    SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"])
-                )
-            elif "table" in wrapper:
-                parsed_content.append(Table.gdoc_parser.parse(wrapper["table"]))
-            else:
-                parsed_content.append(
-                    TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
-                )
-        return TableOfContents(content=parsed_content)
 
 
 class DocumentTabParser(GDocParser[DocumentTab]):
@@ -141,20 +121,20 @@ class DocumentTabParser(GDocParser[DocumentTab]):
             body = []
             for wrapper in data["body"].get("content", []):
                 if "paragraph" in wrapper:
-                    body.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+                    body.append(paragraph_parser.parse(wrapper["paragraph"]))
                 elif "sectionBreak" in wrapper:
-                    body.append(SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"]))
+                    body.append(section_break_parser.parse(wrapper["sectionBreak"]))
                 elif "table" in wrapper:
-                    body.append(Table.gdoc_parser.parse(wrapper["table"]))
+                    body.append(table_parser.parse(wrapper["table"]))
                 else:
                     body.append(
-                        TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
+                        table_of_contents_parser.parse(wrapper["tableOfContents"])
                     )
         return DocumentTab(
             body=body,
             headers=(
                 {
-                    segment_id: Segment.gdoc_parser.parse(segment)
+                    segment_id: segment_parser.parse(segment)
                     for segment_id, segment in data["headers"].items()
                 }
                 if "headers" in data
@@ -162,7 +142,7 @@ class DocumentTabParser(GDocParser[DocumentTab]):
             ),
             footers=(
                 {
-                    segment_id: Segment.gdoc_parser.parse(segment)
+                    segment_id: segment_parser.parse(segment)
                     for segment_id, segment in data["footers"].items()
                 }
                 if "footers" in data
@@ -170,20 +150,20 @@ class DocumentTabParser(GDocParser[DocumentTab]):
             ),
             footnotes=(
                 {
-                    segment_id: Segment.gdoc_parser.parse(segment)
+                    segment_id: segment_parser.parse(segment)
                     for segment_id, segment in data["footnotes"].items()
                 }
                 if "footnotes" in data
                 else UNSET
             ),
             document_style=(
-                DocumentStyle.gdoc_parser.parse(data["documentStyle"])
+                document_style_parser.parse(data["documentStyle"])
                 if "documentStyle" in data
                 else UNSET
             ),
             named_styles=(
                 [
-                    NamedStyle.gdoc_parser.parse(style)
+                    named_style_parser.parse(style)
                     for style in data["namedStyles"].get("styles", [])
                 ]
                 if "namedStyles" in data
@@ -191,7 +171,7 @@ class DocumentTabParser(GDocParser[DocumentTab]):
             ),
             lists=(
                 {
-                    list_id: ListDefinition.gdoc_parser.parse(definition)
+                    list_id: list_definition_parser.parse(definition)
                     for list_id, definition in data["lists"].items()
                 }
                 if "lists" in data
@@ -211,13 +191,11 @@ class TabParser(GDocParser[Tab]):
             parent_tab_id=properties.get("parentTabId", UNSET),
             icon_emoji=properties.get("iconEmoji", UNSET),
             content=(
-                DocumentTab.gdoc_parser.parse(data["documentTab"])
+                document_tab_parser.parse(data["documentTab"])
                 if "documentTab" in data
                 else UNSET
             ),
-            children=[
-                Tab.gdoc_parser.parse(child) for child in data.get("childTabs", [])
-            ],
+            children=[tab_parser.parse(child) for child in data.get("childTabs", [])],
         )
 
 
@@ -228,13 +206,12 @@ class DocumentParser(GDocParser[Document]):
             title=data["title"],
             revision_id=data.get("revisionId", UNSET),
             suggestions_view_mode=data.get("suggestionsViewMode", UNSET),
-            tabs=[Tab.gdoc_parser.parse(tab) for tab in data["tabs"]],
+            tabs=[tab_parser.parse(tab) for tab in data["tabs"]],
         )
 
 
-DocumentStyle.gdoc_parser = DocumentStyleParser()
-Segment.gdoc_parser = SegmentParser()
-TableOfContents.gdoc_parser = TableOfContentsParser()
-DocumentTab.gdoc_parser = DocumentTabParser()
-Tab.gdoc_parser = TabParser()
-Document.gdoc_parser = DocumentParser()
+document_style_parser = DocumentStyleParser()
+segment_parser = SegmentParser()
+document_tab_parser = DocumentTabParser()
+tab_parser = TabParser()
+document_parser = DocumentParser()

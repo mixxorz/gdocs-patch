@@ -1,9 +1,14 @@
 from gdocs_patch.models import Dimension
 from gdocs_patch.models.section import SectionBreak, SectionColumn, SectionStyle
+from gdocs_patch.parsers.section import (
+    section_break_parser,
+    section_column_parser,
+    section_style_parser,
+)
 
 
 def test_parses_section_column() -> None:
-    assert SectionColumn.gdoc_parser.parse(
+    assert section_column_parser.parse(
         {
             "width": {"magnitude": 240, "unit": "PT"},
             "paddingEnd": {"magnitude": 12, "unit": "PT"},
@@ -15,7 +20,7 @@ def test_parses_section_column() -> None:
 
 
 def test_parses_section_style() -> None:
-    assert SectionStyle.gdoc_parser.parse(
+    assert section_style_parser.parse(
         {
             "columnProperties": [
                 {
@@ -79,7 +84,7 @@ def test_parses_section_style() -> None:
 
 
 def test_parses_section_break_and_ignores_indices_and_suggestions() -> None:
-    assert SectionBreak.gdoc_parser.parse(
+    assert section_break_parser.parse(
         {
             "startIndex": 10,
             "endIndex": 11,

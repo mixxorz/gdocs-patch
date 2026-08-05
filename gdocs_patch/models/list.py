@@ -1,15 +1,10 @@
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import Literal
 
 from .base import UNSET, Dimension, Model, UnsetType
 from .paragraph import TextStyle
 
-if TYPE_CHECKING:
-    from gdocs_patch.parsers.base import GDocParser
-
 
 class ListLevel(Model):
-    gdoc_parser: ClassVar["GDocParser[ListLevel]"]
-
     def __init__(
         self,
         *,
@@ -50,7 +45,5 @@ class ListLevel(Model):
 
 
 class ListDefinition(Model):
-    gdoc_parser: ClassVar["GDocParser[ListDefinition]"]
-
     def __init__(self, *, levels: list[ListLevel]) -> None:
         self.levels = levels

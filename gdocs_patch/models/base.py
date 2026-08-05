@@ -1,7 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar, Literal
-
-if TYPE_CHECKING:
-    from gdocs_patch.parsers.base import GDocParser
+from typing import ClassVar, Literal
 
 
 class Model:
@@ -37,8 +34,6 @@ UNSET = UnsetType()
 class Dimension(Model):
     """A Google Docs measurement and its unit."""
 
-    gdoc_parser: ClassVar["GDocParser[Dimension]"]
-
     def __init__(
         self,
         *,
@@ -51,8 +46,6 @@ class Dimension(Model):
 
 class Color(Model):
     """An opaque RGB color with components in the unit interval."""
-
-    gdoc_parser: ClassVar["GDocParser[Color]"]
 
     def __init__(
         self,

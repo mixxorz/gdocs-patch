@@ -1,17 +1,16 @@
-import gdocs_patch.parsers  # noqa: F401
 from gdocs_patch.models import UNSET, Paragraph
-from gdocs_patch.models.table import (
-    Table,
-    TableCell,
-    TableCellBorder,
-    TableCellStyle,
-    TableColumn,
-    TableRow,
+from gdocs_patch.parsers.table import (
+    table_cell_border_parser,
+    table_cell_parser,
+    table_cell_style_parser,
+    table_column_parser,
+    table_parser,
+    table_row_parser,
 )
 
 
 def test_table_cell_border_maps_color_width_and_dash_style() -> None:
-    border = TableCellBorder.gdoc_parser.parse(
+    border = table_cell_border_parser.parse(
         {
             "color": {"color": {"rgbColor": {"red": 0.25}}},
             "width": {"magnitude": 2, "unit": "PT"},
@@ -27,7 +26,7 @@ def test_table_cell_border_maps_color_width_and_dash_style() -> None:
 
 
 def test_table_cell_style_maps_all_supported_properties() -> None:
-    style = TableCellStyle.gdoc_parser.parse(
+    style = table_cell_style_parser.parse(
         {
             "rowSpan": 2,
             "columnSpan": 3,
@@ -59,7 +58,7 @@ def test_table_cell_style_maps_all_supported_properties() -> None:
 
 
 def test_table_cell_recursively_maps_paragraph_and_ignores_indices() -> None:
-    cell = TableCell.gdoc_parser.parse(
+    cell = table_cell_parser.parse(
         {
             "startIndex": 10,
             "endIndex": 20,
@@ -83,7 +82,7 @@ def test_table_cell_recursively_maps_paragraph_and_ignores_indices() -> None:
 
 
 def test_table_row_maps_cells_and_complete_style_while_ignoring_indices() -> None:
-    row = TableRow.gdoc_parser.parse(
+    row = table_row_parser.parse(
         {
             "startIndex": 1,
             "endIndex": 9,
@@ -105,7 +104,7 @@ def test_table_row_maps_cells_and_complete_style_while_ignoring_indices() -> Non
 
 
 def test_table_column_maps_fixed_width() -> None:
-    column = TableColumn.gdoc_parser.parse(
+    column = table_column_parser.parse(
         {"widthType": "FIXED_WIDTH", "width": _dimension(72)}
     )
 
@@ -115,7 +114,7 @@ def test_table_column_maps_fixed_width() -> None:
 
 
 def test_table_maps_rows_and_column_styles_while_ignoring_counts() -> None:
-    table = Table.gdoc_parser.parse(
+    table = table_parser.parse(
         {
             "rows": 99,
             "columns": 88,

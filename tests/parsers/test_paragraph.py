@@ -28,6 +28,30 @@ from gdocs_patch.models.paragraph import (
     UrlLink,
 )
 from gdocs_patch.parsers import GDocParser
+from gdocs_patch.parsers.paragraph import (
+    auto_text_parser,
+    bookmark_link_parser,
+    bullet_parser,
+    column_break_parser,
+    date_element_parser,
+    equation_parser,
+    footnote_reference_parser,
+    heading_link_parser,
+    horizontal_rule_parser,
+    inline_object_reference_parser,
+    named_style_parser,
+    page_break_parser,
+    paragraph_border_parser,
+    paragraph_parser,
+    paragraph_style_parser,
+    person_reference_parser,
+    rich_link_parser,
+    tab_link_parser,
+    tab_stop_parser,
+    text_run_parser,
+    text_style_parser,
+    url_link_parser,
+)
 
 DIMENSION = {"magnitude": 12, "unit": "PT"}
 OPAQUE_COLOR = {"color": {"rgbColor": {"red": 0.25, "green": 0.5, "blue": 1}}}
@@ -45,20 +69,20 @@ EXPECTED_BORDER = ParagraphBorder(
 )
 
 CASES: list[tuple[GDocParser[object], Any, object]] = [
-    (UrlLink.gdoc_parser, "https://example.test", UrlLink(url="https://example.test")),
-    (TabLink.gdoc_parser, "tab-2", TabLink(tab_id="tab-2")),
+    (url_link_parser, "https://example.test", UrlLink(url="https://example.test")),
+    (tab_link_parser, "tab-2", TabLink(tab_id="tab-2")),
     (
-        BookmarkLink.gdoc_parser,
+        bookmark_link_parser,
         {"id": "bookmark-1", "tabId": "tab-2"},
         BookmarkLink(bookmark_id="bookmark-1", tab_id="tab-2"),
     ),
     (
-        HeadingLink.gdoc_parser,
+        heading_link_parser,
         {"id": "heading-1", "tabId": "tab-2"},
         HeadingLink(heading_id="heading-1", tab_id="tab-2"),
     ),
     (
-        TextStyle.gdoc_parser,
+        text_style_parser,
         {
             "bold": True,
             "italic": False,
@@ -88,18 +112,18 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        Bullet.gdoc_parser,
+        bullet_parser,
         {"listId": "list-1", "textStyle": {"bold": True}},
         Bullet(list_id="list-1", nesting_level=0, text_style=TextStyle(bold=True)),
     ),
-    (ParagraphBorder.gdoc_parser, BORDER, EXPECTED_BORDER),
+    (paragraph_border_parser, BORDER, EXPECTED_BORDER),
     (
-        TabStop.gdoc_parser,
+        tab_stop_parser,
         {"offset": DIMENSION, "alignment": "CENTER"},
         TabStop(offset=Dimension(magnitude=12, unit="PT"), alignment="CENTER"),
     ),
     (
-        ParagraphStyle.gdoc_parser,
+        paragraph_style_parser,
         {
             "namedStyleType": "HEADING_2",
             "alignment": "JUSTIFIED",
@@ -156,22 +180,22 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        TextRun.gdoc_parser,
+        text_run_parser,
         {"content": "Hello", "textStyle": {"bold": True}},
         TextRun(content="Hello", text_style=TextStyle(bold=True)),
     ),
     (
-        AutoText.gdoc_parser,
+        auto_text_parser,
         {"type": "PAGE_NUMBER", "textStyle": {"italic": True}},
         AutoText(auto_text_type="PAGE_NUMBER", text_style=TextStyle(italic=True)),
     ),
     (
-        ColumnBreak.gdoc_parser,
+        column_break_parser,
         {"textStyle": {"underline": True}},
         ColumnBreak(text_style=TextStyle(underline=True)),
     ),
     (
-        DateElement.gdoc_parser,
+        date_element_parser,
         {
             "dateId": "date-1",
             "dateElementProperties": {
@@ -196,12 +220,12 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        Equation.gdoc_parser,
+        equation_parser,
         {"suggestedInsertionIds": ["suggestion-1"]},
         Equation(),
     ),
     (
-        FootnoteReference.gdoc_parser,
+        footnote_reference_parser,
         {
             "footnoteId": "footnote-1",
             "footnoteNumber": "1",
@@ -214,12 +238,12 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        HorizontalRule.gdoc_parser,
+        horizontal_rule_parser,
         {"textStyle": {"bold": True}},
         HorizontalRule(text_style=TextStyle(bold=True)),
     ),
     (
-        InlineObjectReference.gdoc_parser,
+        inline_object_reference_parser,
         {"inlineObjectId": "inline-1", "textStyle": {"underline": True}},
         InlineObjectReference(
             inline_object_id="inline-1",
@@ -227,12 +251,12 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        PageBreak.gdoc_parser,
+        page_break_parser,
         {"textStyle": {"smallCaps": True}},
         PageBreak(text_style=TextStyle(small_caps=True)),
     ),
     (
-        PersonReference.gdoc_parser,
+        person_reference_parser,
         {
             "personId": "person-1",
             "personProperties": {"email": "ada@example.test", "name": "Ada"},
@@ -246,7 +270,7 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        RichLink.gdoc_parser,
+        rich_link_parser,
         {
             "richLinkId": "rich-link-1",
             "richLinkProperties": {
@@ -265,7 +289,7 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        Paragraph.gdoc_parser,
+        paragraph_parser,
         {
             "paragraphStyle": {"alignment": "CENTER"},
             "bullet": {"listId": "list-1"},
@@ -365,7 +389,7 @@ CASES: list[tuple[GDocParser[object], Any, object]] = [
         ),
     ),
     (
-        NamedStyle.gdoc_parser,
+        named_style_parser,
         {
             "namedStyleType": "TITLE",
             "textStyle": {"bold": True},
@@ -390,24 +414,22 @@ def test_parses_paragraph_presentation_model(
 def test_paragraph_copies_positioned_object_ids() -> None:
     positioned_object_ids = ["positioned-1"]
 
-    paragraph = Paragraph.gdoc_parser.parse(
-        {"positionedObjectIds": positioned_object_ids}
-    )
+    paragraph = paragraph_parser.parse({"positionedObjectIds": positioned_object_ids})
     positioned_object_ids.append("positioned-2")
 
     assert paragraph.positioned_object_ids == ["positioned-1"]
 
 
 def test_text_style_normalizes_deprecated_bookmark_link() -> None:
-    assert TextStyle.gdoc_parser.parse({"link": {"bookmarkId": "legacy"}}) == TextStyle(
+    assert text_style_parser.parse({"link": {"bookmarkId": "legacy"}}) == TextStyle(
         link=BookmarkLink(bookmark_id="legacy")
     )
 
 
 def test_paragraph_style_distinguishes_absent_and_transparent_shading_color() -> None:
-    assert ParagraphStyle.gdoc_parser.parse({"shading": {}}) == ParagraphStyle(
+    assert paragraph_style_parser.parse({"shading": {}}) == ParagraphStyle(
         shading_color=UNSET
     )
-    assert ParagraphStyle.gdoc_parser.parse(
+    assert paragraph_style_parser.parse(
         {"shading": {"backgroundColor": {}}}
     ) == ParagraphStyle(shading_color=None)

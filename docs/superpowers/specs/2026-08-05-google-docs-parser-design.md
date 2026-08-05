@@ -2,7 +2,7 @@
 
 ## Goal
 
-Parse an already-decoded Google Docs API v1 `documents.get` response into the native mutable model tree. The public entry point is `Document.gdoc_parser.parse(value)`, and every concrete API-backed model also exposes its own parser for direct use.
+Parse an already-decoded Google Docs API v1 `documents.get` response into the native mutable model tree. The public entry point is `document_parser.parse(value)`. Concrete parser instances are exported from their semantic parser modules for direct use.
 
 The parser supports the modern tab response produced with `includeTabsContent=true`. It intentionally does not decode JSON text, serialize models, calculate document indices, add traversal or parent links, retain unsupported fields, or support the legacy top-level tab representation.
 
@@ -35,8 +35,12 @@ Every concrete parser implements `parse` directly and invokes child parsers with
 Primary use:
 
 ```python
-document = Document.gdoc_parser.parse(decoded_response)
-paragraph = Paragraph.gdoc_parser.parse(decoded_paragraph_payload)
+from gdocs_patch.parsers import document_parser
+from gdocs_patch.parsers.paragraph import paragraph_parser
+
+
+document = document_parser.parse(decoded_response)
+paragraph = paragraph_parser.parse(decoded_paragraph_payload)
 ```
 
 There is no file-reading or JSON-decoding convenience method. Parsers are stateless and safe to reuse.
@@ -56,15 +60,15 @@ gdocs_patch/parsers/
 └── list.py
 ```
 
-Each concrete model declares a precisely typed `ClassVar`, such as `gdoc_parser: ClassVar[GDocParser[Paragraph]]`. Its semantic parser module creates one parser and eagerly attaches it:
+Models do not know parsers exist. Each semantic parser module exports ordinary stateless parser instances, such as:
 
 ```python
-Paragraph.gdoc_parser = ParagraphParser()
+paragraph_parser = ParagraphParser()
 ```
 
-`gdocs_patch.parsers` imports every semantic parser module. The root `gdocs_patch` package initializes `parsers`, making parser attributes available regardless of whether a caller imports `gdocs_patch.models` or a specific model module.
+Parser modules explicitly import the parser instances they depend on. The recursive table and table-of-contents parsers live together so this dependency graph has no import cycle. No import mutates model classes, and importing `gdocs_patch` performs no parser initialization.
 
-`gdocs_patch.parsers` publicly exposes only `GDocParser`. Concrete parser classes remain importable from their semantic modules, but the model class attribute is the normal API. Parser inputs use `Any` deliberately at the decoded provider boundary.
+`gdocs_patch.parsers` publicly exposes `GDocParser` and `document_parser`. Other concrete parser instances and classes remain importable from their semantic modules. Parser inputs use `Any` deliberately at the decoded provider boundary.
 
 The design does not use a parser registry, descriptor, decorator, metaclass, generated parser, or annotation-driven construction.
 
@@ -76,7 +80,7 @@ For example, `DocumentTabParser` handles a structural wrapper conceptually as:
 
 ```python
 if "paragraph" in raw_element:
-    element = Paragraph.gdoc_parser.parse(raw_element["paragraph"])
+    element = paragraph_parser.parse(raw_element["paragraph"])
 ```
 
 `ParagraphParser` similarly selects `textRun`, `autoText`, and the other paragraph element variants. Most selected values are objects; scalar union members are also valid parser payloads. For example, `UrlLinkParser` receives the string under `url`, while `BookmarkLinkParser` receives the object under `bookmark` or the scalar value of deprecated `bookmarkId`.

@@ -1,11 +1,11 @@
-import gdocs_patch.parsers  # noqa: F401
 from gdocs_patch.models import UNSET, Dimension
 from gdocs_patch.models.list import ListDefinition, ListLevel
 from gdocs_patch.models.paragraph import TextStyle
+from gdocs_patch.parsers.list import list_definition_parser, list_level_parser
 
 
 def test_parses_list_level_with_proto_defaults_and_optional_fields() -> None:
-    assert ListLevel.gdoc_parser.parse(
+    assert list_level_parser.parse(
         {
             "glyphFormat": "%0.",
             "glyphSymbol": "●",
@@ -26,7 +26,7 @@ def test_parses_list_level_with_proto_defaults_and_optional_fields() -> None:
 
 
 def test_parses_list_definition_levels_and_ignores_suggestions() -> None:
-    assert ListDefinition.gdoc_parser.parse(
+    assert list_definition_parser.parse(
         {
             "listProperties": {
                 "nestingLevels": [

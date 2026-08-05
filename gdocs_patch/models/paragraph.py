@@ -1,10 +1,7 @@
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
 from .document import StructuralElement
-
-if TYPE_CHECKING:
-    from gdocs_patch.parsers.base import GDocParser
 
 
 class Link(Model):
@@ -12,22 +9,16 @@ class Link(Model):
 
 
 class UrlLink(Link):
-    gdoc_parser: ClassVar["GDocParser[UrlLink]"]
-
     def __init__(self, *, url: str) -> None:
         self.url = url
 
 
 class TabLink(Link):
-    gdoc_parser: ClassVar["GDocParser[TabLink]"]
-
     def __init__(self, *, tab_id: str) -> None:
         self.tab_id = tab_id
 
 
 class BookmarkLink(Link):
-    gdoc_parser: ClassVar["GDocParser[BookmarkLink]"]
-
     def __init__(
         self,
         *,
@@ -39,8 +30,6 @@ class BookmarkLink(Link):
 
 
 class HeadingLink(Link):
-    gdoc_parser: ClassVar["GDocParser[HeadingLink]"]
-
     def __init__(
         self,
         *,
@@ -52,8 +41,6 @@ class HeadingLink(Link):
 
 
 class TextStyle(Model):
-    gdoc_parser: ClassVar["GDocParser[TextStyle]"]
-
     def __init__(
         self,
         *,
@@ -91,8 +78,6 @@ class TextStyle(Model):
 
 
 class Bullet(Model):
-    gdoc_parser: ClassVar["GDocParser[Bullet]"]
-
     def __init__(
         self,
         *,
@@ -106,8 +91,6 @@ class Bullet(Model):
 
 
 class ParagraphBorder(Model):
-    gdoc_parser: ClassVar["GDocParser[ParagraphBorder]"]
-
     def __init__(
         self,
         *,
@@ -128,8 +111,6 @@ class ParagraphBorder(Model):
 
 
 class TabStop(Model):
-    gdoc_parser: ClassVar["GDocParser[TabStop]"]
-
     def __init__(
         self,
         *,
@@ -146,8 +127,6 @@ class TabStop(Model):
 
 
 class ParagraphStyle(Model):
-    gdoc_parser: ClassVar["GDocParser[ParagraphStyle]"]
-
     def __init__(
         self,
         *,
@@ -232,8 +211,6 @@ class ParagraphElement(Model):
 
 
 class TextRun(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[TextRun]"]
-
     def __init__(
         self,
         *,
@@ -245,8 +222,6 @@ class TextRun(ParagraphElement):
 
 
 class AutoText(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[AutoText]"]
-
     def __init__(
         self,
         *,
@@ -262,8 +237,6 @@ class AutoText(ParagraphElement):
 
 
 class ColumnBreak(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[ColumnBreak]"]
-
     def __init__(
         self,
         *,
@@ -273,8 +246,6 @@ class ColumnBreak(ParagraphElement):
 
 
 class DateElement(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[DateElement]"]
-
     def __init__(
         self,
         *,
@@ -312,12 +283,10 @@ class DateElement(ParagraphElement):
 
 
 class Equation(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[Equation]"]
+    pass
 
 
 class FootnoteReference(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[FootnoteReference]"]
-
     def __init__(
         self,
         *,
@@ -331,8 +300,6 @@ class FootnoteReference(ParagraphElement):
 
 
 class HorizontalRule(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[HorizontalRule]"]
-
     def __init__(
         self,
         *,
@@ -342,8 +309,6 @@ class HorizontalRule(ParagraphElement):
 
 
 class InlineObjectReference(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[InlineObjectReference]"]
-
     def __init__(
         self,
         *,
@@ -355,8 +320,6 @@ class InlineObjectReference(ParagraphElement):
 
 
 class PageBreak(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[PageBreak]"]
-
     def __init__(
         self,
         *,
@@ -366,8 +329,6 @@ class PageBreak(ParagraphElement):
 
 
 class PersonReference(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[PersonReference]"]
-
     def __init__(
         self,
         *,
@@ -383,8 +344,6 @@ class PersonReference(ParagraphElement):
 
 
 class RichLink(ParagraphElement):
-    gdoc_parser: ClassVar["GDocParser[RichLink]"]
-
     def __init__(
         self,
         *,
@@ -402,8 +361,6 @@ class RichLink(ParagraphElement):
 
 
 class Paragraph(StructuralElement):
-    gdoc_parser: ClassVar["GDocParser[Paragraph]"]
-
     def __init__(
         self,
         *,
@@ -419,8 +376,6 @@ class Paragraph(StructuralElement):
 
 
 class NamedStyle(Model):
-    gdoc_parser: ClassVar["GDocParser[NamedStyle]"]
-
     def __init__(
         self,
         *,
