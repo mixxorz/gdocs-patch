@@ -23,13 +23,7 @@ The native model design specification must be updated in the same change so it n
 
 ```python
 type JsonValue = (
-    None
-    | bool
-    | int
-    | float
-    | str
-    | list[JsonValue]
-    | dict[str, JsonValue]
+    None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 )
 type JsonObject = dict[str, JsonValue]
 ```

@@ -152,13 +152,7 @@ from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
 
 
 type JsonValue = (
-    None
-    | bool
-    | int
-    | float
-    | str
-    | list[JsonValue]
-    | dict[str, JsonValue]
+    None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 )
 type JsonObject = dict[str, JsonValue]
 
