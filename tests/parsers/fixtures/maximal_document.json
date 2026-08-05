@@ -531,10 +531,7 @@
                             },
                             "dashStyle": "DASH"
                           },
-                          "paddingLeft": {
-                            "magnitude": 1,
-                            "unit": "PT"
-                          },
+                          "paddingLeft": {},
                           "paddingRight": {
                             "magnitude": 2,
                             "unit": "PT"
@@ -605,7 +602,7 @@
           ]
         },
         "headers": {
-          "header-1": {
+          "header-map-key": {
             "headerId": "header-1",
             "content": [
               {

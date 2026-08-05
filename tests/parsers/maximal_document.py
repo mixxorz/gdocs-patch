@@ -205,7 +205,7 @@ def expected_maximal_document() -> Document:
                             border_right=_cell_border(2),
                             border_top=_cell_border(3),
                             border_bottom=_cell_border(4),
-                            padding_left=_dimension(1),
+                            padding_left=Dimension(),
                             padding_right=_dimension(2),
                             padding_top=_dimension(3),
                             padding_bottom=_dimension(4),
@@ -251,7 +251,9 @@ def expected_maximal_document() -> Document:
     root_content = DocumentTab(
         body=[rich_paragraph, section_break, table, top_level_toc],
         headers={
-            "header-1": Segment(segment_id="header-1", content=[Paragraph(elements=[])])
+            "header-map-key": Segment(
+                segment_id="header-1", content=[Paragraph(elements=[])]
+            )
         },
         footers={"footer-1": Segment(segment_id="footer-1", content=[])},
         footnotes={
