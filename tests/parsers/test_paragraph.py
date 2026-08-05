@@ -2,17 +2,30 @@ import pytest
 
 from gdocs_patch.models import Color, Dimension
 from gdocs_patch.models.paragraph import (
+    AutoText,
     BookmarkLink,
     Bullet,
+    ColumnBreak,
+    DateElement,
+    Equation,
+    FootnoteReference,
     HeadingLink,
+    HorizontalRule,
+    InlineObjectReference,
+    NamedStyle,
+    PageBreak,
+    Paragraph,
     ParagraphBorder,
     ParagraphStyle,
+    PersonReference,
+    RichLink,
     TabLink,
     TabStop,
+    TextRun,
     TextStyle,
     UrlLink,
 )
-from gdocs_patch.parsers import GDocParser, JsonValue
+from gdocs_patch.parsers import GDocParseError, GDocParser, JsonValue
 
 DIMENSION = {"magnitude": 12, "unit": "PT"}
 OPAQUE_COLOR = {"color": {"rgbColor": {"red": 0.25, "green": 0.5, "blue": 1}}}
@@ -140,6 +153,228 @@ CASES: list[tuple[GDocParser[object], JsonValue, object]] = [
             ],
         ),
     ),
+    (
+        TextRun.gdoc_parser,
+        {"content": "Hello", "textStyle": {"bold": True}},
+        TextRun(content="Hello", text_style=TextStyle(bold=True)),
+    ),
+    (
+        AutoText.gdoc_parser,
+        {"type": "PAGE_NUMBER", "textStyle": {"italic": True}},
+        AutoText(auto_text_type="PAGE_NUMBER", text_style=TextStyle(italic=True)),
+    ),
+    (
+        ColumnBreak.gdoc_parser,
+        {"textStyle": {"underline": True}},
+        ColumnBreak(text_style=TextStyle(underline=True)),
+    ),
+    (
+        DateElement.gdoc_parser,
+        {
+            "dateId": "date-1",
+            "dateElementProperties": {
+                "dateFormat": "DATE_FORMAT_ISO8601",
+                "displayText": "2025-03-08",
+                "locale": "en-US",
+                "timeFormat": "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+                "timeZoneId": "America/New_York",
+                "timestamp": "2025-03-08T10:30:00Z",
+            },
+            "textStyle": {"bold": True},
+        },
+        DateElement(
+            date_id="date-1",
+            date_format="DATE_FORMAT_ISO8601",
+            display_text="2025-03-08",
+            locale="en-US",
+            time_format="TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+            time_zone_id="America/New_York",
+            timestamp="2025-03-08T10:30:00Z",
+            text_style=TextStyle(bold=True),
+        ),
+    ),
+    (
+        Equation.gdoc_parser,
+        {"suggestedInsertionIds": ["suggestion-1"]},
+        Equation(),
+    ),
+    (
+        FootnoteReference.gdoc_parser,
+        {
+            "footnoteId": "footnote-1",
+            "footnoteNumber": "1",
+            "textStyle": {"italic": True},
+        },
+        FootnoteReference(
+            footnote_id="footnote-1",
+            footnote_number="1",
+            text_style=TextStyle(italic=True),
+        ),
+    ),
+    (
+        HorizontalRule.gdoc_parser,
+        {"textStyle": {"bold": True}},
+        HorizontalRule(text_style=TextStyle(bold=True)),
+    ),
+    (
+        InlineObjectReference.gdoc_parser,
+        {"inlineObjectId": "inline-1", "textStyle": {"underline": True}},
+        InlineObjectReference(
+            inline_object_id="inline-1",
+            text_style=TextStyle(underline=True),
+        ),
+    ),
+    (
+        PageBreak.gdoc_parser,
+        {"textStyle": {"smallCaps": True}},
+        PageBreak(text_style=TextStyle(small_caps=True)),
+    ),
+    (
+        PersonReference.gdoc_parser,
+        {
+            "personId": "person-1",
+            "personProperties": {"email": "ada@example.test", "name": "Ada"},
+            "textStyle": {"bold": True},
+        },
+        PersonReference(
+            person_id="person-1",
+            email="ada@example.test",
+            name="Ada",
+            text_style=TextStyle(bold=True),
+        ),
+    ),
+    (
+        RichLink.gdoc_parser,
+        {
+            "richLinkId": "rich-link-1",
+            "richLinkProperties": {
+                "uri": "https://example.test/resource",
+                "title": "Resource",
+                "mimeType": "text/html",
+            },
+            "textStyle": {"italic": True},
+        },
+        RichLink(
+            rich_link_id="rich-link-1",
+            uri="https://example.test/resource",
+            title="Resource",
+            mime_type="text/html",
+            text_style=TextStyle(italic=True),
+        ),
+    ),
+    (
+        Paragraph.gdoc_parser,
+        {
+            "paragraphStyle": {"alignment": "CENTER"},
+            "bullet": {"listId": "list-1"},
+            "positionedObjectIds": ["positioned-1", "positioned-2"],
+            "elements": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 2,
+                    "suggestedInsertionIds": ["suggestion-1"],
+                    "textRun": {"content": "Hello"},
+                },
+                {
+                    "startIndex": 2,
+                    "endIndex": 3,
+                    "suggestedDeletionIds": ["suggestion-2"],
+                    "autoText": {"type": "PAGE_COUNT"},
+                },
+                {
+                    "startIndex": 3,
+                    "endIndex": 4,
+                    "suggestedTextStyleChanges": {},
+                    "columnBreak": {},
+                },
+                {
+                    "startIndex": 4,
+                    "endIndex": 5,
+                    "suggestedInsertionIds": [],
+                    "dateElement": {"dateId": "date-1"},
+                },
+                {
+                    "startIndex": 5,
+                    "endIndex": 6,
+                    "suggestedDeletionIds": [],
+                    "equation": {},
+                },
+                {
+                    "startIndex": 6,
+                    "endIndex": 7,
+                    "suggestedTextStyleChanges": {},
+                    "footnoteReference": {
+                        "footnoteId": "footnote-1",
+                        "footnoteNumber": "1",
+                    },
+                },
+                {
+                    "startIndex": 7,
+                    "endIndex": 8,
+                    "suggestedInsertionIds": [],
+                    "horizontalRule": {},
+                },
+                {
+                    "startIndex": 8,
+                    "endIndex": 9,
+                    "suggestedDeletionIds": [],
+                    "inlineObjectElement": {"inlineObjectId": "inline-1"},
+                },
+                {
+                    "startIndex": 9,
+                    "endIndex": 10,
+                    "suggestedTextStyleChanges": {},
+                    "pageBreak": {},
+                },
+                {
+                    "startIndex": 10,
+                    "endIndex": 11,
+                    "suggestedInsertionIds": [],
+                    "person": {"personId": "person-1"},
+                },
+                {
+                    "startIndex": 11,
+                    "endIndex": 12,
+                    "suggestedDeletionIds": [],
+                    "richLink": {
+                        "richLinkId": "rich-link-1",
+                        "richLinkProperties": {"uri": "https://example.test"},
+                    },
+                },
+            ],
+        },
+        Paragraph(
+            style=ParagraphStyle(alignment="CENTER"),
+            bullet=Bullet(list_id="list-1"),
+            positioned_object_ids=["positioned-1", "positioned-2"],
+            elements=[
+                TextRun(content="Hello"),
+                AutoText(auto_text_type="PAGE_COUNT"),
+                ColumnBreak(),
+                DateElement(date_id="date-1"),
+                Equation(),
+                FootnoteReference(footnote_id="footnote-1", footnote_number="1"),
+                HorizontalRule(),
+                InlineObjectReference(inline_object_id="inline-1"),
+                PageBreak(),
+                PersonReference(person_id="person-1"),
+                RichLink(rich_link_id="rich-link-1", uri="https://example.test"),
+            ],
+        ),
+    ),
+    (
+        NamedStyle.gdoc_parser,
+        {
+            "namedStyleType": "TITLE",
+            "textStyle": {"bold": True},
+            "paragraphStyle": {"alignment": "CENTER"},
+        },
+        NamedStyle(
+            named_style_type="TITLE",
+            text_style=TextStyle(bold=True),
+            paragraph_style=ParagraphStyle(alignment="CENTER"),
+        ),
+    ),
 ]
 
 
@@ -154,3 +389,20 @@ def test_text_style_normalizes_deprecated_bookmark_link() -> None:
     assert TextStyle.gdoc_parser.parse({"link": {"bookmarkId": "legacy"}}) == TextStyle(
         link=BookmarkLink(bookmark_id="legacy")
     )
+
+
+@pytest.mark.parametrize(
+    "element",
+    [
+        {},
+        {"textRun": {"content": "x"}, "equation": {}},
+    ],
+)
+def test_paragraph_element_requires_exactly_one_supported_variant(
+    element: JsonValue,
+) -> None:
+    with pytest.raises(
+        GDocParseError,
+        match="exactly one supported paragraph element",
+    ):
+        Paragraph.gdoc_parser.parse({"elements": [element]})

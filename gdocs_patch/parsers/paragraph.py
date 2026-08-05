@@ -1,13 +1,27 @@
 from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
 from gdocs_patch.models.paragraph import (
+    AutoText,
     BookmarkLink,
     Bullet,
+    ColumnBreak,
+    DateElement,
+    Equation,
+    FootnoteReference,
     HeadingLink,
+    HorizontalRule,
+    InlineObjectReference,
     Link,
+    NamedStyle,
+    PageBreak,
+    Paragraph,
     ParagraphBorder,
+    ParagraphElement,
     ParagraphStyle,
+    PersonReference,
+    RichLink,
     TabLink,
     TabStop,
+    TextRun,
     TextStyle,
     UrlLink,
 )
@@ -17,6 +31,7 @@ from .base import (
     GDocParser,
     JsonObject,
     JsonValue,
+    array_value,
     field_path,
     index_path,
     integer_value,
@@ -335,6 +350,313 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
         ]
 
 
+class TextRunParser(GDocParser[TextRun]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> TextRun:
+        value = object_value(data, path)
+        return TextRun(
+            content=string_value(
+                required_field(value, "content", path), field_path(path, "content")
+            ),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class AutoTextParser(GDocParser[AutoText]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> AutoText:
+        value = object_value(data, path)
+        return AutoText(
+            auto_text_type=literal_value(
+                required_field(value, "type", path),
+                ("TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"),
+                field_path(path, "type"),
+            ),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class ColumnBreakParser(GDocParser[ColumnBreak]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> ColumnBreak:
+        value = object_value(data, path)
+        return ColumnBreak(text_style=_optional_text_style(value, path))
+
+
+class DateElementParser(GDocParser[DateElement]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> DateElement:
+        value = object_value(data, path)
+        properties = optional_object_field(value, "dateElementProperties", path)
+        properties_path = field_path(path, "dateElementProperties")
+        return DateElement(
+            date_id=string_value(
+                required_field(value, "dateId", path), field_path(path, "dateId")
+            ),
+            date_format=(
+                UNSET
+                if isinstance(properties, UnsetType)
+                else optional_literal_field(
+                    properties,
+                    "dateFormat",
+                    (
+                        "DATE_FORMAT_UNSPECIFIED",
+                        "DATE_FORMAT_CUSTOM",
+                        "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
+                        "DATE_FORMAT_MONTH_DAY_FULL",
+                        "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
+                        "DATE_FORMAT_ISO8601",
+                    ),
+                    properties_path,
+                )
+            ),
+            display_text=_optional_nested_string(
+                properties, "displayText", properties_path
+            ),
+            locale=_optional_nested_string(properties, "locale", properties_path),
+            time_format=(
+                UNSET
+                if isinstance(properties, UnsetType)
+                else optional_literal_field(
+                    properties,
+                    "timeFormat",
+                    (
+                        "TIME_FORMAT_UNSPECIFIED",
+                        "TIME_FORMAT_DISABLED",
+                        "TIME_FORMAT_HOUR_MINUTE",
+                        "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+                    ),
+                    properties_path,
+                )
+            ),
+            time_zone_id=_optional_nested_string(
+                properties, "timeZoneId", properties_path
+            ),
+            timestamp=_optional_nested_string(properties, "timestamp", properties_path),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class EquationParser(GDocParser[Equation]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> Equation:
+        object_value(data, path)
+        return Equation()
+
+
+class FootnoteReferenceParser(GDocParser[FootnoteReference]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> FootnoteReference:
+        value = object_value(data, path)
+        return FootnoteReference(
+            footnote_id=string_value(
+                required_field(value, "footnoteId", path),
+                field_path(path, "footnoteId"),
+            ),
+            footnote_number=string_value(
+                required_field(value, "footnoteNumber", path),
+                field_path(path, "footnoteNumber"),
+            ),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class HorizontalRuleParser(GDocParser[HorizontalRule]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> HorizontalRule:
+        value = object_value(data, path)
+        return HorizontalRule(text_style=_optional_text_style(value, path))
+
+
+class InlineObjectReferenceParser(GDocParser[InlineObjectReference]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> InlineObjectReference:
+        value = object_value(data, path)
+        return InlineObjectReference(
+            inline_object_id=string_value(
+                required_field(value, "inlineObjectId", path),
+                field_path(path, "inlineObjectId"),
+            ),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class PageBreakParser(GDocParser[PageBreak]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> PageBreak:
+        value = object_value(data, path)
+        return PageBreak(text_style=_optional_text_style(value, path))
+
+
+class PersonReferenceParser(GDocParser[PersonReference]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> PersonReference:
+        value = object_value(data, path)
+        properties = optional_object_field(value, "personProperties", path)
+        properties_path = field_path(path, "personProperties")
+        return PersonReference(
+            person_id=string_value(
+                required_field(value, "personId", path), field_path(path, "personId")
+            ),
+            email=_optional_nested_string(properties, "email", properties_path),
+            name=_optional_nested_string(properties, "name", properties_path),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class RichLinkParser(GDocParser[RichLink]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> RichLink:
+        value = object_value(data, path)
+        properties_path = field_path(path, "richLinkProperties")
+        properties = object_value(
+            required_field(value, "richLinkProperties", path), properties_path
+        )
+        return RichLink(
+            rich_link_id=string_value(
+                required_field(value, "richLinkId", path),
+                field_path(path, "richLinkId"),
+            ),
+            uri=string_value(
+                required_field(properties, "uri", properties_path),
+                field_path(properties_path, "uri"),
+            ),
+            title=optional_string_field(properties, "title", properties_path),
+            mime_type=optional_string_field(properties, "mimeType", properties_path),
+            text_style=_optional_text_style(value, path),
+        )
+
+
+class ParagraphParser(GDocParser[Paragraph]):
+    _element_keys = (
+        "textRun",
+        "autoText",
+        "columnBreak",
+        "dateElement",
+        "equation",
+        "footnoteReference",
+        "horizontalRule",
+        "inlineObjectElement",
+        "pageBreak",
+        "person",
+        "richLink",
+    )
+
+    def parse(self, data: JsonValue, *, path: str = "$") -> Paragraph:
+        value = object_value(data, path)
+        return Paragraph(
+            elements=self._parse_elements(value, path),
+            style=(
+                ParagraphStyle.gdoc_parser.parse(
+                    value["paragraphStyle"],
+                    path=field_path(path, "paragraphStyle"),
+                )
+                if "paragraphStyle" in value
+                else UNSET
+            ),
+            bullet=(
+                Bullet.gdoc_parser.parse(
+                    value["bullet"], path=field_path(path, "bullet")
+                )
+                if "bullet" in value
+                else UNSET
+            ),
+            positioned_object_ids=self._parse_positioned_object_ids(value, path),
+        )
+
+    def _parse_elements(self, value: JsonObject, path: str) -> list[ParagraphElement]:
+        if "elements" not in value:
+            return []
+        elements_path = field_path(path, "elements")
+        elements = array_value(value["elements"], elements_path)
+        return [
+            self._parse_element(element, index_path(elements_path, index))
+            for index, element in enumerate(elements)
+        ]
+
+    def _parse_element(self, data: JsonValue, path: str) -> ParagraphElement:
+        wrapper = object_value(data, path)
+        present = [key for key in self._element_keys if key in wrapper]
+        if len(present) != 1:
+            raise GDocParseError(
+                path, "expected exactly one supported paragraph element"
+            )
+        key = present[0]
+        inner = wrapper[key]
+        inner_path = field_path(path, key)
+        if key == "textRun":
+            return TextRun.gdoc_parser.parse(inner, path=inner_path)
+        if key == "autoText":
+            return AutoText.gdoc_parser.parse(inner, path=inner_path)
+        if key == "columnBreak":
+            return ColumnBreak.gdoc_parser.parse(inner, path=inner_path)
+        if key == "dateElement":
+            return DateElement.gdoc_parser.parse(inner, path=inner_path)
+        if key == "equation":
+            return Equation.gdoc_parser.parse(inner, path=inner_path)
+        if key == "footnoteReference":
+            return FootnoteReference.gdoc_parser.parse(inner, path=inner_path)
+        if key == "horizontalRule":
+            return HorizontalRule.gdoc_parser.parse(inner, path=inner_path)
+        if key == "inlineObjectElement":
+            return InlineObjectReference.gdoc_parser.parse(inner, path=inner_path)
+        if key == "pageBreak":
+            return PageBreak.gdoc_parser.parse(inner, path=inner_path)
+        if key == "person":
+            return PersonReference.gdoc_parser.parse(inner, path=inner_path)
+        return RichLink.gdoc_parser.parse(inner, path=inner_path)
+
+    @staticmethod
+    def _parse_positioned_object_ids(
+        value: JsonObject, path: str
+    ) -> list[str] | UnsetType:
+        if "positionedObjectIds" not in value:
+            return UNSET
+        ids_path = field_path(path, "positionedObjectIds")
+        ids = array_value(value["positionedObjectIds"], ids_path)
+        return [
+            string_value(item, index_path(ids_path, index))
+            for index, item in enumerate(ids)
+        ]
+
+
+class NamedStyleParser(GDocParser[NamedStyle]):
+    def parse(self, data: JsonValue, *, path: str = "$") -> NamedStyle:
+        value = object_value(data, path)
+        return NamedStyle(
+            named_style_type=literal_value(
+                required_field(value, "namedStyleType", path),
+                (
+                    "NAMED_STYLE_TYPE_UNSPECIFIED",
+                    "NORMAL_TEXT",
+                    "TITLE",
+                    "SUBTITLE",
+                    "HEADING_1",
+                    "HEADING_2",
+                    "HEADING_3",
+                    "HEADING_4",
+                    "HEADING_5",
+                    "HEADING_6",
+                ),
+                field_path(path, "namedStyleType"),
+            ),
+            text_style=_optional_text_style(value, path),
+            paragraph_style=(
+                ParagraphStyle.gdoc_parser.parse(
+                    value["paragraphStyle"],
+                    path=field_path(path, "paragraphStyle"),
+                )
+                if "paragraphStyle" in value
+                else UNSET
+            ),
+        )
+
+
+def _optional_text_style(value: JsonObject, path: str) -> TextStyle | UnsetType:
+    if "textStyle" not in value:
+        return UNSET
+    return TextStyle.gdoc_parser.parse(
+        value["textStyle"], path=field_path(path, "textStyle")
+    )
+
+
+def _optional_nested_string(
+    value: JsonObject | UnsetType, key: str, path: str
+) -> str | UnsetType:
+    if isinstance(value, UnsetType):
+        return UNSET
+    return optional_string_field(value, key, path)
+
+
 def _parse_dimension(value: JsonValue, path: str) -> Dimension:
     return Dimension.gdoc_parser.parse(value, path=path)
 
@@ -348,3 +670,16 @@ Bullet.gdoc_parser = BulletParser()
 ParagraphBorder.gdoc_parser = ParagraphBorderParser()
 TabStop.gdoc_parser = TabStopParser()
 ParagraphStyle.gdoc_parser = ParagraphStyleParser()
+TextRun.gdoc_parser = TextRunParser()
+AutoText.gdoc_parser = AutoTextParser()
+ColumnBreak.gdoc_parser = ColumnBreakParser()
+DateElement.gdoc_parser = DateElementParser()
+Equation.gdoc_parser = EquationParser()
+FootnoteReference.gdoc_parser = FootnoteReferenceParser()
+HorizontalRule.gdoc_parser = HorizontalRuleParser()
+InlineObjectReference.gdoc_parser = InlineObjectReferenceParser()
+PageBreak.gdoc_parser = PageBreakParser()
+PersonReference.gdoc_parser = PersonReferenceParser()
+RichLink.gdoc_parser = RichLinkParser()
+Paragraph.gdoc_parser = ParagraphParser()
+NamedStyle.gdoc_parser = NamedStyleParser()
