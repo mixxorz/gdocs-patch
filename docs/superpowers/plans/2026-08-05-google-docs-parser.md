@@ -1,5 +1,7 @@
 # Google Docs Parser Implementation Plan
 
+> **Historical plan:** This records the original execution approach. Its defensive validation, path tracking, and `GDocParseError` requirements were superseded during code review by the current parser design specification.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Parse modern, already-decoded Google Docs API v1 `documents.get(includeTabsContent=true)` responses into the hand-written native model tree through `ModelClass.gdoc_parser.parse(...)`.

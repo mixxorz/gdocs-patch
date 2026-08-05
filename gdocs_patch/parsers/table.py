@@ -89,20 +89,18 @@ class TableCellParser(GDocParser[TableCell]):
 
 class TableRowParser(GDocParser[TableRow]):
     def parse(self, data: Any) -> TableRow:
-        style = data.get("tableRowStyle")
+        style = data.get("tableRowStyle", {})
         return TableRow(
             cells=[
                 TableCell.gdoc_parser.parse(cell) for cell in data.get("tableCells", [])
             ],
             min_height=(
                 Dimension.gdoc_parser.parse(style["minRowHeight"])
-                if style is not None and "minRowHeight" in style
+                if "minRowHeight" in style
                 else UNSET
             ),
-            prevent_overflow=(
-                style.get("preventOverflow", UNSET) if style is not None else UNSET
-            ),
-            is_header=(style.get("tableHeader", UNSET) if style is not None else UNSET),
+            prevent_overflow=style.get("preventOverflow", UNSET),
+            is_header=style.get("tableHeader", UNSET),
         )
 
 
