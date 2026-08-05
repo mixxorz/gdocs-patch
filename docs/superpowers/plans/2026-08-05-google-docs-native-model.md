@@ -13,7 +13,7 @@
 - Use ordinary, hand-written mutable classes; do not use dataclasses, generated classes, Pydantic, attrs, or runtime class construction.
 - Use explicit, fully typed, keyword-only constructors and idiomatic `snake_case` attributes.
 - Use inline field-specific `Literal[...]` annotations; do not introduce global enums or literal aliases.
-- Store supplied lists and dictionaries directly; do not copy them.
+- Collection identity is not a public contract. Avoid defensive copies unless the model architecture requires rebuilding a collection.
 - Require intrinsic collections; do not use mutable defaults or normalize collections through `None`.
 - Use `UNSET` only where absence is meaningful; use approved proto defaults elsewhere.
 - Use built-in `ValueError` for semantic invariant failures; do not duplicate Pyright with exhaustive runtime type checks.
@@ -460,12 +460,12 @@ def test_bullet_defaults_to_top_level_nesting() -> None:
     assert bullet.nesting_level == 0
 
 
-def test_paragraph_retains_the_supplied_elements_collection() -> None:
+def test_paragraph_accepts_supplied_elements() -> None:
     elements = []
 
     paragraph = Paragraph(elements=elements)
 
-    assert paragraph.elements is elements
+    assert paragraph.elements == elements
 ```
 
 - [ ] **Step 2: Run the tests and verify the missing module failure**

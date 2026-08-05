@@ -16,7 +16,6 @@ class Body(TreeNode):
         super().__init__()
         for child in content:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", content)
 
     @property
     def content(self) -> list[StructuralElement]:
@@ -32,7 +31,6 @@ class TableOfContents(StructuralElement):
         super().__init__()
         for child in content:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", content)
 
     @property
     def content(self) -> list[StructuralElement]:
@@ -112,7 +110,6 @@ class Segment(TreeNode):
         self.segment_id = segment_id
         for child in content:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", content)
 
     @property
     def content(self) -> list[StructuralElement]:

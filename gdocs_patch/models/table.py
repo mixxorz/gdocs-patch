@@ -1,6 +1,6 @@
 from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, IndexedNode, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, UnsetType
 from .document import StructuralElement
 
 
@@ -74,7 +74,6 @@ class TableCell(IndexedNode):
         super().__init__()
         for child in content:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", content)
         self.style = style
 
     @property
@@ -102,7 +101,6 @@ class TableRow(IndexedNode):
         super().__init__()
         for child in cells:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", cells)
         self.min_height = min_height
         self.prevent_overflow = prevent_overflow
         self.is_header = is_header
@@ -149,7 +147,6 @@ class Table(StructuralElement):
         super().__init__()
         for child in rows:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", rows)
         self.column_styles = column_styles
 
     @property

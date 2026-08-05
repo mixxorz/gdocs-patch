@@ -1,6 +1,6 @@
 from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, IndexedNode, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, UnsetType
 from .document import StructuralElement
 
 
@@ -388,7 +388,6 @@ class Paragraph(StructuralElement):
         super().__init__()
         for child in elements:
             self.add_child(child)
-        self.children = cast("list[TreeNode]", elements)
         self.style = style
         self.bullet = bullet
         self.positioned_object_ids = positioned_object_ids

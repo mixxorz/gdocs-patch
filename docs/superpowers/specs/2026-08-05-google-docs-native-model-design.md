@@ -35,14 +35,14 @@ All Python model attributes use idiomatic `snake_case`. JSON boundary code maps 
 
 ## Tree ownership and dynamic indices
 
-Indexed content uses the simple `TreeNode` API: each node has `parent`, ordered `children`, sibling lookup, and `add_child()`. Constructors retain each supplied semantic child list as the public `children` list and establish parent links for the children initially present. Semantic properties such as `Body.content`, `Paragraph.elements`, `Table.rows`, `TableRow.cells`, and `TableCell.content` directly alias that same list. Direct list mutation is reflected by the semantic property but does not establish parent links; callers must use `add_child()` when parent correctness is required.
+Indexed content uses the simple `TreeNode` API: each node has `parent`, ordered `children`, sibling lookup, and `add_child()`. Constructors establish parent links by adding their initially supplied children. Semantic properties such as `Body.content`, `Paragraph.elements`, `Table.rows`, `TableRow.cells`, and `TableCell.content` expose the resulting `children` list. Callers use `add_child()` for later additions that require a parent link.
 
 `Body` and every header, footer, or footnote `Segment` are independent index roots whose first child starts at zero. For any indexed node, `start_index` is its parent's `children_start_index` when it has no previous sibling, otherwise the previous sibling's `end_index`; `end_index = start_index + utf16_width`. A paragraph's children start at its own start and its width is the sum of paragraph-element widths. A text run's width is the number of UTF-16 code units in its content; every other supported paragraph element has width one. A section break has width one. Tables, rows, cells, and tables of contents reserve wrapper units: table width is `2 + sum(row widths)`, while row, cell, and table-of-contents width is `1 + sum(child widths)`; their children start at `start_index + 1`.
 
 No custom ownership collections, mutation interception, metadata, paths, or index caches are used.
 - Every concrete class has an explicit, fully typed, keyword-only constructor. Required fields have no default; optional fields default to `UNSET` or their approved semantic default. Constructors and classes are hand-written rather than generated.
 - All model classes inherit a small `Model` base that supplies structural equality and readable representation. Mutable model objects are unhashable. Parsing, serialization, validation, and traversal do not belong to this base.
-- Constructors store supplied list and dictionary objects directly rather than copying them. Container aliasing is intentional for implementation simplicity.
+- Collection identity is not part of the public contract. Constructors may retain or rebuild supplied collections according to the simplest implementation for the model's behavior; they do not make defensive copies without a concrete reason.
 - Intrinsic collections such as paragraph elements, table rows, row cells, and list levels are required constructor arguments. Collections whose complete provider field may be absent default to `UNSET`. Constructors do not use mutable collection defaults or normalize through `None`.
 - Constructor requiredness follows semantic meaning: identity, concrete variant payloads, and intrinsic child collections are required; meaningful proto defaults use approved Python defaults; optional presentation metadata uses `UNSET`. Concrete link targets are required except bookmark/heading `tab_id`, which may be `UNSET` for legacy links.
 - Constructors enforce semantic invariants that annotations cannot express, including color bounds, list glyph exclusivity, positive table spans, and fixed-width column consistency. They do not duplicate Pyright with exhaustive runtime `isinstance` checks. Invariant failures raise built-in `ValueError` with field-specific messages; no custom model exception hierarchy is introduced.
@@ -801,6 +801,6 @@ Tests cover distinct runtime behaviors rather than restating class definitions:
 - `ListLevel` glyph exclusivity
 - `TableCellStyle` span defaults and positive-span validation
 - `TableColumn` width consistency
-- representative direct ownership of a supplied mutable collection
+- simple tree parent, sibling, UTF-16 width, and dynamic-index behavior
 
 The suite does not test every constructor assignment, every optional field, static annotations at runtime, hierarchy declarations, or out-of-scope JSON behavior. Pyright checks static definitions and types. Verification runs Pytest, Ruff linting and formatting checks, and Pyright.

@@ -202,8 +202,8 @@ The parser layer does not validate runtime JSON types, literal membership, requi
 - An absent optional model field becomes `UNSET`.
 - A present empty style object creates the corresponding empty style model; it is not treated as absent.
 - An omitted intrinsic repeated child collection becomes an empty list.
-- Supplied collection objects are newly assembled parsed collections; model constructors retain each exact list object as the public semantic collection and establish parent links for its initially supplied children.
-- Direct mutation of a retained semantic list is reflected by the model but does not establish parent links; callers use `add_child()` when parent correctness is required.
+- Parsers assemble child collections and pass them to model constructors, which establish parent links through the simple tree API. Collection identity is not part of the parser or model contract.
+- Callers use `add_child()` for later additions that require a parent link.
 - Dictionary insertion order and list order are preserved.
 - Dictionary keys supplied by Google are never inferred from IDs inside values.
 
