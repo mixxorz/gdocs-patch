@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Literal
 
 from .base import UNSET, Dimension, Model, UnsetType

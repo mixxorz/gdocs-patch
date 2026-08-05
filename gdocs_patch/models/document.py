@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
@@ -92,8 +90,8 @@ class DocumentTab(Model):
         footers: dict[str, Segment] | UnsetType = UNSET,
         footnotes: dict[str, Segment] | UnsetType = UNSET,
         document_style: DocumentStyle | UnsetType = UNSET,
-        named_styles: list[NamedStyle] | UnsetType = UNSET,
-        lists: dict[str, ListDefinition] | UnsetType = UNSET,
+        named_styles: "list[NamedStyle] | UnsetType" = UNSET,
+        lists: "dict[str, ListDefinition] | UnsetType" = UNSET,
     ) -> None:
         self.body = body
         self.headers = headers
@@ -111,7 +109,7 @@ class Tab(Model):
         tab_id: str,
         title: str,
         index: int,
-        children: list[Tab],
+        children: "list[Tab]",
         nesting_level: int = 0,
         parent_tab_id: str | UnsetType = UNSET,
         icon_emoji: str | UnsetType = UNSET,

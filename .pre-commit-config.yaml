@@ -16,6 +16,11 @@ repos:
         entry: uv run pyright
         language: system
         pass_filenames: false
+      - id: fixit-fix
+        name: Fixit - lint and apply autofixes
+        entry: uv run fixit fix --automatic
+        language: system
+        types: [python]
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

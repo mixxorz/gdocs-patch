@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import ClassVar, Literal
 
 
@@ -19,9 +17,9 @@ class Model:
 class UnsetType:
     """Sentinel type for provider fields that were not supplied."""
 
-    _instance: ClassVar[UnsetType | None] = None
+    _instance: ClassVar["UnsetType | None"] = None
 
-    def __new__(cls) -> UnsetType:
+    def __new__(cls) -> "UnsetType":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance

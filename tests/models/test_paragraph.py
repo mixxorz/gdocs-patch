@@ -1,4 +1,4 @@
-from gdocs_patch.models.paragraph import Bullet, Paragraph
+from gdocs_patch.models.paragraph import Bullet, Paragraph, TextRun
 
 
 def test_bullet_defaults_to_top_level_nesting() -> None:
@@ -7,9 +7,10 @@ def test_bullet_defaults_to_top_level_nesting() -> None:
     assert bullet.nesting_level == 0
 
 
-def test_paragraph_retains_the_supplied_elements_collection() -> None:
+def test_paragraph_reflects_mutations_to_supplied_elements_list() -> None:
     elements = []
-
     paragraph = Paragraph(elements=elements)
 
-    assert paragraph.elements is elements
+    elements.append(TextRun(content="Added later"))
+
+    assert paragraph.elements == [TextRun(content="Added later")]
