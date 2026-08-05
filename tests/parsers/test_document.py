@@ -205,3 +205,90 @@ def test_parses_maximal_document_response() -> None:
     decoded = json.loads(fixture_path.read_text())
 
     assert document_parser.parse(decoded) == expected_maximal_document()
+
+
+def test_maximal_document_indices_match_fixture() -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "maximal_document.json"
+    decoded = json.loads(fixture_path.read_text())
+    document = document_parser.parse(decoded)
+    raw_tab = decoded["tabs"][0]["documentTab"]
+    tab = document.tabs[0].content
+
+    def compare_node(raw: dict[str, object], node: object) -> tuple[int, int]:
+        assert node.start_index == raw["startIndex"]
+        assert node.end_index == raw["endIndex"]
+        assert node.utf16_width == raw["endIndex"] - raw["startIndex"]
+        return 1, 2
+
+    def compare_content(
+        raw_content: list[dict[str, object]], content: list[object]
+    ) -> tuple[int, int]:
+        compared_nodes = 0
+        compared_index_values = 0
+        assert len(content) == len(raw_content)
+        for raw, node in zip(raw_content, content, strict=True):
+            nodes, values = compare_node(raw, node)
+            compared_nodes += nodes
+            compared_index_values += values
+
+            if "paragraph" in raw:
+                raw_elements = raw["paragraph"].get("elements", [])
+                assert isinstance(node, Paragraph)
+                for raw_element, element in zip(
+                    raw_elements, node.elements, strict=True
+                ):
+                    nodes, values = compare_node(raw_element, element)
+                    compared_nodes += nodes
+                    compared_index_values += values
+            elif "table" in raw:
+                assert isinstance(node, Table)
+                raw_rows = raw["table"].get("tableRows", [])
+                for raw_row, row in zip(raw_rows, node.rows, strict=True):
+                    nodes, values = compare_node(raw_row, row)
+                    compared_nodes += nodes
+                    compared_index_values += values
+                    raw_cells = raw_row.get("tableCells", [])
+                    for raw_cell, cell in zip(raw_cells, row.cells, strict=True):
+                        nodes, values = compare_node(raw_cell, cell)
+                        compared_nodes += nodes
+                        compared_index_values += values
+                        nodes, values = compare_content(
+                            raw_cell.get("content", []), cell.content
+                        )
+                        compared_nodes += nodes
+                        compared_index_values += values
+            elif "tableOfContents" in raw:
+                assert isinstance(node, TableOfContents)
+                nodes, values = compare_content(
+                    raw["tableOfContents"].get("content", []), node.content
+                )
+                compared_nodes += nodes
+                compared_index_values += values
+
+        return compared_nodes, compared_index_values
+
+    compared_nodes, compared_index_values = compare_content(
+        raw_tab["body"]["content"], tab.body.content
+    )
+    for collection_name in ("headers", "footers", "footnotes"):
+        raw_segments = raw_tab.get(collection_name, {})
+        segments = getattr(tab, collection_name)
+        for key, raw_segment in raw_segments.items():
+            nodes, values = compare_content(
+                raw_segment.get("content", []), segments[key].content
+            )
+            compared_nodes += nodes
+            compared_index_values += values
+
+    assert compared_nodes == 31
+    assert compared_index_values == 62
+
+    body = tab.body
+    paragraph = body.content[0]
+    table = body.content[2]
+    assert body.parent is None
+    assert body.content[0].parent is body
+    assert paragraph.elements[0].parent is paragraph
+    assert table.rows[0].parent is table
+    assert table.rows[0].cells[0].parent is table.rows[0]
+    assert table.rows[0].cells[0].content[0].parent is table.rows[0].cells[0]

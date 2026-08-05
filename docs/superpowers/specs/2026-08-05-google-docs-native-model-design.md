@@ -2,9 +2,9 @@
 
 ## Goal
 
-Build mutable Python data-model classes for the supported parts of a Google Docs API v1 `Document` response. The shapes must support future document loading, editing, traversal, dynamic index calculation, and mutation generation, but this phase implements only the model classes.
+Build mutable Python data-model classes for the supported parts of a Google Docs API v1 `Document` response. The models support document loading, simple tree traversal, and dynamic index calculation; serialization and mutation generation remain future work.
 
-Parsing, serialization, traversal, index calculation, and `batchUpdate` request/response types are out of scope. Suggestion data, named ranges, object resource maps, and absolute structural-element indices are intentionally absent from the model design.
+Suggestion data, named ranges, object resource maps, and stored provider indices are intentionally absent from the model design. Parsers discard provider `startIndex` and `endIndex` values, and indexed model properties calculate them independently from the tree.
 
 ## Schema reference
 
@@ -32,6 +32,14 @@ The discovery schema currently contains 170 schemas. There are 111 schemas trans
 - Moving or editing content therefore requires no index-rewrite pass over the model.
 
 All Python model attributes use idiomatic `snake_case`. JSON boundary code maps them to and from Google's `camelCase` keys.
+
+## Tree ownership and dynamic indices
+
+Indexed content uses the simple `TreeNode` API: each node has `parent`, ordered `children`, sibling lookup, and `add_child()`. Constructors establish parent links by adding each supplied semantic child through `add_child()`; semantic properties such as `Body.content`, `Paragraph.elements`, `Table.rows`, `TableRow.cells`, and `TableCell.content` directly alias `children`. Direct mutation of these ordinary lists is not intercepted, so callers that need ownership established must use constructors or `add_child()`.
+
+`Body` and every header, footer, or footnote `Segment` are independent index roots whose first child starts at zero. For any indexed node, `start_index` is its parent's `children_start_index` when it has no previous sibling, otherwise the previous sibling's `end_index`; `end_index = start_index + utf16_width`. A paragraph's children start at its own start and its width is the sum of paragraph-element widths. A text run's width is the number of UTF-16 code units in its content; every other supported paragraph element has width one. A section break has width one. Tables, rows, cells, and tables of contents reserve wrapper units: table width is `2 + sum(row widths)`, while row, cell, and table-of-contents width is `1 + sum(child widths)`; their children start at `start_index + 1`.
+
+No custom ownership collections, mutation interception, metadata, paths, or index caches are used.
 - Every concrete class has an explicit, fully typed, keyword-only constructor. Required fields have no default; optional fields default to `UNSET` or their approved semantic default. Constructors and classes are hand-written rather than generated.
 - All model classes inherit a small `Model` base that supplies structural equality and readable representation. Mutable model objects are unhashable. Parsing, serialization, validation, and traversal do not belong to this base.
 - Constructors store supplied list and dictionary objects directly rather than copying them. Container aliasing is intentional for implementation simplicity.
@@ -102,7 +110,7 @@ Container for the content and referenced resources belonging to a modern tab.
 
 ```text
 DocumentTab
-├── body: list[StructuralElement] | UNSET
+├── body: Body | UNSET
 ├── headers: dict[str, Segment] | UNSET
 ├── footers: dict[str, Segment] | UNSET
 ├── footnotes: dict[str, Segment] | UNSET
@@ -111,7 +119,7 @@ DocumentTab
 └── lists: dict[str, ListDefinition] | UNSET
 ```
 
-There is no separate `Body` class. `DocumentTab.body` absorbs Google's one-field `Body` wrapper:
+`Body` is an explicit `TreeNode` index root whose `content` property aliases its children. It represents Google's one-field wrapper:
 
 ```json
 {
@@ -169,9 +177,9 @@ Table(StructuralElement)
 TableOfContents(StructuralElement)
 ```
 
-`StructuralElement` defines the shared structural protocol but stores no `start_index` or `end_index` fields. Each concrete element will eventually calculate its extent from its content. A document traversal will calculate its absolute position from the extents of preceding elements and containing structures.
+`StructuralElement` defines the shared indexed tree protocol but stores no provider `startIndex` or `endIndex` fields. Each concrete element dynamically calculates its width and its absolute half-open range from its content, parent, and preceding siblings.
 
-Each concrete class serializes its fields inside the corresponding Google variant key (`paragraph`, `sectionBreak`, `table`, or `tableOfContents`). Google indices are calculated at the JSON boundary rather than stored on descendants.
+Each concrete class will serialize its fields inside the corresponding Google variant key (`paragraph`, `sectionBreak`, `table`, or `tableOfContents`). Google indices are dynamically calculated rather than stored on descendants.
 
 ### `Paragraph`
 
@@ -185,7 +193,7 @@ Paragraph(StructuralElement)
 └── positioned_object_ids: list[str] | UNSET
 ```
 
-`Paragraph` has no position fields. Its future extent is calculated from its paragraph elements. Google suggestion and index fields on a paragraph are ignored during parsing.
+`Paragraph` stores no position fields. Its extent is the sum of its paragraph-element UTF-16 widths, and its elements directly alias its tree children. Google suggestion and index fields on a paragraph are ignored during parsing.
 
 `Bullet` retains Google's API name. It records a paragraph's membership in a list; it does not directly represent the rendered glyph. Its `list_id` refers to `DocumentTab.lists`, and the selected list nesting level defines glyph and indentation behavior.
 
@@ -218,7 +226,7 @@ PersonReference(ParagraphElement)
 RichLink(ParagraphElement)
 ```
 
-Paragraph elements do not store Google index fields. Their future extents and positions are derived from paragraph content and element semantics.
+Paragraph elements do not store Google index fields. Their extents and positions are derived dynamically from paragraph content and element semantics.
 
 The names `InlineObjectReference` and `PersonReference` replace Google's `InlineObjectElement` and `Person` schema names to describe their roles more precisely. Each concrete class recreates the corresponding Google variant key when serialized.
 
@@ -230,7 +238,7 @@ TextRun(ParagraphElement)
 └── text_style: TextStyle | UNSET
 ```
 
-Suggestion and index fields are discarded. Index-unit and boundary calculations belong to the later indexing design.
+Suggestion and provider index fields are discarded. `utf16_width` counts the content's UTF-16 code units.
 
 ### `TextStyle`
 
@@ -508,7 +516,7 @@ SectionBreak(StructuralElement)
 └── style: SectionStyle
 ```
 
-A section break requires its section style. It stores no indices; its future extent and absolute position are derived structurally. Suggestion fields are discarded.
+A section break requires its section style. It stores no indices; its width is one and its absolute position is derived structurally. Suggestion fields are discarded.
 
 ### `SectionStyle`
 
@@ -563,7 +571,7 @@ Table(StructuralElement)
 └── column_styles: list[TableColumn] | UNSET
 ```
 
-Google's numeric `rows` and `columns` fields are treated as derived data and ignored during parsing. `row_count` is `len(rows)`; `column_count` is calculated from cell structure and column spans. Both counts are regenerated during serialization. `Table` stores no absolute start or end indices.
+Google's numeric `rows` and `columns` fields are treated as derived data and ignored during parsing. `row_count` is `len(rows)`; `column_count` is calculated from cell structure and column spans. Both counts are regenerated during serialization. `Table` stores no absolute start or end indices; its rows directly alias its tree children.
 
 There is no `TableStyle` class. Its only API field, `tableColumnProperties`, is absorbed into `Table.column_styles` and reconstructed at the JSON boundary. Column style entries describe presentation and are not trusted as the source of table geometry.
 
@@ -579,7 +587,7 @@ TableRow
 └── is_header: bool | UNSET
 ```
 
-The final three attributes serialize inside `tableRowStyle`; there is no separate `TableRowStyle` class. Suggestion and index fields are discarded.
+The final three attributes serialize inside `tableRowStyle`; there is no separate `TableRowStyle` class. Cells directly alias tree children. Suggestion and provider index fields are discarded.
 
 ### `TableCell`
 
@@ -589,7 +597,7 @@ TableCell
 └── style: TableCellStyle | UNSET
 ```
 
-Cell content recursively uses the same structural-element hierarchy as the body. Suggestion and index fields are discarded.
+Cell content recursively uses the same structural-element hierarchy as the body and directly aliases tree children. Suggestion and provider index fields are discarded.
 
 ### `TableCellStyle`
 
