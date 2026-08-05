@@ -1,7 +1,10 @@
-from typing import Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
 from .document import StructuralElement
+
+if TYPE_CHECKING:
+    from gdocs_patch.parsers.base import GDocParser
 
 
 class Link(Model):
@@ -9,16 +12,22 @@ class Link(Model):
 
 
 class UrlLink(Link):
+    gdoc_parser: ClassVar["GDocParser[UrlLink]"]
+
     def __init__(self, *, url: str) -> None:
         self.url = url
 
 
 class TabLink(Link):
+    gdoc_parser: ClassVar["GDocParser[TabLink]"]
+
     def __init__(self, *, tab_id: str) -> None:
         self.tab_id = tab_id
 
 
 class BookmarkLink(Link):
+    gdoc_parser: ClassVar["GDocParser[BookmarkLink]"]
+
     def __init__(
         self,
         *,
@@ -30,6 +39,8 @@ class BookmarkLink(Link):
 
 
 class HeadingLink(Link):
+    gdoc_parser: ClassVar["GDocParser[HeadingLink]"]
+
     def __init__(
         self,
         *,
@@ -41,6 +52,8 @@ class HeadingLink(Link):
 
 
 class TextStyle(Model):
+    gdoc_parser: ClassVar["GDocParser[TextStyle]"]
+
     def __init__(
         self,
         *,
@@ -78,6 +91,8 @@ class TextStyle(Model):
 
 
 class Bullet(Model):
+    gdoc_parser: ClassVar["GDocParser[Bullet]"]
+
     def __init__(
         self,
         *,
@@ -91,6 +106,8 @@ class Bullet(Model):
 
 
 class ParagraphBorder(Model):
+    gdoc_parser: ClassVar["GDocParser[ParagraphBorder]"]
+
     def __init__(
         self,
         *,
@@ -111,6 +128,8 @@ class ParagraphBorder(Model):
 
 
 class TabStop(Model):
+    gdoc_parser: ClassVar["GDocParser[TabStop]"]
+
     def __init__(
         self,
         *,
@@ -127,6 +146,8 @@ class TabStop(Model):
 
 
 class ParagraphStyle(Model):
+    gdoc_parser: ClassVar["GDocParser[ParagraphStyle]"]
+
     def __init__(
         self,
         *,
@@ -207,31 +228,25 @@ class ParagraphStyle(Model):
 
 
 class ParagraphElement(Model):
-    def __init__(
-        self,
-        *,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
-    ) -> None:
-        self.start_offset = start_offset
-        self.end_offset = end_offset
+    pass
 
 
 class TextRun(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[TextRun]"]
+
     def __init__(
         self,
         *,
         content: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.content = content
         self.text_style = text_style
 
 
 class AutoText(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[AutoText]"]
+
     def __init__(
         self,
         *,
@@ -240,34 +255,30 @@ class AutoText(ParagraphElement):
             "PAGE_NUMBER",
             "PAGE_COUNT",
         ],
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.auto_text_type = auto_text_type
         self.text_style = text_style
 
 
 class ColumnBreak(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[ColumnBreak]"]
+
     def __init__(
         self,
         *,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.text_style = text_style
 
 
 class DateElement(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[DateElement]"]
+
     def __init__(
         self,
         *,
         date_id: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         date_format: Literal[
             "DATE_FORMAT_UNSPECIFIED",
             "DATE_FORMAT_CUSTOM",
@@ -290,7 +301,6 @@ class DateElement(ParagraphElement):
         timestamp: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.date_id = date_id
         self.date_format = date_format
         self.display_text = display_text
@@ -302,81 +312,70 @@ class DateElement(ParagraphElement):
 
 
 class Equation(ParagraphElement):
-    def __init__(
-        self,
-        *,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
-    ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
+    gdoc_parser: ClassVar["GDocParser[Equation]"]
 
 
 class FootnoteReference(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[FootnoteReference]"]
+
     def __init__(
         self,
         *,
         footnote_id: str,
         footnote_number: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.footnote_id = footnote_id
         self.footnote_number = footnote_number
         self.text_style = text_style
 
 
 class HorizontalRule(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[HorizontalRule]"]
+
     def __init__(
         self,
         *,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.text_style = text_style
 
 
 class InlineObjectReference(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[InlineObjectReference]"]
+
     def __init__(
         self,
         *,
         inline_object_id: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.inline_object_id = inline_object_id
         self.text_style = text_style
 
 
 class PageBreak(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[PageBreak]"]
+
     def __init__(
         self,
         *,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.text_style = text_style
 
 
 class PersonReference(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[PersonReference]"]
+
     def __init__(
         self,
         *,
         person_id: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         email: str | UnsetType = UNSET,
         name: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.person_id = person_id
         self.email = email
         self.name = name
@@ -384,18 +383,17 @@ class PersonReference(ParagraphElement):
 
 
 class RichLink(ParagraphElement):
+    gdoc_parser: ClassVar["GDocParser[RichLink]"]
+
     def __init__(
         self,
         *,
         rich_link_id: str,
         uri: str,
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         title: str | UnsetType = UNSET,
         mime_type: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
-        super().__init__(start_offset=start_offset, end_offset=end_offset)
         self.rich_link_id = rich_link_id
         self.uri = uri
         self.title = title
@@ -404,6 +402,8 @@ class RichLink(ParagraphElement):
 
 
 class Paragraph(StructuralElement):
+    gdoc_parser: ClassVar["GDocParser[Paragraph]"]
+
     def __init__(
         self,
         *,
@@ -419,6 +419,8 @@ class Paragraph(StructuralElement):
 
 
 class NamedStyle(Model):
+    gdoc_parser: ClassVar["GDocParser[NamedStyle]"]
+
     def __init__(
         self,
         *,

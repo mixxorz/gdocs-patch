@@ -1,10 +1,15 @@
-from typing import Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
 from .document import StructuralElement
 
+if TYPE_CHECKING:
+    from gdocs_patch.parsers.base import GDocParser
+
 
 class TableCellBorder(Model):
+    gdoc_parser: ClassVar["GDocParser[TableCellBorder]"]
+
     def __init__(
         self,
         *,
@@ -23,6 +28,8 @@ class TableCellBorder(Model):
 
 
 class TableCellStyle(Model):
+    gdoc_parser: ClassVar["GDocParser[TableCellStyle]"]
+
     def __init__(
         self,
         *,
@@ -65,33 +72,29 @@ class TableCellStyle(Model):
 
 
 class TableCell(Model):
+    gdoc_parser: ClassVar["GDocParser[TableCell]"]
+
     def __init__(
         self,
         *,
         content: list[StructuralElement],
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         style: TableCellStyle | UnsetType = UNSET,
     ) -> None:
-        self.start_offset = start_offset
-        self.end_offset = end_offset
         self.content = content
         self.style = style
 
 
 class TableRow(Model):
+    gdoc_parser: ClassVar["GDocParser[TableRow]"]
+
     def __init__(
         self,
         *,
         cells: list[TableCell],
-        start_offset: int | UnsetType = UNSET,
-        end_offset: int | UnsetType = UNSET,
         min_height: Dimension | UnsetType = UNSET,
         prevent_overflow: bool | UnsetType = UNSET,
         is_header: bool | UnsetType = UNSET,
     ) -> None:
-        self.start_offset = start_offset
-        self.end_offset = end_offset
         self.cells = cells
         self.min_height = min_height
         self.prevent_overflow = prevent_overflow
@@ -99,6 +102,8 @@ class TableRow(Model):
 
 
 class TableColumn(Model):
+    gdoc_parser: ClassVar["GDocParser[TableColumn]"]
+
     def __init__(
         self,
         *,
@@ -118,6 +123,8 @@ class TableColumn(Model):
 
 
 class Table(StructuralElement):
+    gdoc_parser: ClassVar["GDocParser[Table]"]
+
     def __init__(
         self,
         *,
