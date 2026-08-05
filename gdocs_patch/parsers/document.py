@@ -318,15 +318,10 @@ class TabParser(GDocParser[Tab]):
         properties = object_value(
             required_field(value, "tabProperties", path), properties_path
         )
-        index_data = required_field(properties, "index", properties_path)
-        try:
-            parsed_index = integer_value(
-                index_data, field_path(properties_path, "index")
-            )
-        except GDocParseError as error:
-            if error.message == "expected int":
-                raise GDocParseError(error.path, "expected integer") from error
-            raise
+        parsed_index = integer_value(
+            required_field(properties, "index", properties_path),
+            field_path(properties_path, "index"),
+        )
         children_path = field_path(path, "childTabs")
         children = (
             array_value(value["childTabs"], children_path)

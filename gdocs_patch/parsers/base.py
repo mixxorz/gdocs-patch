@@ -49,7 +49,7 @@ def boolean_value(value: JsonValue, path: str) -> bool:
 
 def integer_value(value: JsonValue, path: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise GDocParseError(path, "expected int")
+        raise GDocParseError(path, "expected integer")
     return value
 
 

@@ -446,6 +446,41 @@
                             }
                           },
                           {
+                            "startIndex": 203,
+                            "endIndex": 299,
+                            "table": {
+                              "rows": 1,
+                              "columns": 1,
+                              "tableRows": [
+                                {
+                                  "startIndex": 203,
+                                  "endIndex": 299,
+                                  "tableCells": [
+                                    {
+                                      "startIndex": 204,
+                                      "endIndex": 299,
+                                      "content": [
+                                        {
+                                          "startIndex": 205,
+                                          "paragraph": {
+                                            "elements": [
+                                              {
+                                                "startIndex": 205,
+                                                "textRun": {
+                                                  "content": "Nested cell"
+                                                }
+                                              }
+                                            ]
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          {
                             "startIndex": 300,
                             "endIndex": 305,
                             "tableOfContents": {

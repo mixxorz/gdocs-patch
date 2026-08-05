@@ -331,8 +331,10 @@ class ParagraphStyleParser(GDocParser[ParagraphStyle]):
             return UNSET
         shading_path = field_path(path, "shading")
         shading = object_value(value["shading"], shading_path)
+        if "backgroundColor" not in shading:
+            return UNSET
         return parse_optional_color(
-            required_field(shading, "backgroundColor", shading_path),
+            shading["backgroundColor"],
             field_path(shading_path, "backgroundColor"),
         )
 

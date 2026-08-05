@@ -1,6 +1,6 @@
 import pytest
 
-from gdocs_patch.models import Color, Dimension
+from gdocs_patch.models import UNSET, Color, Dimension
 from gdocs_patch.models.paragraph import (
     AutoText,
     BookmarkLink,
@@ -389,6 +389,15 @@ def test_text_style_normalizes_deprecated_bookmark_link() -> None:
     assert TextStyle.gdoc_parser.parse({"link": {"bookmarkId": "legacy"}}) == TextStyle(
         link=BookmarkLink(bookmark_id="legacy")
     )
+
+
+def test_paragraph_style_distinguishes_absent_and_transparent_shading_color() -> None:
+    assert ParagraphStyle.gdoc_parser.parse({"shading": {}}) == ParagraphStyle(
+        shading_color=UNSET
+    )
+    assert ParagraphStyle.gdoc_parser.parse(
+        {"shading": {"backgroundColor": {}}}
+    ) == ParagraphStyle(shading_color=None)
 
 
 @pytest.mark.parametrize(

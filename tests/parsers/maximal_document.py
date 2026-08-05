@@ -195,6 +195,25 @@ def expected_maximal_document() -> Document:
                     TableCell(
                         content=[
                             Paragraph(elements=[TextRun(content="Cell")]),
+                            Table(
+                                rows=[
+                                    TableRow(
+                                        cells=[
+                                            TableCell(
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(
+                                                                content="Nested cell"
+                                                            )
+                                                        ]
+                                                    )
+                                                ]
+                                            )
+                                        ]
+                                    )
+                                ]
+                            ),
                             nested_toc,
                         ],
                         style=TableCellStyle(
