@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from gdocs_patch.models import (
     Color,
     Dimension,
@@ -18,7 +16,6 @@ from gdocs_patch.models import (
     Table,
     TableOfContents,
 )
-from gdocs_patch.parsers import GDocParseError
 from tests.parsers.maximal_document import expected_maximal_document
 
 
@@ -192,28 +189,6 @@ def test_parses_document_and_ignores_legacy_fields() -> None:
         suggestions_view_mode="SUGGESTIONS_INLINE",
         tabs=[Tab(tab_id="tab-1", title="Main", index=0, children=[])],
     )
-
-
-def test_reports_nested_document_path() -> None:
-    with pytest.raises(
-        GDocParseError,
-        match=r"^\$\.tabs\[0\]\.tabProperties\.index: expected integer$",
-    ):
-        Document.gdoc_parser.parse(
-            {
-                "documentId": "doc-1",
-                "title": "Example",
-                "tabs": [
-                    {
-                        "tabProperties": {
-                            "tabId": "tab-1",
-                            "title": "Main",
-                            "index": "zero",
-                        }
-                    }
-                ],
-            }
-        )
 
 
 def test_parses_maximal_document_response() -> None:

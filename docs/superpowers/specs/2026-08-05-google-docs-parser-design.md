@@ -17,18 +17,9 @@ Before adding parsers, align the existing models with the final indexing and tab
 
 The native model design specification must be updated in the same change so it no longer describes offsets or legacy tab storage.
 
-## Decoded JSON types
+## Decoded provider boundary
 
-`parsers/base.py` defines the recursive values returned by a normal JSON decoder:
-
-```python
-type JsonValue = (
-    None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
-)
-type JsonObject = dict[str, JsonValue]
-```
-
-`JsonValue` means decoded, JSON-compatible Python data, not JSON text. Parsers do not mutate input values.
+Parser inputs use `Any` deliberately for already-decoded Google Docs API responses. Parsers do not mutate input values.
 
 ## Public parser API
 
@@ -36,10 +27,10 @@ The shared generic interface is:
 
 ```python
 class GDocParser[T]:
-    def parse(self, data: JsonValue, *, path: str = "$") -> T: ...
+    def parse(self, data: Any) -> T: ...
 ```
 
-Every concrete parser implements `parse` directly. `path` defaults to the input root for direct calls; parent parsers extend it when invoking children so failures identify their location in the original response.
+Every concrete parser implements `parse` directly and invokes child parsers without traversal context.
 
 Primary use:
 
@@ -73,7 +64,7 @@ Paragraph.gdoc_parser = ParagraphParser()
 
 `gdocs_patch.parsers` imports every semantic parser module. The root `gdocs_patch` package initializes `parsers`, making parser attributes available regardless of whether a caller imports `gdocs_patch.models` or a specific model module.
 
-`gdocs_patch.parsers` publicly exposes `GDocParser`, `GDocParseError`, `JsonValue`, and `JsonObject`. Concrete parser classes remain importable from their semantic modules, but the model class attribute is the normal API.
+`gdocs_patch.parsers` publicly exposes only `GDocParser`. Concrete parser classes remain importable from their semantic modules, but the model class attribute is the normal API. Parser inputs use `Any` deliberately at the decoded provider boundary.
 
 The design does not use a parser registry, descriptor, decorator, metaclass, generated parser, or annotation-driven construction.
 
@@ -85,7 +76,7 @@ For example, `DocumentTabParser` handles a structural wrapper conceptually as:
 
 ```python
 if "paragraph" in raw_element:
-    element = Paragraph.gdoc_parser.parse(raw_element["paragraph"], path=...)
+    element = Paragraph.gdoc_parser.parse(raw_element["paragraph"])
 ```
 
 `ParagraphParser` similarly selects `textRun`, `autoText`, and the other paragraph element variants. Most selected values are objects; scalar union members are also valid parser payloads. For example, `UrlLinkParser` receives the string under `url`, while `BookmarkLinkParser` receives the object under `bookmark` or the scalar value of deprecated `bookmarkId`.
@@ -139,7 +130,7 @@ The implementation contains 41 parsers for concrete API-backed model classes.
 7. `SegmentParser`
 8. `TableOfContentsParser`
 
-`TabParser` absorbs `tabProperties`. `DocumentTabParser` absorbs `body.content`, `namedStyles.styles`, and resource maps. `SegmentParser` recognizes exactly one appropriate `headerId`, `footerId`, or `footnoteId` in the supplied segment payload. A resource map key and its segment's embedded ID remain independent values.
+`TabParser` absorbs `tabProperties`. `DocumentTabParser` absorbs `body.content`, `namedStyles.styles`, and resource maps. `SegmentParser` selects the appropriate `headerId`, `footerId`, or `footnoteId` directly. A resource map key and its segment's embedded ID remain independent values.
 
 ### Paragraph hierarchy
 
@@ -194,37 +185,11 @@ The implementation contains 41 parsers for concrete API-backed model classes.
 
 There is no parser for `Model`, `UnsetType`, `StructuralElement`, `ParagraphElement`, or `Link`. There are no separate parsers for absorbed Google wrappers such as `Body`, `TabProperties`, `TableStyle`, `TableRowStyle`, `NamedStyles`, `ListProperties`, `DateElementProperties`, `PersonProperties`, or `RichLinkProperties`.
 
-## Validation policy
+## Provider-boundary policy
 
-Parsers are strict about data they consume and permissive about data they do not model:
+Parsers trust decoded Google Docs API responses. They map required fields with direct indexing, optional fields with `get`, and tagged wrappers with direct key selection. Unknown or intentionally unsupported object fields are ignored.
 
-- A required consumed field must be present.
-- A present consumed field must have the expected JSON type.
-- A present literal field must contain one of the model's supported literal values.
-- `bool` is not accepted as an integer even though it subclasses `int` in Python.
-- A JSON integer is accepted for a numeric magnitude and normalized as needed for a model float.
-- JSON `null` is invalid unless a field explicitly assigns it meaning.
-- Unknown or intentionally unsupported object fields are ignored.
-- A tagged wrapper must contain exactly one supported variant. Unknown keys do not count as variants.
-- Parsing stops at the first error.
-
-Reusable type and field-validation helpers belong in `parsers/base.py`. Tagged-union dispatch remains inline in each containing parser so the supported variants are obvious at the point of use.
-
-## Error behavior
-
-All malformed supported input raises `GDocParseError`, rather than leaking `KeyError`, `TypeError`, or model-constructor `ValueError`.
-
-Errors include the complete decoded-input path, for example:
-
-```text
-$.tabs[0].documentTab.body.content[2].paragraph.elements[1].textRun.content: expected str
-```
-
-Object fields use dot paths, sequence members use bracketed indices, and map keys use an unambiguous bracketed representation when necessary. A direct parser call starts at `$` unless the caller supplies another path.
-
-If a model constructor rejects a parsed combination, the parser raises `GDocParseError` at that model object's path and preserves the constructor's `ValueError` as the exception cause.
-
-Errors are not aggregated.
+The parser layer does not validate runtime JSON types, literal membership, required-field presence, or tagged-wrapper cardinality. Malformed input therefore fails naturally with exceptions such as `KeyError`, `TypeError`, or model-constructor `ValueError`. There is no parse-path machinery or custom parser exception.
 
 ## Absence and normalization rules
 
@@ -285,7 +250,7 @@ For a containing optional-color field:
 - field present as `{}` -> `None` (transparent)
 - field containing an opaque color -> `Color`
 
-Omitted RGB channels use zero. Color bounds and other cross-field invariants remain enforced by model constructors and are translated into parse errors at the boundary.
+Omitted RGB channels use zero. Color bounds and other cross-field invariants remain enforced directly by model constructors.
 
 ### Links
 
@@ -297,7 +262,7 @@ A text style's `link` object is a tagged target:
 - `heading` -> `HeadingLink`
 - deprecated `bookmarkId` and `headingId` normalize to the corresponding modern model with `tab_id=UNSET`
 
-Exactly one supported link target may be present.
+Valid Google input contains one supported link target; the parser selects supported keys directly without counting variants.
 
 ## Ignored API data
 
@@ -339,16 +304,6 @@ The fixture is structurally informed by the supplied API sample but contains onl
 ### Focused happy paths
 
 Each of the 41 concrete parsers receives one direct happy-path case, grouped or parameterized by semantic module. Cases remain small. They establish independent parser behavior and supplement the maximal fixture only where a compact input makes normalization clearer, such as an omitted default, present empty style, transparent color, or deprecated link form.
-
-### Representative invalid input
-
-Because Google is the expected producer and should return well-formed data, invalid-input tests remain deliberately small:
-
-1. a malformed nested supported value reports its full path;
-2. a tagged wrapper with zero or multiple supported variants fails;
-3. one model-constructor invariant is exposed as a chained `GDocParseError`.
-
-There is no exhaustive mutation, field-type, literal, or malformed-input matrix.
 
 ### Verification
 

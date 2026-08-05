@@ -1,4 +1,4 @@
-from typing import Literal, cast
+from typing import Any
 
 from gdocs_patch.models.base import UNSET, Dimension, UnsetType
 from gdocs_patch.models.document import (
@@ -15,404 +15,194 @@ from gdocs_patch.models.paragraph import NamedStyle, Paragraph
 from gdocs_patch.models.section import SectionBreak
 from gdocs_patch.models.table import Table
 
-from .base import (
-    GDocParseError,
-    GDocParser,
-    JsonObject,
-    JsonValue,
-    array_value,
-    field_path,
-    index_path,
-    integer_value,
-    literal_value,
-    map_key_path,
-    object_value,
-    optional_boolean_field,
-    optional_integer_field,
-    optional_string_field,
-    parse_optional_color,
-    required_field,
-    string_value,
-)
+from .base import GDocParser, parse_optional_color
 
 
 class DocumentStyleParser(GDocParser[DocumentStyle]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> DocumentStyle:
-        value = object_value(data, path)
-        background = self._optional_object(value, "background", path)
-        background_path = field_path(path, "background")
-        document_format = self._optional_object(value, "documentFormat", path)
-        format_path = field_path(path, "documentFormat")
-        page_size = self._optional_object(value, "pageSize", path)
-        page_size_path = field_path(path, "pageSize")
-        document_mode: (
-            Literal["DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"] | UnsetType
-        ) = (
-            UNSET
-            if isinstance(document_format, UnsetType)
-            or "documentMode" not in document_format
-            else cast(
-                Literal["DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"],
-                literal_value(
-                    document_format["documentMode"],
-                    ("DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"),
-                    field_path(format_path, "documentMode"),
-                ),
-            )
-        )
+    def parse(self, data: Any) -> DocumentStyle:
+        background = data.get("background", UNSET)
+        document_format = data.get("documentFormat", UNSET)
+        page_size = data.get("pageSize", UNSET)
         return DocumentStyle(
             background_color=(
                 UNSET
                 if isinstance(background, UnsetType) or "color" not in background
-                else parse_optional_color(
-                    background["color"], field_path(background_path, "color")
-                )
+                else parse_optional_color(background["color"])
             ),
-            document_mode=document_mode,
-            page_width=self._optional_nested_dimension(
-                page_size, "width", page_size_path
+            document_mode=(
+                UNSET
+                if isinstance(document_format, UnsetType)
+                else document_format.get("documentMode", UNSET)
             ),
-            page_height=self._optional_nested_dimension(
-                page_size, "height", page_size_path
+            page_width=self._optional_nested_dimension(page_size, "width"),
+            page_height=self._optional_nested_dimension(page_size, "height"),
+            margin_top=self._optional_dimension(data, "marginTop"),
+            margin_bottom=self._optional_dimension(data, "marginBottom"),
+            margin_left=self._optional_dimension(data, "marginLeft"),
+            margin_right=self._optional_dimension(data, "marginRight"),
+            margin_header=self._optional_dimension(data, "marginHeader"),
+            margin_footer=self._optional_dimension(data, "marginFooter"),
+            default_header_id=data.get("defaultHeaderId", UNSET),
+            default_footer_id=data.get("defaultFooterId", UNSET),
+            even_page_header_id=data.get("evenPageHeaderId", UNSET),
+            even_page_footer_id=data.get("evenPageFooterId", UNSET),
+            first_page_header_id=data.get("firstPageHeaderId", UNSET),
+            first_page_footer_id=data.get("firstPageFooterId", UNSET),
+            use_even_page_header_footer=data.get("useEvenPageHeaderFooter", UNSET),
+            use_first_page_header_footer=data.get("useFirstPageHeaderFooter", UNSET),
+            use_custom_header_footer_margins=data.get(
+                "useCustomHeaderFooterMargins", UNSET
             ),
-            margin_top=self._optional_dimension(value, "marginTop", path),
-            margin_bottom=self._optional_dimension(value, "marginBottom", path),
-            margin_left=self._optional_dimension(value, "marginLeft", path),
-            margin_right=self._optional_dimension(value, "marginRight", path),
-            margin_header=self._optional_dimension(value, "marginHeader", path),
-            margin_footer=self._optional_dimension(value, "marginFooter", path),
-            default_header_id=optional_string_field(value, "defaultHeaderId", path),
-            default_footer_id=optional_string_field(value, "defaultFooterId", path),
-            even_page_header_id=optional_string_field(value, "evenPageHeaderId", path),
-            even_page_footer_id=optional_string_field(value, "evenPageFooterId", path),
-            first_page_header_id=optional_string_field(
-                value, "firstPageHeaderId", path
-            ),
-            first_page_footer_id=optional_string_field(
-                value, "firstPageFooterId", path
-            ),
-            use_even_page_header_footer=optional_boolean_field(
-                value, "useEvenPageHeaderFooter", path
-            ),
-            use_first_page_header_footer=optional_boolean_field(
-                value, "useFirstPageHeaderFooter", path
-            ),
-            use_custom_header_footer_margins=optional_boolean_field(
-                value, "useCustomHeaderFooterMargins", path
-            ),
-            flip_page_orientation=optional_boolean_field(
-                value, "flipPageOrientation", path
-            ),
-            page_number_start=optional_integer_field(value, "pageNumberStart", path),
+            flip_page_orientation=data.get("flipPageOrientation", UNSET),
+            page_number_start=data.get("pageNumberStart", UNSET),
         )
 
     @staticmethod
-    def _optional_object(
-        value: JsonObject, key: str, path: str
-    ) -> JsonObject | UnsetType:
-        if key not in value:
+    def _optional_dimension(data: Any, key: str) -> Dimension | UnsetType:
+        if key not in data:
             return UNSET
-        return object_value(value[key], field_path(path, key))
-
-    @staticmethod
-    def _optional_dimension(
-        value: JsonObject, key: str, path: str
-    ) -> Dimension | UnsetType:
-        if key not in value:
-            return UNSET
-        return Dimension.gdoc_parser.parse(value[key], path=field_path(path, key))
+        return Dimension.gdoc_parser.parse(data[key])
 
     @staticmethod
     def _optional_nested_dimension(
-        value: JsonObject | UnsetType, key: str, path: str
+        data: Any | UnsetType, key: str
     ) -> Dimension | UnsetType:
-        if isinstance(value, UnsetType) or key not in value:
+        if isinstance(data, UnsetType) or key not in data:
             return UNSET
-        return Dimension.gdoc_parser.parse(value[key], path=field_path(path, key))
+        return Dimension.gdoc_parser.parse(data[key])
 
 
 class SegmentParser(GDocParser[Segment]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> Segment:
-        value = object_value(data, path)
-        id_keys = ("headerId", "footerId", "footnoteId")
-        present_ids = [key for key in id_keys if key in value]
-        if len(present_ids) != 1:
-            raise GDocParseError(path, "expected exactly one supported segment ID")
-        id_key = present_ids[0]
-        content_path = field_path(path, "content")
-        content = (
-            array_value(value["content"], content_path) if "content" in value else []
-        )
+    def parse(self, data: Any) -> Segment:
+        if "headerId" in data:
+            segment_id = data["headerId"]
+        elif "footerId" in data:
+            segment_id = data["footerId"]
+        else:
+            segment_id = data["footnoteId"]
         parsed_content: list[StructuralElement] = []
-        for index, item in enumerate(content):
-            item_path = index_path(content_path, index)
-            wrapper = object_value(item, item_path)
-            keys = ("paragraph", "sectionBreak", "table", "tableOfContents")
-            present = [key for key in keys if key in wrapper]
-            if len(present) != 1:
-                raise GDocParseError(
-                    item_path, "expected exactly one supported structural element"
-                )
-            key = present[0]
-            inner = wrapper[key]
-            inner_path = field_path(item_path, key)
-            if key == "paragraph":
+        for wrapper in data.get("content", []):
+            if "paragraph" in wrapper:
+                parsed_content.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+            elif "sectionBreak" in wrapper:
                 parsed_content.append(
-                    Paragraph.gdoc_parser.parse(inner, path=inner_path)
+                    SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"])
                 )
-            elif key == "sectionBreak":
-                parsed_content.append(
-                    SectionBreak.gdoc_parser.parse(inner, path=inner_path)
-                )
-            elif key == "table":
-                parsed_content.append(Table.gdoc_parser.parse(inner, path=inner_path))
+            elif "table" in wrapper:
+                parsed_content.append(Table.gdoc_parser.parse(wrapper["table"]))
             else:
                 parsed_content.append(
-                    TableOfContents.gdoc_parser.parse(inner, path=inner_path)
+                    TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
                 )
-        return Segment(
-            segment_id=string_value(value[id_key], field_path(path, id_key)),
-            content=parsed_content,
-        )
+        return Segment(segment_id=segment_id, content=parsed_content)
 
 
 class TableOfContentsParser(GDocParser[TableOfContents]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> TableOfContents:
-        value = object_value(data, path)
-        content_path = field_path(path, "content")
-        content = (
-            array_value(value["content"], content_path) if "content" in value else []
-        )
+    def parse(self, data: Any) -> TableOfContents:
         parsed_content: list[StructuralElement] = []
-        for index, item in enumerate(content):
-            item_path = index_path(content_path, index)
-            wrapper = object_value(item, item_path)
-            keys = ("paragraph", "sectionBreak", "table", "tableOfContents")
-            present = [key for key in keys if key in wrapper]
-            if len(present) != 1:
-                raise GDocParseError(
-                    item_path, "expected exactly one supported structural element"
-                )
-            key = present[0]
-            inner = wrapper[key]
-            inner_path = field_path(item_path, key)
-            if key == "paragraph":
+        for wrapper in data.get("content", []):
+            if "paragraph" in wrapper:
+                parsed_content.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+            elif "sectionBreak" in wrapper:
                 parsed_content.append(
-                    Paragraph.gdoc_parser.parse(inner, path=inner_path)
+                    SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"])
                 )
-            elif key == "sectionBreak":
-                parsed_content.append(
-                    SectionBreak.gdoc_parser.parse(inner, path=inner_path)
-                )
-            elif key == "table":
-                parsed_content.append(Table.gdoc_parser.parse(inner, path=inner_path))
+            elif "table" in wrapper:
+                parsed_content.append(Table.gdoc_parser.parse(wrapper["table"]))
             else:
                 parsed_content.append(
-                    TableOfContents.gdoc_parser.parse(inner, path=inner_path)
+                    TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
                 )
         return TableOfContents(content=parsed_content)
 
 
 class DocumentTabParser(GDocParser[DocumentTab]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> DocumentTab:
-        value = object_value(data, path)
+    def parse(self, data: Any) -> DocumentTab:
         body: list[StructuralElement] | UnsetType = UNSET
-        if "body" in value:
-            body_path = field_path(path, "body")
-            body_value = object_value(value["body"], body_path)
-            content_path = field_path(body_path, "content")
-            content = (
-                array_value(body_value["content"], content_path)
-                if "content" in body_value
-                else []
-            )
+        if "body" in data:
             body = []
-            for index, item in enumerate(content):
-                item_path = index_path(content_path, index)
-                wrapper = object_value(item, item_path)
-                keys = ("paragraph", "sectionBreak", "table", "tableOfContents")
-                present = [key for key in keys if key in wrapper]
-                if len(present) != 1:
-                    raise GDocParseError(
-                        item_path, "expected exactly one supported structural element"
-                    )
-                key = present[0]
-                inner = wrapper[key]
-                inner_path = field_path(item_path, key)
-                if key == "paragraph":
-                    body.append(Paragraph.gdoc_parser.parse(inner, path=inner_path))
-                elif key == "sectionBreak":
-                    body.append(SectionBreak.gdoc_parser.parse(inner, path=inner_path))
-                elif key == "table":
-                    body.append(Table.gdoc_parser.parse(inner, path=inner_path))
+            for wrapper in data["body"].get("content", []):
+                if "paragraph" in wrapper:
+                    body.append(Paragraph.gdoc_parser.parse(wrapper["paragraph"]))
+                elif "sectionBreak" in wrapper:
+                    body.append(SectionBreak.gdoc_parser.parse(wrapper["sectionBreak"]))
+                elif "table" in wrapper:
+                    body.append(Table.gdoc_parser.parse(wrapper["table"]))
                 else:
                     body.append(
-                        TableOfContents.gdoc_parser.parse(inner, path=inner_path)
+                        TableOfContents.gdoc_parser.parse(wrapper["tableOfContents"])
                     )
         return DocumentTab(
             body=body,
-            headers=self._optional_segments(value, "headers", path),
-            footers=self._optional_segments(value, "footers", path),
-            footnotes=self._optional_segments(value, "footnotes", path),
+            headers=self._optional_segments(data, "headers"),
+            footers=self._optional_segments(data, "footers"),
+            footnotes=self._optional_segments(data, "footnotes"),
             document_style=(
-                DocumentStyle.gdoc_parser.parse(
-                    value["documentStyle"], path=field_path(path, "documentStyle")
-                )
-                if "documentStyle" in value
+                DocumentStyle.gdoc_parser.parse(data["documentStyle"])
+                if "documentStyle" in data
                 else UNSET
             ),
-            named_styles=self._optional_named_styles(value, path),
-            lists=self._optional_lists(value, path),
+            named_styles=self._optional_named_styles(data),
+            lists=self._optional_lists(data),
         )
 
     @staticmethod
-    def _optional_segments(
-        value: JsonObject, key: str, path: str
-    ) -> dict[str, Segment] | UnsetType:
-        if key not in value:
+    def _optional_segments(data: Any, key: str) -> dict[str, Segment] | UnsetType:
+        if key not in data:
             return UNSET
-        map_path = field_path(path, key)
-        segments = object_value(value[key], map_path)
         return {
-            segment_id: Segment.gdoc_parser.parse(
-                segment, path=map_key_path(map_path, segment_id)
-            )
-            for segment_id, segment in segments.items()
+            segment_id: Segment.gdoc_parser.parse(segment)
+            for segment_id, segment in data[key].items()
         }
 
     @staticmethod
-    def _optional_named_styles(
-        value: JsonObject, path: str
-    ) -> list[NamedStyle] | UnsetType:
-        if "namedStyles" not in value:
+    def _optional_named_styles(data: Any) -> list[NamedStyle] | UnsetType:
+        if "namedStyles" not in data:
             return UNSET
-        named_path = field_path(path, "namedStyles")
-        named = object_value(value["namedStyles"], named_path)
-        styles_path = field_path(named_path, "styles")
-        styles = array_value(named["styles"], styles_path) if "styles" in named else []
         return [
-            NamedStyle.gdoc_parser.parse(style, path=index_path(styles_path, index))
-            for index, style in enumerate(styles)
+            NamedStyle.gdoc_parser.parse(style)
+            for style in data["namedStyles"].get("styles", [])
         ]
 
     @staticmethod
-    def _optional_lists(
-        value: JsonObject, path: str
-    ) -> dict[str, ListDefinition] | UnsetType:
-        if "lists" not in value:
+    def _optional_lists(data: Any) -> dict[str, ListDefinition] | UnsetType:
+        if "lists" not in data:
             return UNSET
-        lists_path = field_path(path, "lists")
-        lists = object_value(value["lists"], lists_path)
         return {
-            list_id: ListDefinition.gdoc_parser.parse(
-                definition, path=map_key_path(lists_path, list_id)
-            )
-            for list_id, definition in lists.items()
+            list_id: ListDefinition.gdoc_parser.parse(definition)
+            for list_id, definition in data["lists"].items()
         }
 
 
 class TabParser(GDocParser[Tab]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> Tab:
-        value = object_value(data, path)
-        properties_path = field_path(path, "tabProperties")
-        properties = object_value(
-            required_field(value, "tabProperties", path), properties_path
-        )
-        parsed_index = integer_value(
-            required_field(properties, "index", properties_path),
-            field_path(properties_path, "index"),
-        )
-        children_path = field_path(path, "childTabs")
-        children = (
-            array_value(value["childTabs"], children_path)
-            if "childTabs" in value
-            else []
-        )
+    def parse(self, data: Any) -> Tab:
+        properties = data["tabProperties"]
         return Tab(
-            tab_id=string_value(
-                required_field(properties, "tabId", properties_path),
-                field_path(properties_path, "tabId"),
-            ),
-            title=string_value(
-                required_field(properties, "title", properties_path),
-                field_path(properties_path, "title"),
-            ),
-            index=parsed_index,
-            nesting_level=(
-                integer_value(
-                    properties["nestingLevel"],
-                    field_path(properties_path, "nestingLevel"),
-                )
-                if "nestingLevel" in properties
-                else 0
-            ),
-            parent_tab_id=optional_string_field(
-                properties, "parentTabId", properties_path
-            ),
-            icon_emoji=optional_string_field(properties, "iconEmoji", properties_path),
+            tab_id=properties["tabId"],
+            title=properties["title"],
+            index=properties["index"],
+            nesting_level=properties.get("nestingLevel", 0),
+            parent_tab_id=properties.get("parentTabId", UNSET),
+            icon_emoji=properties.get("iconEmoji", UNSET),
             content=(
-                DocumentTab.gdoc_parser.parse(
-                    value["documentTab"], path=field_path(path, "documentTab")
-                )
-                if "documentTab" in value
+                DocumentTab.gdoc_parser.parse(data["documentTab"])
+                if "documentTab" in data
                 else UNSET
             ),
             children=[
-                Tab.gdoc_parser.parse(child, path=index_path(children_path, index))
-                for index, child in enumerate(children)
+                Tab.gdoc_parser.parse(child) for child in data.get("childTabs", [])
             ],
         )
 
 
 class DocumentParser(GDocParser[Document]):
-    def parse(self, data: JsonValue, *, path: str = "$") -> Document:
-        value = object_value(data, path)
-        tabs_path = field_path(path, "tabs")
-        tabs = array_value(required_field(value, "tabs", path), tabs_path)
-        suggestions_view_mode: (
-            Literal[
-                "DEFAULT_FOR_CURRENT_ACCESS",
-                "SUGGESTIONS_INLINE",
-                "PREVIEW_SUGGESTIONS_ACCEPTED",
-                "PREVIEW_WITHOUT_SUGGESTIONS",
-            ]
-            | UnsetType
-        ) = (
-            cast(
-                Literal[
-                    "DEFAULT_FOR_CURRENT_ACCESS",
-                    "SUGGESTIONS_INLINE",
-                    "PREVIEW_SUGGESTIONS_ACCEPTED",
-                    "PREVIEW_WITHOUT_SUGGESTIONS",
-                ],
-                literal_value(
-                    value["suggestionsViewMode"],
-                    (
-                        "DEFAULT_FOR_CURRENT_ACCESS",
-                        "SUGGESTIONS_INLINE",
-                        "PREVIEW_SUGGESTIONS_ACCEPTED",
-                        "PREVIEW_WITHOUT_SUGGESTIONS",
-                    ),
-                    field_path(path, "suggestionsViewMode"),
-                ),
-            )
-            if "suggestionsViewMode" in value
-            else UNSET
-        )
+    def parse(self, data: Any) -> Document:
         return Document(
-            document_id=string_value(
-                required_field(value, "documentId", path),
-                field_path(path, "documentId"),
-            ),
-            title=string_value(
-                required_field(value, "title", path), field_path(path, "title")
-            ),
-            revision_id=optional_string_field(value, "revisionId", path),
-            suggestions_view_mode=suggestions_view_mode,
-            tabs=[
-                Tab.gdoc_parser.parse(tab, path=index_path(tabs_path, index))
-                for index, tab in enumerate(tabs)
-            ],
+            document_id=data["documentId"],
+            title=data["title"],
+            revision_id=data.get("revisionId", UNSET),
+            suggestions_view_mode=data.get("suggestionsViewMode", UNSET),
+            tabs=[Tab.gdoc_parser.parse(tab) for tab in data["tabs"]],
         )
 
 

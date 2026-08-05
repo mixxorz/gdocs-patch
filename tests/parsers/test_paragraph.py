@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from gdocs_patch.models import UNSET, Color, Dimension
@@ -25,7 +27,7 @@ from gdocs_patch.models.paragraph import (
     TextStyle,
     UrlLink,
 )
-from gdocs_patch.parsers import GDocParseError, GDocParser, JsonValue
+from gdocs_patch.parsers import GDocParser
 
 DIMENSION = {"magnitude": 12, "unit": "PT"}
 OPAQUE_COLOR = {"color": {"rgbColor": {"red": 0.25, "green": 0.5, "blue": 1}}}
@@ -42,7 +44,7 @@ EXPECTED_BORDER = ParagraphBorder(
     dash_style="SOLID",
 )
 
-CASES: list[tuple[GDocParser[object], JsonValue, object]] = [
+CASES: list[tuple[GDocParser[object], Any, object]] = [
     (UrlLink.gdoc_parser, "https://example.test", UrlLink(url="https://example.test")),
     (TabLink.gdoc_parser, "tab-2", TabLink(tab_id="tab-2")),
     (
@@ -380,7 +382,7 @@ CASES: list[tuple[GDocParser[object], JsonValue, object]] = [
 
 @pytest.mark.parametrize(("parser", "payload", "expected"), CASES)
 def test_parses_paragraph_presentation_model(
-    parser: GDocParser[object], payload: JsonValue, expected: object
+    parser: GDocParser[object], payload: Any, expected: object
 ) -> None:
     assert parser.parse(payload) == expected
 
@@ -398,20 +400,3 @@ def test_paragraph_style_distinguishes_absent_and_transparent_shading_color() ->
     assert ParagraphStyle.gdoc_parser.parse(
         {"shading": {"backgroundColor": {}}}
     ) == ParagraphStyle(shading_color=None)
-
-
-@pytest.mark.parametrize(
-    "element",
-    [
-        {},
-        {"textRun": {"content": "x"}, "equation": {}},
-    ],
-)
-def test_paragraph_element_requires_exactly_one_supported_variant(
-    element: JsonValue,
-) -> None:
-    with pytest.raises(
-        GDocParseError,
-        match="exactly one supported paragraph element",
-    ):
-        Paragraph.gdoc_parser.parse({"elements": [element]})
