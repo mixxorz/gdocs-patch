@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from .base import UNSET, Color, Dimension, Model, UnsetType
+
+if TYPE_CHECKING:
+    from .list import ListDefinition
+    from .paragraph import NamedStyle
 
 
 class StructuralElement(Model):
@@ -66,3 +70,83 @@ class DocumentStyle(Model):
         self.use_custom_header_footer_margins = use_custom_header_footer_margins
         self.flip_page_orientation = flip_page_orientation
         self.page_number_start = page_number_start
+
+
+class Segment(Model):
+    def __init__(
+        self,
+        *,
+        segment_id: str,
+        content: list[StructuralElement],
+    ) -> None:
+        self.segment_id = segment_id
+        self.content = content
+
+
+class DocumentTab(Model):
+    def __init__(
+        self,
+        *,
+        body: list[StructuralElement] | UnsetType = UNSET,
+        headers: dict[str, Segment] | UnsetType = UNSET,
+        footers: dict[str, Segment] | UnsetType = UNSET,
+        footnotes: dict[str, Segment] | UnsetType = UNSET,
+        document_style: DocumentStyle | UnsetType = UNSET,
+        named_styles: list[NamedStyle] | UnsetType = UNSET,
+        lists: dict[str, ListDefinition] | UnsetType = UNSET,
+    ) -> None:
+        self.body = body
+        self.headers = headers
+        self.footers = footers
+        self.footnotes = footnotes
+        self.document_style = document_style
+        self.named_styles = named_styles
+        self.lists = lists
+
+
+class Tab(Model):
+    def __init__(
+        self,
+        *,
+        tab_id: str,
+        title: str,
+        index: int,
+        children: list[Tab],
+        nesting_level: int = 0,
+        parent_tab_id: str | UnsetType = UNSET,
+        icon_emoji: str | UnsetType = UNSET,
+        content: DocumentTab | UnsetType = UNSET,
+    ) -> None:
+        self.tab_id = tab_id
+        self.title = title
+        self.index = index
+        self.nesting_level = nesting_level
+        self.parent_tab_id = parent_tab_id
+        self.icon_emoji = icon_emoji
+        self.content = content
+        self.children = children
+
+
+class Document(Model):
+    def __init__(
+        self,
+        *,
+        document_id: str,
+        title: str,
+        tabs: list[Tab],
+        revision_id: str | UnsetType = UNSET,
+        suggestions_view_mode: Literal[
+            "DEFAULT_FOR_CURRENT_ACCESS",
+            "SUGGESTIONS_INLINE",
+            "PREVIEW_SUGGESTIONS_ACCEPTED",
+            "PREVIEW_WITHOUT_SUGGESTIONS",
+        ]
+        | UnsetType = UNSET,
+        legacy_tab: DocumentTab | UnsetType = UNSET,
+    ) -> None:
+        self.document_id = document_id
+        self.title = title
+        self.revision_id = revision_id
+        self.suggestions_view_mode = suggestions_view_mode
+        self.tabs = tabs
+        self.legacy_tab = legacy_tab
