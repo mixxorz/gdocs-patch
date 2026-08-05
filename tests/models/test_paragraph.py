@@ -7,10 +7,12 @@ def test_bullet_defaults_to_top_level_nesting() -> None:
     assert bullet.nesting_level == 0
 
 
-def test_paragraph_reflects_mutations_to_supplied_elements_list() -> None:
-    elements = []
-    paragraph = Paragraph(elements=elements)
+def test_paragraph_adds_paragraph_elements_as_children() -> None:
+    paragraph = Paragraph(elements=[])
+    run = TextRun(content="Added later")
 
-    elements.append(TextRun(content="Added later"))
+    paragraph.add_child(run)
 
-    assert paragraph.elements == [TextRun(content="Added later")]
+    assert paragraph.elements == [run]
+    assert paragraph.elements is paragraph.children
+    assert run.parent is paragraph

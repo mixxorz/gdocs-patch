@@ -1,5 +1,6 @@
-from .base import UNSET, Color, Dimension, Model, UnsetType
+from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
 from .document import (
+    Body,
     Document,
     DocumentStyle,
     DocumentTab,
@@ -48,6 +49,7 @@ from .table import (
 __all__ = [
     "UNSET",
     "AutoText",
+    "Body",
     "BookmarkLink",
     "Bullet",
     "Color",
@@ -91,6 +93,7 @@ __all__ = [
     "TableRow",
     "TextRun",
     "TextStyle",
+    "TreeNode",
     "UnsetType",
     "UrlLink",
 ]

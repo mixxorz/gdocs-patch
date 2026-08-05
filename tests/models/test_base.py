@@ -1,6 +1,6 @@
 import pytest
 
-from gdocs_patch.models.base import UNSET, Color, Dimension, UnsetType
+from gdocs_patch.models.base import UNSET, Color, Dimension, TreeNode, UnsetType
 
 
 def test_unset_is_a_singleton_with_readable_representation() -> None:
@@ -26,6 +26,16 @@ def test_model_representation_and_unhashability() -> None:
     assert repr(dimension) == "Dimension(magnitude=12, unit='PT')"
     with pytest.raises(TypeError):
         hash(dimension)
+
+
+def test_tree_node_adds_child_and_sets_its_parent() -> None:
+    root = TreeNode()
+    child = TreeNode()
+
+    root.add_child(child)
+
+    assert root.children == [child]
+    assert child.parent is root
 
 
 def test_dimension_uses_proto_defaults() -> None:

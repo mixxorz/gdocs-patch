@@ -2,6 +2,7 @@ from typing import Any
 
 from gdocs_patch.models.base import UNSET, UnsetType
 from gdocs_patch.models.document import (
+    Body,
     Document,
     DocumentStyle,
     DocumentTab,
@@ -116,20 +117,21 @@ class SegmentParser(GDocParser[Segment]):
 
 class DocumentTabParser(GDocParser[DocumentTab]):
     def parse(self, data: Any) -> DocumentTab:
-        body: list[StructuralElement] | UnsetType = UNSET
+        body: Body | UnsetType = UNSET
         if "body" in data:
-            body = []
+            children: list[StructuralElement] = []
             for wrapper in data["body"].get("content", []):
                 if "paragraph" in wrapper:
-                    body.append(paragraph_parser.parse(wrapper["paragraph"]))
+                    children.append(paragraph_parser.parse(wrapper["paragraph"]))
                 elif "sectionBreak" in wrapper:
-                    body.append(section_break_parser.parse(wrapper["sectionBreak"]))
+                    children.append(section_break_parser.parse(wrapper["sectionBreak"]))
                 elif "table" in wrapper:
-                    body.append(table_parser.parse(wrapper["table"]))
+                    children.append(table_parser.parse(wrapper["table"]))
                 else:
-                    body.append(
+                    children.append(
                         table_of_contents_parser.parse(wrapper["tableOfContents"])
                     )
+            body = Body(content=children)
         return DocumentTab(
             body=body,
             headers=(

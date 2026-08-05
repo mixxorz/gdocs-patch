@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, UnsetType
+from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
 from .document import StructuralElement
 
 
@@ -206,7 +206,7 @@ class ParagraphStyle(Model):
         self.tab_stops = tab_stops
 
 
-class ParagraphElement(Model):
+class ParagraphElement(TreeNode):
     pass
 
 
@@ -217,6 +217,7 @@ class TextRun(ParagraphElement):
         content: str,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.content = content
         self.text_style = text_style
 
@@ -232,6 +233,7 @@ class AutoText(ParagraphElement):
         ],
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.auto_text_type = auto_text_type
         self.text_style = text_style
 
@@ -242,6 +244,7 @@ class ColumnBreak(ParagraphElement):
         *,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.text_style = text_style
 
 
@@ -272,6 +275,7 @@ class DateElement(ParagraphElement):
         timestamp: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.date_id = date_id
         self.date_format = date_format
         self.display_text = display_text
@@ -294,6 +298,7 @@ class FootnoteReference(ParagraphElement):
         footnote_number: str,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.footnote_id = footnote_id
         self.footnote_number = footnote_number
         self.text_style = text_style
@@ -305,6 +310,7 @@ class HorizontalRule(ParagraphElement):
         *,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.text_style = text_style
 
 
@@ -315,6 +321,7 @@ class InlineObjectReference(ParagraphElement):
         inline_object_id: str,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.inline_object_id = inline_object_id
         self.text_style = text_style
 
@@ -325,6 +332,7 @@ class PageBreak(ParagraphElement):
         *,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.text_style = text_style
 
 
@@ -337,6 +345,7 @@ class PersonReference(ParagraphElement):
         name: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.person_id = person_id
         self.email = email
         self.name = name
@@ -353,6 +362,7 @@ class RichLink(ParagraphElement):
         mime_type: str | UnsetType = UNSET,
         text_style: TextStyle | UnsetType = UNSET,
     ) -> None:
+        super().__init__()
         self.rich_link_id = rich_link_id
         self.uri = uri
         self.title = title
@@ -369,10 +379,16 @@ class Paragraph(StructuralElement):
         bullet: Bullet | UnsetType = UNSET,
         positioned_object_ids: list[str] | UnsetType = UNSET,
     ) -> None:
-        self.elements = elements
+        super().__init__()
+        for child in elements:
+            self.add_child(child)
         self.style = style
         self.bullet = bullet
         self.positioned_object_ids = positioned_object_ids
+
+    @property
+    def elements(self) -> list[ParagraphElement]:
+        return cast("list[ParagraphElement]", self.children)
 
 
 class NamedStyle(Model):

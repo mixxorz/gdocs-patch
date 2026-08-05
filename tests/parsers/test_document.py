@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from gdocs_patch.models import (
+    Body,
     Color,
     Dimension,
     Document,
@@ -121,7 +122,7 @@ def test_parses_document_tab() -> None:
     }
 
     assert document_tab_parser.parse(decoded) == DocumentTab(
-        body=[Paragraph(elements=[])],
+        body=Body(content=[Paragraph(elements=[])]),
         headers={"header-1": Segment(segment_id="header-1", content=[])},
         footers={"footer-1": Segment(segment_id="footer-1", content=[])},
         footnotes={"footnote-1": Segment(segment_id="footnote-1", content=[])},

@@ -31,6 +31,20 @@ class UnsetType:
 UNSET = UnsetType()
 
 
+class TreeNode(Model):
+    """A node with an optional parent and ordered children."""
+
+    __slots__ = ("parent",)
+
+    def __init__(self) -> None:
+        self.parent: TreeNode | None = None
+        self.children: list[TreeNode] = []
+
+    def add_child(self, child: "TreeNode") -> None:
+        child.parent = self
+        self.children.append(child)
+
+
 class Dimension(Model):
     """A Google Docs measurement and its unit."""
 

@@ -1,19 +1,36 @@
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, UnsetType
+from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
 
 if TYPE_CHECKING:
     from .list import ListDefinition
     from .paragraph import NamedStyle
 
 
-class StructuralElement(Model):
+class StructuralElement(TreeNode):
     """Base for document structures whose absolute indices are derived."""
+
+
+class Body(TreeNode):
+    def __init__(self, *, content: list[StructuralElement]) -> None:
+        super().__init__()
+        for child in content:
+            self.add_child(child)
+
+    @property
+    def content(self) -> list[StructuralElement]:
+        return cast("list[StructuralElement]", self.children)
 
 
 class TableOfContents(StructuralElement):
     def __init__(self, *, content: list[StructuralElement]) -> None:
-        self.content = content
+        super().__init__()
+        for child in content:
+            self.add_child(child)
+
+    @property
+    def content(self) -> list[StructuralElement]:
+        return cast("list[StructuralElement]", self.children)
 
 
 class DocumentStyle(Model):
@@ -70,22 +87,28 @@ class DocumentStyle(Model):
         self.page_number_start = page_number_start
 
 
-class Segment(Model):
+class Segment(TreeNode):
     def __init__(
         self,
         *,
         segment_id: str,
         content: list[StructuralElement],
     ) -> None:
+        super().__init__()
         self.segment_id = segment_id
-        self.content = content
+        for child in content:
+            self.add_child(child)
+
+    @property
+    def content(self) -> list[StructuralElement]:
+        return cast("list[StructuralElement]", self.children)
 
 
 class DocumentTab(Model):
     def __init__(
         self,
         *,
-        body: list[StructuralElement] | UnsetType = UNSET,
+        body: Body | UnsetType = UNSET,
         headers: dict[str, Segment] | UnsetType = UNSET,
         footers: dict[str, Segment] | UnsetType = UNSET,
         footnotes: dict[str, Segment] | UnsetType = UNSET,

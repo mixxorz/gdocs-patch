@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, UnsetType
+from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
 from .document import StructuralElement
 
 
@@ -64,18 +64,24 @@ class TableCellStyle(Model):
         self.content_alignment = content_alignment
 
 
-class TableCell(Model):
+class TableCell(TreeNode):
     def __init__(
         self,
         *,
         content: list[StructuralElement],
         style: TableCellStyle | UnsetType = UNSET,
     ) -> None:
-        self.content = content
+        super().__init__()
+        for child in content:
+            self.add_child(child)
         self.style = style
 
+    @property
+    def content(self) -> list[StructuralElement]:
+        return cast("list[StructuralElement]", self.children)
 
-class TableRow(Model):
+
+class TableRow(TreeNode):
     def __init__(
         self,
         *,
@@ -84,10 +90,16 @@ class TableRow(Model):
         prevent_overflow: bool | UnsetType = UNSET,
         is_header: bool | UnsetType = UNSET,
     ) -> None:
-        self.cells = cells
+        super().__init__()
+        for child in cells:
+            self.add_child(child)
         self.min_height = min_height
         self.prevent_overflow = prevent_overflow
         self.is_header = is_header
+
+    @property
+    def cells(self) -> list[TableCell]:
+        return cast("list[TableCell]", self.children)
 
 
 class TableColumn(Model):
@@ -116,5 +128,11 @@ class Table(StructuralElement):
         rows: list[TableRow],
         column_styles: list[TableColumn] | UnsetType = UNSET,
     ) -> None:
-        self.rows = rows
+        super().__init__()
+        for child in rows:
+            self.add_child(child)
         self.column_styles = column_styles
+
+    @property
+    def rows(self) -> list[TableRow]:
+        return cast("list[TableRow]", self.children)

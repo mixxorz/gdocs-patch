@@ -77,4 +77,5 @@ class SectionStyle(Model):
 
 class SectionBreak(StructuralElement):
     def __init__(self, *, style: SectionStyle) -> None:
+        super().__init__()
         self.style = style

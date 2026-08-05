@@ -1,5 +1,6 @@
 from gdocs_patch.models import (
     AutoText,
+    Body,
     BookmarkLink,
     Bullet,
     Color,
@@ -268,7 +269,7 @@ def expected_maximal_document() -> Document:
         page_number_start=7,
     )
     root_content = DocumentTab(
-        body=[rich_paragraph, section_break, table, top_level_toc],
+        body=Body(content=[rich_paragraph, section_break, table, top_level_toc]),
         headers={
             "header-map-key": Segment(
                 segment_id="header-1", content=[Paragraph(elements=[])]
