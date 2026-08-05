@@ -79,3 +79,7 @@ class SectionBreak(StructuralElement):
     def __init__(self, *, style: SectionStyle) -> None:
         super().__init__()
         self.style = style
+
+    @property
+    def utf16_width(self) -> int:
+        return 1

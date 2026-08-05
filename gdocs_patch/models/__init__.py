@@ -1,4 +1,4 @@
-from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, TreeNode, UnsetType
 from .document import (
     Body,
     Document,
@@ -64,6 +64,7 @@ __all__ = [
     "HeadingLink",
     "HorizontalRule",
     "InlineObjectReference",
+    "IndexedNode",
     "Link",
     "ListDefinition",
     "ListLevel",

@@ -1,4 +1,4 @@
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, cast
 
 
 class Model:
@@ -63,6 +63,29 @@ class TreeNode(Model):
             if child is self and index + 1 < len(self.parent.children):
                 return self.parent.children[index + 1]
         return None
+
+    @property
+    def children_start_index(self) -> int:
+        raise ValueError(f"{type(self).__name__} does not define child indices")
+
+
+class IndexedNode(TreeNode):
+    @property
+    def utf16_width(self) -> int:
+        raise NotImplementedError
+
+    @property
+    def start_index(self) -> int:
+        if self.parent is None:
+            raise ValueError(f"{type(self).__name__} is not attached")
+        previous = self.previous_sibling
+        if previous is None:
+            return self.parent.children_start_index
+        return cast("IndexedNode", previous).end_index
+
+    @property
+    def end_index(self) -> int:
+        return self.start_index + self.utf16_width
 
 
 class Dimension(Model):

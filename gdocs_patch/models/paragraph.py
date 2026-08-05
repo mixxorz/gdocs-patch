@@ -1,6 +1,6 @@
 from typing import Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, UnsetType
 from .document import StructuralElement
 
 
@@ -206,8 +206,10 @@ class ParagraphStyle(Model):
         self.tab_stops = tab_stops
 
 
-class ParagraphElement(TreeNode):
-    pass
+class ParagraphElement(IndexedNode):
+    @property
+    def utf16_width(self) -> int:
+        return 1
 
 
 class TextRun(ParagraphElement):
@@ -220,6 +222,10 @@ class TextRun(ParagraphElement):
         super().__init__()
         self.content = content
         self.text_style = text_style
+
+    @property
+    def utf16_width(self) -> int:
+        return len(self.content.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
 class AutoText(ParagraphElement):
@@ -389,6 +395,14 @@ class Paragraph(StructuralElement):
     @property
     def elements(self) -> list[ParagraphElement]:
         return cast("list[ParagraphElement]", self.children)
+
+    @property
+    def children_start_index(self) -> int:
+        return self.start_index
+
+    @property
+    def utf16_width(self) -> int:
+        return sum(element.utf16_width for element in self.elements)
 
 
 class NamedStyle(Model):

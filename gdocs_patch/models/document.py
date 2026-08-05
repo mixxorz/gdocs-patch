@@ -1,13 +1,13 @@
 from typing import TYPE_CHECKING, Literal, cast
 
-from .base import UNSET, Color, Dimension, Model, TreeNode, UnsetType
+from .base import UNSET, Color, Dimension, IndexedNode, Model, TreeNode, UnsetType
 
 if TYPE_CHECKING:
     from .list import ListDefinition
     from .paragraph import NamedStyle
 
 
-class StructuralElement(TreeNode):
+class StructuralElement(IndexedNode):
     """Base for document structures whose absolute indices are derived."""
 
 
@@ -20,6 +20,10 @@ class Body(TreeNode):
     @property
     def content(self) -> list[StructuralElement]:
         return cast("list[StructuralElement]", self.children)
+
+    @property
+    def children_start_index(self) -> int:
+        return 0
 
 
 class TableOfContents(StructuralElement):
@@ -102,6 +106,10 @@ class Segment(TreeNode):
     @property
     def content(self) -> list[StructuralElement]:
         return cast("list[StructuralElement]", self.children)
+
+    @property
+    def children_start_index(self) -> int:
+        return 0
 
 
 class DocumentTab(Model):
