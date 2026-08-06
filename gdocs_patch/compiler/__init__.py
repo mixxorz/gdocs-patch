@@ -9,6 +9,15 @@ from .content_stream import (
     TableUnit,
     TextUnit,
 )
+from .document import (
+    DocumentContent,
+    TabContent,
+    compile_document,
+    lower_edit_script,
+    normalize_document,
+    normalize_tree,
+    walk_tabs,
+)
 from .edit_script import (
     ApplyParagraphStyle,
     ApplyTableCellStyle,
@@ -46,6 +55,7 @@ __all__ = [
     "DeleteParagraphBullets",
     "DeleteTableColumn",
     "DeleteTableRow",
+    "DocumentContent",
     "Edit",
     "EditScript",
     "EquationUnit",
@@ -56,10 +66,16 @@ __all__ = [
     "MergeTableCells",
     "ParagraphBoundary",
     "TableCellUnit",
+    "TabContent",
     "TableRowUnit",
     "TableUnit",
     "TextUnit",
     "UnmergeTableCells",
     "UnsupportedTransformation",
+    "compile_document",
     "generate_edit_script",
+    "lower_edit_script",
+    "normalize_document",
+    "normalize_tree",
+    "walk_tabs",
 ]
