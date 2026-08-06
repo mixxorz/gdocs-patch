@@ -90,6 +90,34 @@ class Bullet(Model):
         self.text_style = text_style
 
 
+class BulletPreset(Model):
+    def __init__(
+        self,
+        *,
+        preset: Literal[
+            "BULLET_GLYPH_PRESET_UNSPECIFIED",
+            "BULLET_DISC_CIRCLE_SQUARE",
+            "BULLET_DIAMONDX_ARROW3D_SQUARE",
+            "BULLET_CHECKBOX",
+            "BULLET_ARROW_DIAMOND_DISC",
+            "BULLET_STAR_CIRCLE_SQUARE",
+            "BULLET_ARROW3D_CIRCLE_SQUARE",
+            "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
+            "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
+            "BULLET_DIAMOND_CIRCLE_SQUARE",
+            "NUMBERED_DECIMAL_ALPHA_ROMAN",
+            "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
+            "NUMBERED_DECIMAL_NESTED",
+            "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
+            "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
+            "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
+        ],
+        nesting_level: int = 0,
+    ) -> None:
+        self.preset = preset
+        self.nesting_level = nesting_level
+
+
 class ParagraphBorder(Model):
     def __init__(
         self,
@@ -382,7 +410,7 @@ class Paragraph(StructuralElement):
         *,
         elements: list[ParagraphElement],
         style: ParagraphStyle | UnsetType = UNSET,
-        bullet: Bullet | UnsetType = UNSET,
+        bullet: Bullet | BulletPreset | UnsetType = UNSET,
         positioned_object_ids: list[str] | UnsetType = UNSET,
     ) -> None:
         super().__init__()

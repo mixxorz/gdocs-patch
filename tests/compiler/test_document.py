@@ -15,6 +15,7 @@ from gdocs_patch.models import (
     UNSET,
     Body,
     Bullet,
+    BulletPreset,
     Color,
     Dimension,
     Document,
@@ -38,7 +39,10 @@ def test_normalize_tree_normalizes_paragraph_text_styles_and_bullets() -> None:
     first_style = TextStyle(bold=True)
     final_style = TextStyle(italic=True)
     paragraph_style = ParagraphStyle(alignment="CENTER")
-    bullet = Bullet(list_id="list-opaque", nesting_level=1)
+    bullet = BulletPreset(
+        preset="BULLET_DISC_CIRCLE_SQUARE",
+        nesting_level=2,
+    )
     body = Body(
         content=[
             Paragraph(
