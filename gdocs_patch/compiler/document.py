@@ -27,7 +27,8 @@ from .content_stream import (
     TableUnit,
     TextUnit,
 )
-from .edit_script import EditScript, UnsupportedTransformation, generate_edit_script
+from .edit_script import UnsupportedTransformation, generate_edit_script
+from .lowering import lower_edit_script
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -166,15 +167,6 @@ def normalize_document(document: Document) -> DocumentContent:
         )
 
     return DocumentContent(tabs=tabs)
-
-
-def lower_edit_script(
-    *,
-    edit_script: EditScript,
-    tab_id: str,
-    segment_id: str | None = None,
-) -> list[dict[str, object]]:
-    raise NotImplementedError
 
 
 def compile_document(

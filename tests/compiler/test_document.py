@@ -8,6 +8,7 @@ from gdocs_patch.compiler import (
     TableRowUnit,
     TableUnit,
     TextUnit,
+    compile_document,
     normalize_document,
     normalize_tree,
 )
@@ -411,3 +412,872 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             ),
         }
     )
+
+
+def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
+    source = Document(
+        document_id="document-stress",
+        title="Stress",
+        revision_id="revision-stress",
+        tabs=[
+            Tab(
+                tab_id="tab-stress",
+                title="Stress tab",
+                index=0,
+                children=[],
+                content=DocumentTab(
+                    body=Body(
+                        content=[
+                            Paragraph(elements=[TextRun(content="a\n")]),
+                            Paragraph(elements=[TextRun(content="cd\n")]),
+                            Paragraph(elements=[TextRun(content="e\n")]),
+                            Paragraph(
+                                elements=[
+                                    TextRun(
+                                        content="f\n",
+                                        text_style=TextStyle(italic=True),
+                                    )
+                                ]
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="g\n")],
+                                style=ParagraphStyle(alignment="START"),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="h\n")],
+                                style=ParagraphStyle(alignment="END"),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="i\n")],
+                                bullet=Bullet(list_id="list-existing"),
+                            ),
+                            Paragraph(elements=[TextRun(content="j\n")]),
+                            Paragraph(elements=[TextRun(content="k\n")]),
+                            Paragraph(elements=[]),
+                            Table(
+                                table_key="table-grow",
+                                column_styles=[
+                                    TableColumn(width_type="EVENLY_DISTRIBUTED"),
+                                    TableColumn(width_type="EVENLY_DISTRIBUTED"),
+                                ],
+                                rows=[
+                                    TableRow(
+                                        row_key="grow-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="grow-a-a",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="A\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-a-b",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="B\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="grow-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="grow-b-a",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="D\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-b-b",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="E\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-shrink",
+                                rows=[
+                                    TableRow(
+                                        row_key="shrink-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="shrink-a-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-a-c",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="shrink-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="shrink-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-b-c",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="shrink-row-c",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="shrink-c-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-c-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-c-c",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-merge",
+                                rows=[
+                                    TableRow(
+                                        row_key="merge-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="merge-head",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="merge-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="merge-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="merge-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="merge-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-unmerge",
+                                rows=[
+                                    TableRow(
+                                        row_key="unmerge-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="unmerge-head",
+                                                content=[Paragraph(elements=[])],
+                                                style=TableCellStyle(
+                                                    row_span=2,
+                                                    column_span=2,
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                    TableRow(row_key="unmerge-row-b", cells=[]),
+                                ],
+                            ),
+                        ]
+                    ),
+                    headers={
+                        "header-stress": Segment(
+                            segment_id="header-stress",
+                            content=[Paragraph(elements=[TextRun(content="H\n")])],
+                        )
+                    },
+                    footers={
+                        "footer-stress": Segment(
+                            segment_id="footer-stress",
+                            content=[Paragraph(elements=[TextRun(content="FY\n")])],
+                        )
+                    },
+                    footnotes={
+                        "footnote-stress": Segment(
+                            segment_id="footnote-stress",
+                            content=[Paragraph(elements=[TextRun(content="N\n")])],
+                        )
+                    },
+                ),
+            )
+        ],
+    )
+    target = Document(
+        document_id="document-stress",
+        title="Stress",
+        tabs=[
+            Tab(
+                tab_id="tab-stress",
+                title="Stress tab",
+                index=0,
+                children=[],
+                content=DocumentTab(
+                    body=Body(
+                        content=[
+                            Paragraph(elements=[TextRun(content="ab\n")]),
+                            Paragraph(elements=[TextRun(content="c\n")]),
+                            Paragraph(
+                                elements=[
+                                    TextRun(
+                                        content="e\n",
+                                        text_style=TextStyle(bold=True),
+                                    )
+                                ]
+                            ),
+                            Paragraph(elements=[TextRun(content="f\n")]),
+                            Paragraph(
+                                elements=[TextRun(content="g\n")],
+                                style=ParagraphStyle(alignment="CENTER"),
+                            ),
+                            Paragraph(elements=[TextRun(content="h\n")]),
+                            Paragraph(elements=[TextRun(content="i\n")]),
+                            Paragraph(
+                                elements=[TextRun(content="j\n")],
+                                bullet=BulletPreset(
+                                    preset="BULLET_DISC_CIRCLE_SQUARE",
+                                    nesting_level=0,
+                                ),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="k\n")],
+                                bullet=BulletPreset(
+                                    preset="NUMBERED_DECIMAL_NESTED",
+                                    nesting_level=2,
+                                ),
+                            ),
+                            Table(
+                                table_key="table-new",
+                                rows=[
+                                    TableRow(
+                                        row_key="new-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="new-a-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="new-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="new-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="new-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="new-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Paragraph(elements=[]),
+                            Table(
+                                table_key="table-grow",
+                                column_styles=[
+                                    TableColumn(
+                                        width_type="FIXED_WIDTH",
+                                        width=Dimension(magnitude=10, unit="PT"),
+                                    ),
+                                    TableColumn(
+                                        width_type="FIXED_WIDTH",
+                                        width=Dimension(magnitude=20, unit="PT"),
+                                    ),
+                                    TableColumn(
+                                        width_type="FIXED_WIDTH",
+                                        width=Dimension(magnitude=30, unit="PT"),
+                                    ),
+                                ],
+                                rows=[
+                                    TableRow(
+                                        row_key="grow-row-a",
+                                        min_height=Dimension(magnitude=5, unit="PT"),
+                                        prevent_overflow=True,
+                                        cells=[
+                                            TableCell(
+                                                cell_key="grow-a-a",
+                                                style=TableCellStyle(
+                                                    background_color=Color(
+                                                        red=0.1,
+                                                        green=0.2,
+                                                        blue=0.3,
+                                                    )
+                                                ),
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="A\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-a-b",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="B\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-a-c",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="C\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="grow-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="grow-b-a",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="D\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-b-b",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="E\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-b-c",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="F\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="grow-row-c",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="grow-c-a",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="G\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-c-b",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="H\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                            TableCell(
+                                                cell_key="grow-c-c",
+                                                content=[
+                                                    Paragraph(
+                                                        elements=[
+                                                            TextRun(content="I\n")
+                                                        ]
+                                                    )
+                                                ],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-shrink",
+                                rows=[
+                                    TableRow(
+                                        row_key="shrink-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="shrink-a-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="shrink-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="shrink-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="shrink-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-merge",
+                                rows=[
+                                    TableRow(
+                                        row_key="merge-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="merge-head",
+                                                content=[Paragraph(elements=[])],
+                                                style=TableCellStyle(
+                                                    row_span=2,
+                                                    column_span=2,
+                                                ),
+                                            )
+                                        ],
+                                    ),
+                                    TableRow(row_key="merge-row-b", cells=[]),
+                                ],
+                            ),
+                            Table(
+                                table_key="table-unmerge",
+                                rows=[
+                                    TableRow(
+                                        row_key="unmerge-row-a",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="unmerge-head",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="unmerge-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                    TableRow(
+                                        row_key="unmerge-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="unmerge-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="unmerge-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ]
+                    ),
+                    headers={
+                        "header-stress": Segment(
+                            segment_id="header-stress",
+                            content=[Paragraph(elements=[TextRun(content="HX\n")])],
+                        )
+                    },
+                    footers={
+                        "footer-stress": Segment(
+                            segment_id="footer-stress",
+                            content=[Paragraph(elements=[TextRun(content="F\n")])],
+                        )
+                    },
+                    footnotes={
+                        "footnote-stress": Segment(
+                            segment_id="footnote-stress",
+                            content=[Paragraph(elements=[TextRun(content="NO\n")])],
+                        )
+                    },
+                ),
+            )
+        ],
+    )
+
+    assert compile_document(source=source, target=target) == {
+        "requests": [
+            {
+                "insertTableRow": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                        "rowIndex": 1,
+                        "columnIndex": 0,
+                    },
+                    "insertBelow": True,
+                }
+            },
+            {
+                "insertTableColumn": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                        "rowIndex": 0,
+                        "columnIndex": 1,
+                    },
+                    "insertRight": True,
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 49, "tabId": "tab-stress"},
+                    "text": "I",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 46, "tabId": "tab-stress"},
+                    "text": "H",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 43, "tabId": "tab-stress"},
+                    "text": "G",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 39, "tabId": "tab-stress"},
+                    "text": "F",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 29, "tabId": "tab-stress"},
+                    "text": "C",
+                }
+            },
+            {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "columnIndices": [0],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 10, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "columnIndices": [1],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 20, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "columnIndices": [2],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 30, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableRowStyle": {
+                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "rowIndices": [0],
+                    "tableRowStyle": {
+                        "minRowHeight": {"magnitude": 5, "unit": "PT"},
+                        "preventOverflow": True,
+                    },
+                    "fields": "minRowHeight,preventOverflow,tableHeader",
+                }
+            },
+            {
+                "updateTableCellStyle": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 1,
+                        "columnSpan": 1,
+                    },
+                    "tableCellStyle": {
+                        "backgroundColor": {
+                            "color": {
+                                "rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.3}
+                            }
+                        }
+                    },
+                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
+                }
+            },
+            {
+                "deleteTableRow": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 36, "tabId": "tab-stress"},
+                        "rowIndex": 2,
+                        "columnIndex": 0,
+                    }
+                }
+            },
+            {
+                "deleteTableColumn": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 36, "tabId": "tab-stress"},
+                        "rowIndex": 0,
+                        "columnIndex": 2,
+                    }
+                }
+            },
+            {
+                "mergeTableCells": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 59, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 2,
+                        "columnSpan": 2,
+                    }
+                }
+            },
+            {
+                "updateTableCellStyle": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 59, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 2,
+                        "columnSpan": 2,
+                    },
+                    "tableCellStyle": {},
+                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
+                }
+            },
+            {
+                "unmergeTableCells": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 71, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 2,
+                        "columnSpan": 2,
+                    }
+                }
+            },
+            {
+                "updateTableCellStyle": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 71, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 1,
+                        "columnSpan": 1,
+                    },
+                    "tableCellStyle": {},
+                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
+                }
+            },
+            {
+                "insertTable": {
+                    "rows": 2,
+                    "columns": 2,
+                    "location": {"index": 18, "tabId": "tab-stress"},
+                }
+            },
+            {
+                "deleteContentRange": {
+                    "range": {"startIndex": 3, "endIndex": 4, "tabId": "tab-stress"}
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 1, "tabId": "tab-stress"},
+                    "text": "b",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 1, "endIndex": 2, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 5, "endIndex": 7, "tabId": "tab-stress"},
+                    "textStyle": {"bold": True},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 7, "endIndex": 9, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 9, "endIndex": 11, "tabId": "tab-stress"},
+                    "paragraphStyle": {"alignment": "CENTER"},
+                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 11, "endIndex": 13, "tabId": "tab-stress"},
+                    "paragraphStyle": {},
+                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
+                }
+            },
+            {
+                "deleteParagraphBullets": {
+                    "range": {"startIndex": 13, "endIndex": 15, "tabId": "tab-stress"}
+                }
+            },
+            {
+                "createParagraphBullets": {
+                    "range": {"startIndex": 15, "endIndex": 17, "tabId": "tab-stress"},
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {"index": 17, "tabId": "tab-stress"},
+                    "text": "\t\t",
+                }
+            },
+            {
+                "createParagraphBullets": {
+                    "range": {"startIndex": 17, "endIndex": 21, "tabId": "tab-stress"},
+                    "bulletPreset": "NUMBERED_DECIMAL_NESTED",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {
+                        "index": 1,
+                        "tabId": "tab-stress",
+                        "segmentId": "header-stress",
+                    },
+                    "text": "X",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "tabId": "tab-stress",
+                        "segmentId": "header-stress",
+                    },
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "tabId": "tab-stress",
+                        "segmentId": "footer-stress",
+                    }
+                }
+            },
+            {
+                "insertText": {
+                    "location": {
+                        "index": 1,
+                        "tabId": "tab-stress",
+                        "segmentId": "footnote-stress",
+                    },
+                    "text": "O",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "tabId": "tab-stress",
+                        "segmentId": "footnote-stress",
+                    },
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+        ],
+        "writeControl": {"requiredRevisionId": "revision-stress"},
+    }

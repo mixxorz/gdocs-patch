@@ -13,7 +13,6 @@ from .document import (
     DocumentContent,
     TabContent,
     compile_document,
-    lower_edit_script,
     normalize_document,
     normalize_tree,
     walk_tabs,
@@ -40,6 +39,7 @@ from .edit_script import (
     UnsupportedTransformation,
     generate_edit_script,
 )
+from .lowering import lower_edit_script
 
 __all__ = [
     "ApplyParagraphStyle",
