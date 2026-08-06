@@ -1,3 +1,5 @@
+import pytest
+
 from gdocs_patch.compiler import (
     ApplyParagraphStyle,
     ApplyTextStyle,
@@ -6,9 +8,11 @@ from gdocs_patch.compiler import (
     CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
+    EquationUnit,
     InsertText,
     ParagraphBoundary,
     TextUnit,
+    UnsupportedTransformation,
     generate_edit_script,
 )
 from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle
@@ -245,3 +249,50 @@ def test_generate_edit_script_preserves_removes_and_creates_list_items() -> None
             bullet_preset=child_preset,
         ),
     ]
+
+
+def test_generate_edit_script_preserves_and_deletes_equations() -> None:
+    source = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            EquationUnit(),
+            TextUnit(content="B"),
+            EquationUnit(),
+            TextUnit(content="C"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            EquationUnit(),
+            TextUnit(content="B"),
+            TextUnit(content="C"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    script = generate_edit_script(source=source, target=target)
+
+    assert script.edits == [DeleteContent(start_index=3, end_index=4)]
+
+
+def test_generate_edit_script_rejects_equation_insertion() -> None:
+    source = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            EquationUnit(),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    with pytest.raises(UnsupportedTransformation, match="Equation"):
+        generate_edit_script(source=source, target=target)

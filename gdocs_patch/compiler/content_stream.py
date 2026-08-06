@@ -4,6 +4,12 @@ from typing import Literal
 from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle, UnsetType
 
 
+class ContentUnit:
+    @property
+    def utf16_width(self) -> int:
+        raise NotImplementedError
+
+
 @dataclass(frozen=True, kw_only=True)
 class BulletPreset:
     preset: Literal[
@@ -27,7 +33,7 @@ class BulletPreset:
     nesting_level: int = 0
 
 
-class TextUnit:
+class TextUnit(ContentUnit):
     def __init__(
         self,
         *,
@@ -42,7 +48,13 @@ class TextUnit:
         return len(self.content.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
-class ParagraphBoundary:
+class EquationUnit(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+class ParagraphBoundary(ContentUnit):
     def __init__(
         self,
         *,
@@ -60,9 +72,24 @@ class ParagraphBoundary:
 
 
 class ContentStream:
-    def __init__(self, *, items: list[TextUnit | ParagraphBoundary]) -> None:
+    def __init__(
+        self,
+        *,
+        items: list[ContentUnit],
+    ) -> None:
         self.items = items
 
     @property
     def utf16_width(self) -> int:
         return sum(item.utf16_width for item in self.items)
+
+    def comparison_values(self) -> list[tuple[str, str]]:
+        values: list[tuple[str, str]] = []
+        for item in self.items:
+            if isinstance(item, TextUnit):
+                values.append(("text", item.content))
+            elif isinstance(item, EquationUnit):
+                values.append(("equation", ""))
+            elif isinstance(item, ParagraphBoundary):
+                values.append(("paragraph_boundary", ""))
+        return values

@@ -3,7 +3,17 @@ from difflib import SequenceMatcher
 
 from gdocs_patch.models import UNSET, ParagraphStyle, TextStyle, UnsetType
 
-from .content_stream import BulletPreset, ContentStream, ParagraphBoundary, TextUnit
+from .content_stream import (
+    BulletPreset,
+    ContentStream,
+    EquationUnit,
+    ParagraphBoundary,
+    TextUnit,
+)
+
+
+class UnsupportedTransformation(Exception):
+    pass
 
 
 class Edit:
@@ -63,18 +73,8 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
 
     # Match only visible content and paragraph boundaries. Style differences do
     # not justify deleting text that can remain in place.
-    source_values = [
-        ("text", item.content)
-        if isinstance(item, TextUnit)
-        else ("paragraph_boundary", "")
-        for item in source.items
-    ]
-    target_values = [
-        ("text", item.content)
-        if isinstance(item, TextUnit)
-        else ("paragraph_boundary", "")
-        for item in target.items
-    ]
+    source_values = source.comparison_values()
+    target_values = target.comparison_values()
 
     # SequenceMatcher reports Python list positions. These maps translate every
     # position between stream items into the UTF-16 indices required by Docs.
@@ -103,6 +103,15 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
         b=target_values,
         autojunk=False,
     ).get_opcodes()
+
+    for tag, _source_start, _source_end, target_start, target_end in opcodes:
+        if tag in {"insert", "replace"} and any(
+            isinstance(item, EquationUnit)
+            for item in target.items[target_start:target_end]
+        ):
+            raise UnsupportedTransformation(
+                "Google Docs cannot insert Equation elements"
+            )
 
     # Deleting a paragraph boundary can change the merged paragraph's style.
     # Find the target boundary ending that paragraph so its style is reapplied.
@@ -151,72 +160,92 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
 
             start_index = target_utf16_offset_map[target_position]
             end_index = target_utf16_offset_map[target_position + 1]
-            if isinstance(target_item, TextUnit):
-                if (
-                    source_item is None
-                    or source_item.text_style != target_item.text_style
-                ):
-                    edits.append(
-                        ApplyTextStyle(
-                            start_index=start_index,
-                            end_index=end_index,
-                            text_style=target_item.text_style,
-                        )
-                    )
-                continue
 
-            # A boundary carries its list membership and both the text style
-            # of its newline and the paragraph style of the paragraph ending there.
-            paragraph_start, paragraph_end = target_paragraph_ranges[target_position]
-            source_boundary = (
-                source_item if isinstance(source_item, ParagraphBoundary) else None
-            )
-            source_bullet = (
-                source_boundary.bullet if source_boundary is not None else UNSET
-            )
-            if isinstance(target_item.bullet, BulletPreset):
-                if source_bullet is not UNSET:
-                    edits.append(
-                        DeleteParagraphBullets(
-                            start_index=paragraph_start,
-                            end_index=paragraph_end,
-                        )
-                    )
-                edits.append(
-                    CreateParagraphBullets(
-                        start_index=paragraph_start,
-                        end_index=paragraph_end,
-                        bullet_preset=target_item.bullet,
-                    )
-                )
-            elif target_item.bullet is UNSET and source_bullet is not UNSET:
-                edits.append(
-                    DeleteParagraphBullets(
-                        start_index=paragraph_start,
-                        end_index=paragraph_end,
-                    )
-                )
+            match target_item:
+                case EquationUnit():
+                    pass
 
-            if source_item is None or source_item.text_style != target_item.text_style:
-                edits.append(
-                    ApplyTextStyle(
-                        start_index=start_index,
-                        end_index=end_index,
-                        text_style=target_item.text_style,
+                case TextUnit() as target_text:
+                    source_text = (
+                        source_item if isinstance(source_item, TextUnit) else None
                     )
-                )
-            if (
-                target_position in forced_paragraph_style_positions
-                or source_boundary is None
-                or source_boundary.paragraph_style != target_item.paragraph_style
-            ):
-                edits.append(
-                    ApplyParagraphStyle(
-                        start_index=paragraph_start,
-                        end_index=paragraph_end,
-                        paragraph_style=target_item.paragraph_style,
+                    if (
+                        source_text is None
+                        or source_text.text_style != target_text.text_style
+                    ):
+                        edits.append(
+                            ApplyTextStyle(
+                                start_index=start_index,
+                                end_index=end_index,
+                                text_style=target_text.text_style,
+                            )
+                        )
+
+                case ParagraphBoundary() as target_boundary:
+                    # A boundary carries its list membership and the styles of
+                    # both its newline and the paragraph ending there.
+                    paragraph_start, paragraph_end = target_paragraph_ranges[
+                        target_position
+                    ]
+                    source_boundary = (
+                        source_item
+                        if isinstance(source_item, ParagraphBoundary)
+                        else None
                     )
-                )
+                    source_bullet = (
+                        source_boundary.bullet if source_boundary is not None else UNSET
+                    )
+
+                    if isinstance(target_boundary.bullet, BulletPreset):
+                        if source_bullet is not UNSET:
+                            edits.append(
+                                DeleteParagraphBullets(
+                                    start_index=paragraph_start,
+                                    end_index=paragraph_end,
+                                )
+                            )
+                        edits.append(
+                            CreateParagraphBullets(
+                                start_index=paragraph_start,
+                                end_index=paragraph_end,
+                                bullet_preset=target_boundary.bullet,
+                            )
+                        )
+                    elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
+                        edits.append(
+                            DeleteParagraphBullets(
+                                start_index=paragraph_start,
+                                end_index=paragraph_end,
+                            )
+                        )
+
+                    if (
+                        source_boundary is None
+                        or source_boundary.text_style != target_boundary.text_style
+                    ):
+                        edits.append(
+                            ApplyTextStyle(
+                                start_index=start_index,
+                                end_index=end_index,
+                                text_style=target_boundary.text_style,
+                            )
+                        )
+                    if (
+                        target_position in forced_paragraph_style_positions
+                        or source_boundary is None
+                        or source_boundary.paragraph_style
+                        != target_boundary.paragraph_style
+                    ):
+                        edits.append(
+                            ApplyParagraphStyle(
+                                start_index=paragraph_start,
+                                end_index=paragraph_end,
+                                paragraph_style=target_boundary.paragraph_style,
+                            )
+                        )
+
+                case _:
+                    raise NotImplementedError(type(target_item).__name__)
 
     # Matching works one stream unit at a time. Merge adjacent text-style edits
     # so lowering can produce one Docs request for each continuous style range.
