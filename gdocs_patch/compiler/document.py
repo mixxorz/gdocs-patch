@@ -1,8 +1,31 @@
 from collections.abc import Iterator
 
-from gdocs_patch.models import UNSET, Body, Document, DocumentTab, Tab, TreeNode
+from gdocs_patch.models import (
+    UNSET,
+    Body,
+    Document,
+    DocumentTab,
+    Equation,
+    Paragraph,
+    Tab,
+    Table,
+    TableCellStyle,
+    TextRun,
+    TextStyle,
+    TreeNode,
+    UnsetType,
+)
 
-from .content_stream import ContentStream
+from .content_stream import (
+    ContentStream,
+    ContentUnit,
+    EquationUnit,
+    ParagraphBoundary,
+    TableCellUnit,
+    TableRowUnit,
+    TableUnit,
+    TextUnit,
+)
 from .edit_script import EditScript, UnsupportedTransformation, generate_edit_script
 
 
@@ -27,7 +50,81 @@ class DocumentContent:
 
 
 def normalize_tree(tree: TreeNode) -> ContentStream:
-    raise NotImplementedError
+    if isinstance(tree, TextRun):
+        return ContentStream(
+            items=[
+                TextUnit(content=character, text_style=tree.text_style)
+                for character in tree.content
+            ]
+        )
+
+    if isinstance(tree, Equation):
+        return ContentStream(items=[EquationUnit()])
+
+    if isinstance(tree, Paragraph):
+        items: list[ContentUnit] = []
+        for child in tree.children:
+            items.extend(normalize_tree(child).items)
+
+        boundary_text_style: TextStyle | UnsetType = UNSET
+        if items:
+            terminal_item = items[-1]
+            if isinstance(terminal_item, TextUnit) and terminal_item.content == "\n":
+                boundary_text_style = terminal_item.text_style
+                items.pop()
+
+        items.append(
+            ParagraphBoundary(
+                text_style=boundary_text_style,
+                paragraph_style=tree.style,
+                bullet=tree.bullet,
+            )
+        )
+        return ContentStream(items=items)
+
+    if isinstance(tree, Table):
+        rows: list[TableRowUnit] = []
+        for row in tree.rows:
+            cells: list[TableCellUnit] = []
+            for cell in row.cells:
+                if isinstance(cell.style, TableCellStyle):
+                    row_span = cell.style.row_span
+                    column_span = cell.style.column_span
+                else:
+                    row_span = 1
+                    column_span = 1
+                cells.append(
+                    TableCellUnit(
+                        cell_key=cell.cell_key,
+                        content=normalize_tree(cell),
+                        row_span=row_span,
+                        column_span=column_span,
+                        style=cell.style,
+                    )
+                )
+            rows.append(
+                TableRowUnit(
+                    row_key=row.row_key,
+                    cells=cells,
+                    min_height=row.min_height,
+                    prevent_overflow=row.prevent_overflow,
+                    is_header=row.is_header,
+                )
+            )
+        return ContentStream(
+            items=[
+                TableUnit(
+                    table_key=tree.table_key,
+                    rows=rows,
+                    column_properties=tree.column_styles,
+                )
+            ]
+        )
+
+    items: list[ContentUnit] = []
+    for child in tree.children:
+        items.extend(normalize_tree(child).items)
+    return ContentStream(items=items)
 
 
 def walk_tabs(tabs: list[Tab]) -> Iterator[Tab]:

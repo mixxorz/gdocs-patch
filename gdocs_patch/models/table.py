@@ -70,11 +70,13 @@ class TableCell(IndexedNode):
         *,
         content: list[StructuralElement],
         style: TableCellStyle | UnsetType = UNSET,
+        cell_key: str | None = None,
     ) -> None:
         super().__init__()
         for child in content:
             self.add_child(child)
         self.style = style
+        self.cell_key = cell_key
 
     @property
     def content(self) -> list[StructuralElement]:
@@ -97,6 +99,7 @@ class TableRow(IndexedNode):
         min_height: Dimension | UnsetType = UNSET,
         prevent_overflow: bool | UnsetType = UNSET,
         is_header: bool | UnsetType = UNSET,
+        row_key: str | None = None,
     ) -> None:
         super().__init__()
         for child in cells:
@@ -104,6 +107,7 @@ class TableRow(IndexedNode):
         self.min_height = min_height
         self.prevent_overflow = prevent_overflow
         self.is_header = is_header
+        self.row_key = row_key
 
     @property
     def cells(self) -> list[TableCell]:
@@ -143,11 +147,13 @@ class Table(StructuralElement):
         *,
         rows: list[TableRow],
         column_styles: list[TableColumn] | UnsetType = UNSET,
+        table_key: str | None = None,
     ) -> None:
         super().__init__()
         for child in rows:
             self.add_child(child)
         self.column_styles = column_styles
+        self.table_key = table_key
 
     @property
     def rows(self) -> list[TableRow]:
