@@ -42,51 +42,37 @@ class BulletPreset:
     nesting_level: int = 0
 
 
+@dataclass(frozen=True, kw_only=True)
 class TextUnit(ContentUnit):
-    def __init__(
-        self,
-        *,
-        content: str,
-        text_style: TextStyle | UnsetType = UNSET,
-    ) -> None:
-        self.content = content
-        self.text_style = text_style
+    content: str
+    text_style: TextStyle | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:
         return len(self.content.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
+@dataclass(frozen=True, kw_only=True)
 class EquationUnit(ContentUnit):
     @property
     def utf16_width(self) -> int:
         return 1
 
 
+@dataclass(frozen=True, kw_only=True)
 class ParagraphBoundary(ContentUnit):
-    def __init__(
-        self,
-        *,
-        text_style: TextStyle | UnsetType = UNSET,
-        paragraph_style: ParagraphStyle | UnsetType = UNSET,
-        bullet: Bullet | BulletPreset | UnsetType = UNSET,
-    ) -> None:
-        self.text_style = text_style
-        self.paragraph_style = paragraph_style
-        self.bullet = bullet
+    text_style: TextStyle | UnsetType = UNSET
+    paragraph_style: ParagraphStyle | UnsetType = UNSET
+    bullet: Bullet | BulletPreset | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:
         return 1
 
 
+@dataclass(frozen=True, kw_only=True)
 class ContentStream:
-    def __init__(
-        self,
-        *,
-        items: list[ContentUnit],
-    ) -> None:
-        self.items = items
+    items: list[ContentUnit]
 
     @property
     def utf16_width(self) -> int:
@@ -108,65 +94,43 @@ class ContentStream:
                 values.append(
                     (
                         "table",
-                        item.table_key if item.table_key is not None else item,
+                        item.table_key if item.table_key is not None else id(item),
                     )
                 )
         return values
 
 
+@dataclass(frozen=True, kw_only=True)
 class TableCellUnit:
-    def __init__(
-        self,
-        *,
-        cell_key: str | None = None,
-        content: ContentStream,
-        row_span: int = 1,
-        column_span: int = 1,
-        style: TableCellStyle | UnsetType = UNSET,
-    ) -> None:
-        self.cell_key = cell_key
-        self.content = content
-        self.row_span = row_span
-        self.column_span = column_span
-        self.style = style
+    cell_key: str | None = None
+    content: ContentStream
+    row_span: int = 1
+    column_span: int = 1
+    style: TableCellStyle | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:
         return 1 + self.content.utf16_width
 
 
+@dataclass(frozen=True, kw_only=True)
 class TableRowUnit:
-    def __init__(
-        self,
-        *,
-        row_key: str | None = None,
-        cells: list[TableCellUnit],
-        min_height: Dimension | UnsetType = UNSET,
-        prevent_overflow: bool | UnsetType = UNSET,
-        is_header: bool | UnsetType = UNSET,
-    ) -> None:
-        self.row_key = row_key
-        self.cells = cells
-        self.min_height = min_height
-        self.prevent_overflow = prevent_overflow
-        self.is_header = is_header
+    row_key: str | None = None
+    cells: list[TableCellUnit]
+    min_height: Dimension | UnsetType = UNSET
+    prevent_overflow: bool | UnsetType = UNSET
+    is_header: bool | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:
         return 1 + sum(cell.utf16_width for cell in self.cells)
 
 
+@dataclass(frozen=True, kw_only=True)
 class TableUnit(ContentUnit):
-    def __init__(
-        self,
-        *,
-        table_key: str | None = None,
-        rows: list[TableRowUnit],
-        column_properties: list[TableColumn] | UnsetType = UNSET,
-    ) -> None:
-        self.table_key = table_key
-        self.rows = rows
-        self.column_properties = column_properties
+    table_key: str | None = None
+    rows: list[TableRowUnit]
+    column_properties: list[TableColumn] | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:

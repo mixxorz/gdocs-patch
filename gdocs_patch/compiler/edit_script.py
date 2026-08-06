@@ -351,7 +351,7 @@ def compile_table(
                 )
             )
 
-    merged_target_cells: set[TableCellUnit] = set()
+    merged_target_cell_ids: set[int] = set()
     for row_index, cell_index, source_cell, target_cell in matched_cells:
         if (
             target_cell.row_span > source_cell.row_span
@@ -366,7 +366,7 @@ def compile_table(
                     column_span=target_cell.column_span,
                 )
             )
-            merged_target_cells.add(target_cell)
+            merged_target_cell_ids.add(id(target_cell))
         elif (
             source_cell.row_span > target_cell.row_span
             or source_cell.column_span > target_cell.column_span
@@ -395,7 +395,7 @@ def compile_table(
         )
 
     for row_index, cell_index, source_cell, target_cell in reversed(matched_cells):
-        if target_cell in merged_target_cells:
+        if id(target_cell) in merged_target_cell_ids:
             continue
         edits.extend(
             generate_edit_script(
