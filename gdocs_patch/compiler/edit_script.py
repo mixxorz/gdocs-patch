@@ -34,9 +34,9 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
         for item in target.items
     ]
 
-    source_indices = [0]
+    source_utf16_offsets = [0]
     for item in source.items:
-        source_indices.append(source_indices[-1] + item.utf16_width)
+        source_utf16_offsets.append(source_utf16_offsets[-1] + item.utf16_width)
 
     edits: list[InsertText | DeleteContent] = []
     opcodes = SequenceMatcher(
@@ -45,12 +45,12 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
         autojunk=False,
     ).get_opcodes()
     for tag, source_start, source_end, target_start, target_end in reversed(opcodes):
-        index = source_indices[source_start]
+        index = source_utf16_offsets[source_start]
         if tag in {"delete", "replace"}:
             edits.append(
                 DeleteContent(
                     start_index=index,
-                    end_index=source_indices[source_end],
+                    end_index=source_utf16_offsets[source_end],
                 )
             )
         if tag in {"insert", "replace"}:
