@@ -1,8 +1,10 @@
-from .content_stream import ContentStream, ParagraphBoundary, TextUnit
+from .content_stream import BulletPreset, ContentStream, ParagraphBoundary, TextUnit
 from .edit_script import (
     ApplyParagraphStyle,
     ApplyTextStyle,
+    CreateParagraphBullets,
     DeleteContent,
+    DeleteParagraphBullets,
     Edit,
     EditScript,
     InsertText,
@@ -12,8 +14,11 @@ from .edit_script import (
 __all__ = [
     "ApplyParagraphStyle",
     "ApplyTextStyle",
+    "BulletPreset",
     "ContentStream",
+    "CreateParagraphBullets",
     "DeleteContent",
+    "DeleteParagraphBullets",
     "Edit",
     "EditScript",
     "InsertText",

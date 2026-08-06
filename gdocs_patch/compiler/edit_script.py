@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from gdocs_patch.models import ParagraphStyle, TextStyle, UnsetType
+from gdocs_patch.models import UNSET, ParagraphStyle, TextStyle, UnsetType
 
-from .content_stream import ContentStream, ParagraphBoundary, TextUnit
+from .content_stream import BulletPreset, ContentStream, ParagraphBoundary, TextUnit
 
 
 class Edit:
@@ -18,6 +18,19 @@ class InsertText(Edit):
 
 @dataclass(frozen=True, kw_only=True)
 class DeleteContent(Edit):
+    start_index: int
+    end_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class CreateParagraphBullets(Edit):
+    start_index: int
+    end_index: int
+    bullet_preset: BulletPreset
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeleteParagraphBullets(Edit):
     start_index: int
     end_index: int
 
@@ -152,8 +165,38 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                     )
                 continue
 
-            # A boundary carries both the text style of its newline and the
-            # paragraph style of the paragraph that ends there.
+            # A boundary carries its list membership and both the text style
+            # of its newline and the paragraph style of the paragraph ending there.
+            paragraph_start, paragraph_end = target_paragraph_ranges[target_position]
+            source_boundary = (
+                source_item if isinstance(source_item, ParagraphBoundary) else None
+            )
+            source_bullet = (
+                source_boundary.bullet if source_boundary is not None else UNSET
+            )
+            if isinstance(target_item.bullet, BulletPreset):
+                if source_bullet is not UNSET:
+                    edits.append(
+                        DeleteParagraphBullets(
+                            start_index=paragraph_start,
+                            end_index=paragraph_end,
+                        )
+                    )
+                edits.append(
+                    CreateParagraphBullets(
+                        start_index=paragraph_start,
+                        end_index=paragraph_end,
+                        bullet_preset=target_item.bullet,
+                    )
+                )
+            elif target_item.bullet is UNSET and source_bullet is not UNSET:
+                edits.append(
+                    DeleteParagraphBullets(
+                        start_index=paragraph_start,
+                        end_index=paragraph_end,
+                    )
+                )
+
             if source_item is None or source_item.text_style != target_item.text_style:
                 edits.append(
                     ApplyTextStyle(
@@ -162,17 +205,11 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                         text_style=target_item.text_style,
                     )
                 )
-            source_boundary = (
-                source_item if isinstance(source_item, ParagraphBoundary) else None
-            )
             if (
                 target_position in forced_paragraph_style_positions
                 or source_boundary is None
                 or source_boundary.paragraph_style != target_item.paragraph_style
             ):
-                paragraph_start, paragraph_end = target_paragraph_ranges[
-                    target_position
-                ]
                 edits.append(
                     ApplyParagraphStyle(
                         start_index=paragraph_start,
