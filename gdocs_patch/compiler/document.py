@@ -195,6 +195,7 @@ def compile_document(
         body_script = generate_edit_script(
             source=source_tab.body,
             target=target_tab.body,
+            start_index=1,
         )
         requests.extend(
             lower_edit_script(

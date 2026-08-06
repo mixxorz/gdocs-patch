@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 
 from gdocs_patch.models import (
     UNSET,
+    Bullet,
     Dimension,
     ParagraphStyle,
     TableCellStyle,
@@ -25,6 +26,52 @@ from .content_stream import (
 
 class UnsupportedTransformation(Exception):
     pass
+
+
+def writable_paragraph_style(
+    style: ParagraphStyle | UnsetType,
+) -> tuple[object, ...]:
+    paragraph_style = style if isinstance(style, ParagraphStyle) else ParagraphStyle()
+    return (
+        paragraph_style.named_style_type,
+        paragraph_style.alignment,
+        paragraph_style.direction,
+        paragraph_style.line_spacing,
+        paragraph_style.spacing_mode,
+        paragraph_style.space_above,
+        paragraph_style.space_below,
+        paragraph_style.indent_first_line,
+        paragraph_style.indent_start,
+        paragraph_style.indent_end,
+        paragraph_style.keep_lines_together,
+        paragraph_style.keep_with_next,
+        paragraph_style.avoid_widow_and_orphan,
+        paragraph_style.page_break_before,
+        paragraph_style.border_between,
+        paragraph_style.border_top,
+        paragraph_style.border_bottom,
+        paragraph_style.border_left,
+        paragraph_style.border_right,
+        paragraph_style.shading_color,
+    )
+
+
+def writable_table_cell_style(
+    style: TableCellStyle | UnsetType,
+) -> tuple[object, ...]:
+    cell_style = style if isinstance(style, TableCellStyle) else TableCellStyle()
+    return (
+        cell_style.background_color,
+        cell_style.border_left,
+        cell_style.border_right,
+        cell_style.border_top,
+        cell_style.border_bottom,
+        cell_style.padding_left,
+        cell_style.padding_right,
+        cell_style.padding_top,
+        cell_style.padding_bottom,
+        cell_style.content_alignment,
+    )
 
 
 class Edit:
@@ -474,7 +521,9 @@ def compile_table(
         for cell_index, target_cell in enumerate(row.cells):
             source_cell = source_cells_by_target.get((row_index, cell_index))
             source_style = source_cell.style if source_cell is not None else UNSET
-            if source_style != target_cell.style:
+            if writable_table_cell_style(source_style) != writable_table_cell_style(
+                target_cell.style
+            ):
                 edits.append(
                     ApplyTableCellStyle(
                         table_start_index=table_start_index,
@@ -728,6 +777,14 @@ def generate_edit_script(
                                 bullet_preset=target_boundary.bullet,
                             )
                         )
+                    elif isinstance(target_boundary.bullet, Bullet):
+                        if (
+                            source_boundary is not None
+                            and target_boundary.bullet != source_boundary.bullet
+                        ):
+                            raise UnsupportedTransformation(
+                                "changing existing Google-assigned bullets is not supported"
+                            )
                     elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
                         edits.append(
                             DeleteParagraphBullets(
@@ -750,8 +807,8 @@ def generate_edit_script(
                     if (
                         target_position in forced_paragraph_style_positions
                         or source_boundary is None
-                        or source_boundary.paragraph_style
-                        != target_boundary.paragraph_style
+                        or writable_paragraph_style(source_boundary.paragraph_style)
+                        != writable_paragraph_style(target_boundary.paragraph_style)
                     ):
                         edits.append(
                             ApplyParagraphStyle(

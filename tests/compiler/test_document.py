@@ -24,6 +24,8 @@ from gdocs_patch.models import (
     Equation,
     Paragraph,
     ParagraphStyle,
+    SectionBreak,
+    SectionStyle,
     Segment,
     Tab,
     Table,
@@ -31,6 +33,7 @@ from gdocs_patch.models import (
     TableCellStyle,
     TableColumn,
     TableRow,
+    TabStop,
     TextRun,
     TextStyle,
 )
@@ -428,6 +431,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 content=DocumentTab(
                     body=Body(
                         content=[
+                            SectionBreak(style=SectionStyle()),
                             Paragraph(elements=[TextRun(content="a\n")]),
                             Paragraph(elements=[TextRun(content="cd\n")]),
                             Paragraph(elements=[TextRun(content="e\n")]),
@@ -445,7 +449,15 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                             ),
                             Paragraph(
                                 elements=[TextRun(content="h\n")],
-                                style=ParagraphStyle(alignment="END"),
+                                style=ParagraphStyle(
+                                    heading_id="source-heading",
+                                    tab_stops=[
+                                        TabStop(
+                                            offset=Dimension(magnitude=12, unit="PT"),
+                                            alignment="START",
+                                        )
+                                    ],
+                                ),
                             ),
                             Paragraph(
                                 elements=[TextRun(content="i\n")],
@@ -655,6 +667,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 content=DocumentTab(
                     body=Body(
                         content=[
+                            SectionBreak(style=SectionStyle()),
                             Paragraph(elements=[TextRun(content="ab\n")]),
                             Paragraph(elements=[TextRun(content="c\n")]),
                             Paragraph(
@@ -670,7 +683,18 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                                 elements=[TextRun(content="g\n")],
                                 style=ParagraphStyle(alignment="CENTER"),
                             ),
-                            Paragraph(elements=[TextRun(content="h\n")]),
+                            Paragraph(
+                                elements=[TextRun(content="h\n")],
+                                style=ParagraphStyle(
+                                    heading_id="target-heading",
+                                    tab_stops=[
+                                        TabStop(
+                                            offset=Dimension(magnitude=24, unit="PT"),
+                                            alignment="END",
+                                        )
+                                    ],
+                                ),
+                            ),
                             Paragraph(elements=[TextRun(content="i\n")]),
                             Paragraph(
                                 elements=[TextRun(content="j\n")],
@@ -962,7 +986,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             {
                 "insertTableRow": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                        "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                         "rowIndex": 1,
                         "columnIndex": 0,
                     },
@@ -972,7 +996,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             {
                 "insertTableColumn": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                        "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                         "rowIndex": 0,
                         "columnIndex": 1,
                     },
@@ -981,37 +1005,37 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "insertText": {
-                    "location": {"index": 49, "tabId": "tab-stress"},
+                    "location": {"index": 50, "tabId": "tab-stress"},
                     "text": "I",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 46, "tabId": "tab-stress"},
+                    "location": {"index": 47, "tabId": "tab-stress"},
                     "text": "H",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 43, "tabId": "tab-stress"},
+                    "location": {"index": 44, "tabId": "tab-stress"},
                     "text": "G",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 39, "tabId": "tab-stress"},
+                    "location": {"index": 40, "tabId": "tab-stress"},
                     "text": "F",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 29, "tabId": "tab-stress"},
+                    "location": {"index": 30, "tabId": "tab-stress"},
                     "text": "C",
                 }
             },
             {
                 "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                     "columnIndices": [0],
                     "tableColumnProperties": {
                         "widthType": "FIXED_WIDTH",
@@ -1022,7 +1046,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                     "columnIndices": [1],
                     "tableColumnProperties": {
                         "widthType": "FIXED_WIDTH",
@@ -1033,7 +1057,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                     "columnIndices": [2],
                     "tableColumnProperties": {
                         "widthType": "FIXED_WIDTH",
@@ -1044,7 +1068,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "updateTableRowStyle": {
-                    "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                     "rowIndices": [0],
                     "tableRowStyle": {
                         "minRowHeight": {"magnitude": 5, "unit": "PT"},
@@ -1057,7 +1081,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "updateTableCellStyle": {
                     "tableRange": {
                         "tableCellLocation": {
-                            "tableStartLocation": {"index": 20, "tabId": "tab-stress"},
+                            "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
                             "rowIndex": 0,
                             "columnIndex": 0,
                         },
@@ -1077,7 +1101,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             {
                 "deleteTableRow": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 36, "tabId": "tab-stress"},
+                        "tableStartLocation": {"index": 37, "tabId": "tab-stress"},
                         "rowIndex": 2,
                         "columnIndex": 0,
                     }
@@ -1086,7 +1110,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             {
                 "deleteTableColumn": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 36, "tabId": "tab-stress"},
+                        "tableStartLocation": {"index": 37, "tabId": "tab-stress"},
                         "rowIndex": 0,
                         "columnIndex": 2,
                     }
@@ -1096,35 +1120,20 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "mergeTableCells": {
                     "tableRange": {
                         "tableCellLocation": {
-                            "tableStartLocation": {"index": 59, "tabId": "tab-stress"},
+                            "tableStartLocation": {"index": 60, "tabId": "tab-stress"},
                             "rowIndex": 0,
                             "columnIndex": 0,
                         },
                         "rowSpan": 2,
                         "columnSpan": 2,
                     }
-                }
-            },
-            {
-                "updateTableCellStyle": {
-                    "tableRange": {
-                        "tableCellLocation": {
-                            "tableStartLocation": {"index": 59, "tabId": "tab-stress"},
-                            "rowIndex": 0,
-                            "columnIndex": 0,
-                        },
-                        "rowSpan": 2,
-                        "columnSpan": 2,
-                    },
-                    "tableCellStyle": {},
-                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
                 }
             },
             {
                 "unmergeTableCells": {
                     "tableRange": {
                         "tableCellLocation": {
-                            "tableStartLocation": {"index": 71, "tabId": "tab-stress"},
+                            "tableStartLocation": {"index": 72, "tabId": "tab-stress"},
                             "rowIndex": 0,
                             "columnIndex": 0,
                         },
@@ -1134,93 +1143,71 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 }
             },
             {
-                "updateTableCellStyle": {
-                    "tableRange": {
-                        "tableCellLocation": {
-                            "tableStartLocation": {"index": 71, "tabId": "tab-stress"},
-                            "rowIndex": 0,
-                            "columnIndex": 0,
-                        },
-                        "rowSpan": 1,
-                        "columnSpan": 1,
-                    },
-                    "tableCellStyle": {},
-                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
-                }
-            },
-            {
                 "insertTable": {
                     "rows": 2,
                     "columns": 2,
-                    "location": {"index": 18, "tabId": "tab-stress"},
+                    "location": {"index": 19, "tabId": "tab-stress"},
                 }
             },
             {
                 "deleteContentRange": {
-                    "range": {"startIndex": 3, "endIndex": 4, "tabId": "tab-stress"}
+                    "range": {"startIndex": 4, "endIndex": 5, "tabId": "tab-stress"}
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 1, "tabId": "tab-stress"},
+                    "location": {"index": 2, "tabId": "tab-stress"},
                     "text": "b",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 1, "endIndex": 2, "tabId": "tab-stress"},
+                    "range": {"startIndex": 2, "endIndex": 3, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 5, "endIndex": 7, "tabId": "tab-stress"},
+                    "range": {"startIndex": 6, "endIndex": 8, "tabId": "tab-stress"},
                     "textStyle": {"bold": True},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 7, "endIndex": 9, "tabId": "tab-stress"},
+                    "range": {"startIndex": 8, "endIndex": 10, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateParagraphStyle": {
-                    "range": {"startIndex": 9, "endIndex": 11, "tabId": "tab-stress"},
+                    "range": {"startIndex": 10, "endIndex": 12, "tabId": "tab-stress"},
                     "paragraphStyle": {"alignment": "CENTER"},
                     "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
                 }
             },
             {
-                "updateParagraphStyle": {
-                    "range": {"startIndex": 11, "endIndex": 13, "tabId": "tab-stress"},
-                    "paragraphStyle": {},
-                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
-                }
-            },
-            {
                 "deleteParagraphBullets": {
-                    "range": {"startIndex": 13, "endIndex": 15, "tabId": "tab-stress"}
+                    "range": {"startIndex": 14, "endIndex": 16, "tabId": "tab-stress"}
                 }
             },
             {
                 "createParagraphBullets": {
-                    "range": {"startIndex": 15, "endIndex": 17, "tabId": "tab-stress"},
+                    "range": {"startIndex": 16, "endIndex": 18, "tabId": "tab-stress"},
                     "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 17, "tabId": "tab-stress"},
+                    "location": {"index": 18, "tabId": "tab-stress"},
                     "text": "\t\t",
                 }
             },
             {
                 "createParagraphBullets": {
-                    "range": {"startIndex": 17, "endIndex": 21, "tabId": "tab-stress"},
+                    "range": {"startIndex": 18, "endIndex": 22, "tabId": "tab-stress"},
                     "bulletPreset": "NUMBERED_DECIMAL_NESTED",
                 }
             },

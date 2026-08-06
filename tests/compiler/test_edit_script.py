@@ -484,6 +484,25 @@ def test_generate_edit_script_preserves_removes_and_creates_list_items() -> None
         ),
     ]
 
+    with pytest.raises(
+        UnsupportedTransformation,
+        match="changing existing Google-assigned bullets is not supported",
+    ):
+        generate_edit_script(
+            source=ContentStream(
+                items=[
+                    TextUnit(content="Existing"),
+                    ParagraphBoundary(bullet=Bullet(list_id="list-source")),
+                ]
+            ),
+            target=ContentStream(
+                items=[
+                    TextUnit(content="Existing"),
+                    ParagraphBoundary(bullet=Bullet(list_id="list-target")),
+                ]
+            ),
+        )
+
 
 def test_generate_edit_script_preserves_and_deletes_equations() -> None:
     source = ContentStream(

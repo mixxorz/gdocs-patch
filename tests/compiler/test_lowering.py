@@ -319,8 +319,6 @@ def test_lowers_all_table_edits() -> None:
             ),
         ]
     )
-    context = {"tabId": "tab-table", "segmentId": "footer-1"}
-
     assert lower_edit_script(
         edit_script=edit_script,
         tab_id="tab-table",
@@ -330,13 +328,17 @@ def test_lowers_all_table_edits() -> None:
             "insertTable": {
                 "rows": 2,
                 "columns": 3,
-                "location": {"index": 9, **context},
+                "location": {"index": 9, "tabId": "tab-table", "segmentId": "footer-1"},
             }
         },
         {
             "insertTableRow": {
                 "tableCellLocation": {
-                    "tableStartLocation": {"index": 10, **context},
+                    "tableStartLocation": {
+                        "index": 10,
+                        "tabId": "tab-table",
+                        "segmentId": "footer-1",
+                    },
                     "rowIndex": 0,
                     "columnIndex": 1,
                 },
@@ -346,7 +348,11 @@ def test_lowers_all_table_edits() -> None:
         {
             "insertTableColumn": {
                 "tableCellLocation": {
-                    "tableStartLocation": {"index": 10, **context},
+                    "tableStartLocation": {
+                        "index": 10,
+                        "tabId": "tab-table",
+                        "segmentId": "footer-1",
+                    },
                     "rowIndex": 1,
                     "columnIndex": 0,
                 },
@@ -356,7 +362,11 @@ def test_lowers_all_table_edits() -> None:
         {
             "deleteTableRow": {
                 "tableCellLocation": {
-                    "tableStartLocation": {"index": 10, **context},
+                    "tableStartLocation": {
+                        "index": 10,
+                        "tabId": "tab-table",
+                        "segmentId": "footer-1",
+                    },
                     "rowIndex": 2,
                     "columnIndex": 1,
                 }
@@ -365,7 +375,11 @@ def test_lowers_all_table_edits() -> None:
         {
             "deleteTableColumn": {
                 "tableCellLocation": {
-                    "tableStartLocation": {"index": 10, **context},
+                    "tableStartLocation": {
+                        "index": 10,
+                        "tabId": "tab-table",
+                        "segmentId": "footer-1",
+                    },
                     "rowIndex": 0,
                     "columnIndex": 2,
                 }
@@ -375,7 +389,11 @@ def test_lowers_all_table_edits() -> None:
             "mergeTableCells": {
                 "tableRange": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 10, **context},
+                        "tableStartLocation": {
+                            "index": 10,
+                            "tabId": "tab-table",
+                            "segmentId": "footer-1",
+                        },
                         "rowIndex": 0,
                         "columnIndex": 0,
                     },
@@ -388,7 +406,11 @@ def test_lowers_all_table_edits() -> None:
             "unmergeTableCells": {
                 "tableRange": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 10, **context},
+                        "tableStartLocation": {
+                            "index": 10,
+                            "tabId": "tab-table",
+                            "segmentId": "footer-1",
+                        },
                         "rowIndex": 1,
                         "columnIndex": 1,
                     },
@@ -399,7 +421,11 @@ def test_lowers_all_table_edits() -> None:
         },
         {
             "updateTableColumnProperties": {
-                "tableStartLocation": {"index": 10, **context},
+                "tableStartLocation": {
+                    "index": 10,
+                    "tabId": "tab-table",
+                    "segmentId": "footer-1",
+                },
                 "columnIndices": [1],
                 "tableColumnProperties": {
                     "widthType": "FIXED_WIDTH",
@@ -410,7 +436,11 @@ def test_lowers_all_table_edits() -> None:
         },
         {
             "updateTableColumnProperties": {
-                "tableStartLocation": {"index": 10, **context},
+                "tableStartLocation": {
+                    "index": 10,
+                    "tabId": "tab-table",
+                    "segmentId": "footer-1",
+                },
                 "columnIndices": [2],
                 "tableColumnProperties": {},
                 "fields": "widthType,width",
@@ -418,7 +448,11 @@ def test_lowers_all_table_edits() -> None:
         },
         {
             "updateTableRowStyle": {
-                "tableStartLocation": {"index": 10, **context},
+                "tableStartLocation": {
+                    "index": 10,
+                    "tabId": "tab-table",
+                    "segmentId": "footer-1",
+                },
                 "rowIndices": [0],
                 "tableRowStyle": {
                     "minRowHeight": {"magnitude": 24, "unit": "PT"},
@@ -432,7 +466,11 @@ def test_lowers_all_table_edits() -> None:
             "updateTableCellStyle": {
                 "tableRange": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 10, **context},
+                        "tableStartLocation": {
+                            "index": 10,
+                            "tabId": "tab-table",
+                            "segmentId": "footer-1",
+                        },
                         "rowIndex": 0,
                         "columnIndex": 0,
                     },
@@ -465,7 +503,11 @@ def test_lowers_all_table_edits() -> None:
             "updateTableCellStyle": {
                 "tableRange": {
                     "tableCellLocation": {
-                        "tableStartLocation": {"index": 10, **context},
+                        "tableStartLocation": {
+                            "index": 10,
+                            "tabId": "tab-table",
+                            "segmentId": "footer-1",
+                        },
                         "rowIndex": 2,
                         "columnIndex": 2,
                     },
