@@ -124,9 +124,7 @@ def test_normalize_tree_preserves_complex_table_shape_content_and_styles() -> No
                     TableCell(
                         cell_key="cell-header",
                         style=header_style,
-                        content=[
-                            Paragraph(elements=[TextRun(content="Head\n")])
-                        ],
+                        content=[Paragraph(elements=[TextRun(content="Head\n")])],
                     )
                 ],
             ),
@@ -402,11 +400,7 @@ def normalize_tree(tree: TreeNode) -> ContentStream:
             items.extend(normalize_tree(child).items)
 
         boundary_text_style: TextStyle | UnsetType = UNSET
-        if (
-            items
-            and isinstance(items[-1], TextUnit)
-            and items[-1].content == "\n"
-        ):
+        if items and isinstance(items[-1], TextUnit) and items[-1].content == "\n":
             boundary_text_style = items.pop().text_style
 
         items.append(
