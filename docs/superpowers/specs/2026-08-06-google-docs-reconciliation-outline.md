@@ -16,17 +16,33 @@ Compare an independently produced target document tree with its source tree and 
 - Treat target `UNSET` fields as fields that should be reset to their default state.
 - Use the fewest batches practical, adding a batch only when an earlier response is required.
 
-## Reconciliation pipeline
+## Compiler architecture
+
+Compiler code lives under `gdocs_patch/compiler/`. The retrieved-document models remain independent of compilation concerns.
 
 ```text
-documents.get model
-        ↓ normalize
-ContentStream
-        ↓ reconcile
-EditScript
-        ↓ schedule and lower
-batchUpdate requests
+Source Document model                  Target Document model
+          │                                      │
+          │ normalize                            │ normalize
+          ▼                                      ▼
+ Source ContentStream                   Target ContentStream
+          │                                      │
+          └──────────────┬───────────────────────┘
+                         │ reconcile and validate
+                         ▼
+                     EditScript
+                         │ schedule against the working source state
+                         ▼
+                 Scheduled semantic edits
+                         │ lower locations, ranges, field masks, and payloads
+                         ▼
+              Google Docs batchUpdate requests
+                         │ group by response dependencies
+                         ▼
+                  One or more batches
 ```
+
+Normalization captures the editable meaning of each model without producing changes. Reconciliation chooses retained content and proves the transformation is possible. Scheduling orders symbolic edits while tracking the state produced by preceding edits. Lowering is the only stage that knows the final Google request schema.
 
 ### ContentStream
 
@@ -38,7 +54,7 @@ The first vertical slice contains only text and paragraph boundaries. Representi
 
 `EditScript` contains semantic edits such as inserting text, deleting content, and updating styles. Its edits refer to source or target content symbolically rather than embedding final integer indices.
 
-Scheduling lowers the script to real Google requests. It calculates each request index from the document state produced by preceding requests and divides requests into batches only when required.
+Scheduling orders the script against the evolving source state. Lowering then calculates concrete indices and converts the scheduled edits to Google requests. Requests are divided into batches only when required.
 
 ## Work outline
 
