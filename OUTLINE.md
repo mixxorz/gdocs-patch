@@ -34,7 +34,7 @@ Build `ContentStream` producers for independently indexed regions:
 - footnotes;
 - table cells.
 
-Normalization should handle paragraphs, text runs, tables, and supported paragraph elements. Text must be divided finely enough that a small edit does not replace an entire long `TextRun`, which would unnecessarily threaten attached comments.
+Normalization should handle paragraphs, text runs, tables, and supported paragraph elements. It emits one `TextUnit` per character.
 
 ### 2. Carry compilation-region context
 
@@ -87,7 +87,7 @@ Use a representative document rather than testing internal delegation.
 
 ### Text and paragraph matching
 
-- Match text below whole-run granularity.
+- Normalize every character into its own `TextUnit`.
 - Preserve unchanged text whenever possible.
 - Retain paragraph split and merge behavior.
 - Produce correct style resets and field masks.
