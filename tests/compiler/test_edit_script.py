@@ -89,3 +89,66 @@ def test_generate_edit_script_handles_longer_content_and_style_ranges() -> None:
             paragraph_style=target_paragraph_style,
         ),
     ]
+
+
+def test_generate_edit_script_reapplies_style_after_merging_paragraphs() -> None:
+    # Deleting two boundaries merges three paragraphs. Google may retain a
+    # heading style even though the matched surviving boundary already has the
+    # target's normal style.
+    first_heading_style = ParagraphStyle(named_style_type="HEADING_1")
+    second_heading_style = ParagraphStyle(named_style_type="HEADING_2")
+    normal_style = ParagraphStyle(named_style_type="NORMAL_TEXT")
+    source = ContentStream(
+        items=[
+            TextUnit(content="H"),
+            TextUnit(content="e"),
+            TextUnit(content="l"),
+            TextUnit(content="l"),
+            TextUnit(content="o"),
+            ParagraphBoundary(paragraph_style=first_heading_style),
+            TextUnit(content="w"),
+            TextUnit(content="o"),
+            TextUnit(content="r"),
+            TextUnit(content="l"),
+            TextUnit(content="d"),
+            ParagraphBoundary(paragraph_style=second_heading_style),
+            TextUnit(content="a"),
+            TextUnit(content="g"),
+            TextUnit(content="a"),
+            TextUnit(content="i"),
+            TextUnit(content="n"),
+            ParagraphBoundary(paragraph_style=normal_style),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TextUnit(content="H"),
+            TextUnit(content="e"),
+            TextUnit(content="l"),
+            TextUnit(content="l"),
+            TextUnit(content="o"),
+            TextUnit(content="w"),
+            TextUnit(content="o"),
+            TextUnit(content="r"),
+            TextUnit(content="l"),
+            TextUnit(content="d"),
+            TextUnit(content="a"),
+            TextUnit(content="g"),
+            TextUnit(content="a"),
+            TextUnit(content="i"),
+            TextUnit(content="n"),
+            ParagraphBoundary(paragraph_style=normal_style),
+        ]
+    )
+
+    script = generate_edit_script(source=source, target=target)
+
+    assert script.edits == [
+        DeleteContent(start_index=11, end_index=12),
+        DeleteContent(start_index=5, end_index=6),
+        ApplyParagraphStyle(
+            start_index=0,
+            end_index=16,
+            paragraph_style=normal_style,
+        ),
+    ]

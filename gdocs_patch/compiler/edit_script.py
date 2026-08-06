@@ -91,6 +91,20 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
         autojunk=False,
     ).get_opcodes()
 
+    # Deleting a paragraph boundary can change the merged paragraph's style.
+    # Find the target boundary ending that paragraph so its style is reapplied.
+    forced_paragraph_style_positions: set[int] = set()
+    for tag, source_start, source_end, target_start, _target_end in opcodes:
+        if tag not in {"delete", "replace"} or not any(
+            isinstance(item, ParagraphBoundary)
+            for item in source.items[source_start:source_end]
+        ):
+            continue
+        for target_position in range(target_start, len(target.items)):
+            if isinstance(target.items[target_position], ParagraphBoundary):
+                forced_paragraph_style_positions.add(target_position)
+                break
+
     # Apply content changes from right to left. Changes at later indices cannot
     # shift the source indices used by earlier changes.
     for tag, source_start, source_end, target_start, target_end in reversed(opcodes):
@@ -152,7 +166,8 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                 source_item if isinstance(source_item, ParagraphBoundary) else None
             )
             if (
-                source_boundary is None
+                target_position in forced_paragraph_style_positions
+                or source_boundary is None
                 or source_boundary.paragraph_style != target_item.paragraph_style
             ):
                 paragraph_start, paragraph_end = target_paragraph_ranges[
