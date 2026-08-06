@@ -6,13 +6,39 @@ Compare an independently produced target document tree with its source tree and 
 
 ## Principles
 
-- Match and reconcile the document hierarchy from roots toward leaves.
-- Treat model-equal elements as equivalent and resolve ambiguous matches deterministically.
+- Keep the `documents.get` model focused on representing a retrieved document.
+- Normalize source and target content into a representation based on editable Docs semantics.
+- Reconcile the normalized hierarchy from roots toward leaves.
+- Treat model-equivalent elements as interchangeable and resolve ambiguous matches deterministically.
 - Prefer retaining existing text and structure over replacing it, so comments have the best chance of surviving.
 - Preserve elements that the API cannot create whenever the target still contains them.
 - Reject a transformation only when the API cannot produce the target.
 - Treat target `UNSET` fields as fields that should be reset to their default state.
 - Use the fewest batches practical, adding a batch only when an earlier response is required.
+
+## Reconciliation pipeline
+
+```text
+documents.get model
+        ↓ normalize
+ContentStream
+        ↓ reconcile
+EditScript
+        ↓ schedule and lower
+batchUpdate requests
+```
+
+### ContentStream
+
+`ContentStream` is a materialized, editable view of an indexed content region such as a body, segment, or table cell. Text and paragraph boundaries are sequential, while structures such as tables retain their nested hierarchy. A table cell owns another `ContentStream`.
+
+The first vertical slice contains only text and paragraph boundaries. Representing a paragraph boundary explicitly allows paragraph splitting and merging to become localized newline insertion and deletion. Later slices add inline elements, tables, sections, and other structures without changing the retrieved-document model.
+
+### EditScript
+
+`EditScript` contains semantic edits such as inserting text, deleting content, and updating styles. Its edits refer to source or target content symbolically rather than embedding final integer indices.
+
+Scheduling lowers the script to real Google requests. It calculates each request index from the document state produced by preceding requests and divides requests into batches only when required.
 
 ## Work outline
 
@@ -21,13 +47,16 @@ Compare an independently produced target document tree with its source tree and 
    - Identify elements that can only be preserved or deleted.
    - Identify operations that return IDs needed by later operations.
 
-2. **Represent reconciliation results**
-   - Represent matched source/target nodes, source-only deletions, and target-only insertions.
-   - Keep nested reconciliation results hierarchical.
+2. **Build ContentStream normalization**
+   - Normalize each independently indexed content region.
+   - Begin with text and paragraph boundaries.
+   - Preserve links to source locations and target styles needed during lowering.
+   - Add nested structural stream elements only as their vertical slices are implemented.
 
-3. **Match sibling collections**
+3. **Reconcile streams hierarchically**
+   - Align ordered content within the same parent region.
    - Match retained provider IDs where available.
-   - Align ID-less siblings using reconciliation cost.
+   - Align ID-less content using reconciliation cost.
    - Prioritize retaining content, then structure, then styles and other properties.
    - Resolve equal choices deterministically.
 
@@ -36,21 +65,22 @@ Compare an independently produced target document tree with its source tree and 
    - Preserve matched non-creatable elements as anchors.
    - Report unsupported transformations without modifying the document.
 
-5. **Reconcile textual content**
-   - Diff text at character boundaries without treating text-run style boundaries as content changes.
-   - Retain unchanged text spans and use localized insertions and deletions.
-   - Reconcile supported non-text paragraph elements around preserved anchors.
+5. **Produce an EditScript**
+   - Retain unchanged text spans.
+   - Represent localized insertions, deletions, splits, merges, and supported structural changes.
+   - Add style and metadata edits after content and structure have their target shape.
 
-6. **Reconcile document structure incrementally**
-   - Start with paragraphs and body or segment content.
-   - Add tables, rows, cells, and nested cell content.
+6. **Reconcile document features incrementally**
+   - Complete the text-run and paragraph vertical slice first.
+   - Add supported inline paragraph elements.
+   - Add tables, rows, cells, and nested cell streams.
    - Add sections, tabs, headers, footers, footnotes, and remaining supported structures.
-   - Handle each model feature only when its Google API behavior is understood and tested.
+   - Handle each feature only when its Google API behavior is understood and tested.
 
 7. **Track request-time document state**
-   - Calculate each request against the state produced by preceding requests.
-   - Keep a working tree synchronized with planned content and structural changes.
-   - Use dynamic UTF-16 indices from that working tree.
+   - Schedule each edit against the state produced by preceding edits.
+   - Keep a working content representation synchronized with planned changes.
+   - Use dynamic UTF-16 indices when lowering edits to requests.
 
 8. **Reconcile styles and metadata**
    - Compare styles after content and structure have their target shape.
@@ -58,15 +88,15 @@ Compare an independently produced target document tree with its source tree and 
    - Apply bullets, structural styles, paragraph styles, and text styles in a safe order.
 
 9. **Schedule requests and batches**
-   - Order requests so index changes and API side effects remain valid.
+   - Account for index changes and API side effects.
    - Group independent operations into one atomic batch.
    - Split batches only for response-dependent IDs or other API requirements.
 
 10. **Verify behavior**
     - Test each supported reconciliation behavior as it is introduced.
-    - Cover ambiguous matching, unsupported changes, Unicode indices, best-effort comment preservation, nested tables, and style resets.
+    - Cover ambiguous matching, unsupported changes, Unicode indices, best-effort comment preservation, paragraph splits and merges, nested tables, and style resets.
     - Validate complete request sequences against representative source and target documents.
 
 ## Implementation approach
 
-Implement one narrow behavior at a time. For each behavior, agree on the model correspondence, expected Google operations, request ordering, and meaningful tests before expanding support. This outline intentionally leaves concrete APIs and algorithms open for iteration in code.
+Implement one vertical slice at a time. For each behavior, agree on its `ContentStream` representation, matching behavior, resulting `EditScript`, lowering rules, and meaningful tests before expanding support. Concrete APIs and algorithms will be developed incrementally in code.
