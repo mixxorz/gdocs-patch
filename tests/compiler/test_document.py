@@ -1,11 +1,14 @@
 from gdocs_patch.compiler import (
     ContentStream,
+    DocumentContent,
     EquationUnit,
     ParagraphBoundary,
+    TabContent,
     TableCellUnit,
     TableRowUnit,
     TableUnit,
     TextUnit,
+    normalize_document,
     normalize_tree,
 )
 from gdocs_patch.models import (
@@ -14,9 +17,13 @@ from gdocs_patch.models import (
     Bullet,
     Color,
     Dimension,
+    Document,
+    DocumentTab,
     Equation,
     Paragraph,
     ParagraphStyle,
+    Segment,
+    Tab,
     Table,
     TableCell,
     TableCellStyle,
@@ -281,4 +288,122 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
             EquationUnit(),
             ParagraphBoundary(),
         ]
+    )
+
+
+def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
+    document = Document(
+        document_id="document-1",
+        title="Document",
+        tabs=[
+            Tab(
+                tab_id="root",
+                title="Root",
+                index=0,
+                content=DocumentTab(
+                    body=Body(
+                        content=[Paragraph(elements=[TextRun(content="Root\n")])]
+                    ),
+                    headers={
+                        "header-1": Segment(
+                            segment_id="header-1",
+                            content=[Paragraph(elements=[TextRun(content="H\n")])],
+                        )
+                    },
+                    footers={
+                        "footer-1": Segment(
+                            segment_id="footer-1",
+                            content=[Paragraph(elements=[TextRun(content="F\n")])],
+                        )
+                    },
+                    footnotes={
+                        "footnote-1": Segment(
+                            segment_id="footnote-1",
+                            content=[
+                                Paragraph(
+                                    elements=[
+                                        TextRun(content="N"),
+                                        Equation(),
+                                        TextRun(content="\n"),
+                                    ]
+                                )
+                            ],
+                        )
+                    },
+                ),
+                children=[
+                    Tab(
+                        tab_id="child",
+                        title="Child",
+                        index=0,
+                        content=DocumentTab(
+                            body=Body(
+                                content=[
+                                    Paragraph(elements=[TextRun(content="Child\n")])
+                                ]
+                            )
+                        ),
+                        children=[],
+                    )
+                ],
+            ),
+            Tab(
+                tab_id="unloaded",
+                title="Unloaded",
+                index=1,
+                children=[],
+            ),
+        ],
+    )
+
+    content = normalize_document(document)
+
+    assert content == DocumentContent(
+        tabs={
+            "root": TabContent(
+                body=ContentStream(
+                    items=[
+                        TextUnit(content="R"),
+                        TextUnit(content="o"),
+                        TextUnit(content="o"),
+                        TextUnit(content="t"),
+                        ParagraphBoundary(),
+                    ]
+                ),
+                headers={
+                    "header-1": ContentStream(
+                        items=[TextUnit(content="H"), ParagraphBoundary()]
+                    )
+                },
+                footers={
+                    "footer-1": ContentStream(
+                        items=[TextUnit(content="F"), ParagraphBoundary()]
+                    )
+                },
+                footnotes={
+                    "footnote-1": ContentStream(
+                        items=[
+                            TextUnit(content="N"),
+                            EquationUnit(),
+                            ParagraphBoundary(),
+                        ]
+                    )
+                },
+            ),
+            "child": TabContent(
+                body=ContentStream(
+                    items=[
+                        TextUnit(content="C"),
+                        TextUnit(content="h"),
+                        TextUnit(content="i"),
+                        TextUnit(content="l"),
+                        TextUnit(content="d"),
+                        ParagraphBoundary(),
+                    ]
+                ),
+                headers={},
+                footers={},
+                footnotes={},
+            ),
+        }
     )

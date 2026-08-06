@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from gdocs_patch.models import (
     UNSET,
@@ -29,24 +30,17 @@ from .content_stream import (
 from .edit_script import EditScript, UnsupportedTransformation, generate_edit_script
 
 
+@dataclass(frozen=True, kw_only=True)
 class TabContent:
-    def __init__(
-        self,
-        *,
-        body: ContentStream,
-        headers: dict[str, ContentStream],
-        footers: dict[str, ContentStream],
-        footnotes: dict[str, ContentStream],
-    ) -> None:
-        self.body = body
-        self.headers = headers
-        self.footers = footers
-        self.footnotes = footnotes
+    body: ContentStream
+    headers: dict[str, ContentStream]
+    footers: dict[str, ContentStream]
+    footnotes: dict[str, ContentStream]
 
 
+@dataclass(frozen=True, kw_only=True)
 class DocumentContent:
-    def __init__(self, *, tabs: dict[str, TabContent]) -> None:
-        self.tabs = tabs
+    tabs: dict[str, TabContent]
 
 
 def normalize_tree(tree: TreeNode) -> ContentStream:
