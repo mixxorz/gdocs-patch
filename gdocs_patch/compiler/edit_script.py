@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -5,13 +6,11 @@ from gdocs_patch.models import UNSET, ParagraphStyle, TextStyle, UnsetType
 
 from .content_stream import (
     BulletPreset,
-    CellStart,
     ContentStream,
     EquationUnit,
     ParagraphBoundary,
-    RowStart,
-    TableEnd,
-    TableStart,
+    TableCellUnit,
+    TableUnit,
     TextUnit,
 )
 
@@ -28,6 +27,13 @@ class Edit:
 class InsertText(Edit):
     index: int
     text: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class InsertTable(Edit):
+    index: int
+    rows: int
+    columns: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -83,64 +89,134 @@ class EditScript:
 Opcode = tuple[str, int, int, int, int]
 
 
-def generate_table_edits(
-    *,
-    source: ContentStream,
-    target: ContentStream,
-    opcode: Opcode,
-    source_utf16_offset_map: list[int],
-    target_utf16_offset_map: list[int],
-) -> list[Edit] | None:
-    tag, source_start, _source_end, target_start, target_end = opcode
-    target_slice = target.items[target_start:target_end]
-    if tag != "insert" or not target_slice or not isinstance(target_slice[0], RowStart):
-        return None
+def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[Opcode]:
+    return SequenceMatcher(
+        a=source.comparison_values(),
+        b=target.comparison_values(),
+        autojunk=False,
+    ).get_opcodes()
 
-    source_table_position = source_start - 1
-    while not isinstance(source.items[source_table_position], TableStart):
-        source_table_position -= 1
 
-    target_table_position = target_start - 1
-    while not isinstance(target.items[target_table_position], TableStart):
-        target_table_position -= 1
+def first_different_index(*, source: Sequence[object], target: Sequence[object]) -> int:
+    for index, (source_item, target_item) in enumerate(
+        zip(source, target, strict=False)
+    ):
+        if source_item != target_item:
+            return index
+    return min(len(source), len(target))
 
-    preceding_rows = sum(
-        isinstance(item, RowStart)
-        for item in target.items[target_table_position + 1 : target_start]
-    )
+
+def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
     edits: list[Edit] = [
-        InsertTableRow(
-            table_start_index=source_utf16_offset_map[source_table_position],
-            row_index=max(0, preceding_rows - 1),
-            column_index=0,
-            insert_below=preceding_rows > 0,
+        InsertTable(
+            index=index,
+            rows=len(table.rows),
+            columns=table.column_count,
         )
     ]
-
-    table_start_index = source_utf16_offset_map[source_table_position]
-    target_table_start_index = target_utf16_offset_map[target_table_position]
-    for target_position in range(target_start, target_end):
-        item = target.items[target_position]
-        if isinstance(item, TextUnit):
-            edits.append(
-                InsertText(
-                    index=table_start_index
-                    + target_utf16_offset_map[target_position]
-                    - target_table_start_index,
-                    text=item.content,
+    for row_index, row in enumerate(table.rows):
+        for cell_index, cell in enumerate(row.cells):
+            edits.extend(
+                compile_content(
+                    source=ContentStream(items=[ParagraphBoundary()]),
+                    target=cell.content,
+                    start_index=index
+                    + table.cell_content_offset(
+                        row_index=row_index,
+                        cell_index=cell_index,
+                    ),
                 )
             )
     return edits
 
 
+def compile_table(
+    *,
+    source: TableUnit,
+    target: TableUnit,
+    table_start_index: int,
+) -> list[Edit]:
+    changed_row = first_different_index(
+        source=[row.row_key for row in source.rows],
+        target=[row.row_key for row in target.rows],
+    )
+    added_rows = len(target.rows) - len(source.rows)
+    edits: list[Edit] = []
+
+    for offset in range(max(0, added_rows)):
+        new_row = changed_row + offset
+        edits.append(
+            InsertTableRow(
+                table_start_index=table_start_index,
+                row_index=max(0, new_row - 1),
+                column_index=0,
+                insert_below=new_row > 0,
+            )
+        )
+
+    for row_index in range(changed_row, changed_row + max(0, added_rows)):
+        for cell_index, cell in enumerate(target.rows[row_index].cells):
+            edits.extend(
+                compile_content(
+                    source=ContentStream(items=[ParagraphBoundary()]),
+                    target=cell.content,
+                    start_index=table_start_index
+                    + target.cell_content_offset(
+                        row_index=row_index,
+                        cell_index=cell_index,
+                    ),
+                )
+            )
+
+    for target_row_index in reversed(range(len(target.rows))):
+        if changed_row <= target_row_index < changed_row + max(0, added_rows):
+            continue
+        source_row_index = target_row_index
+        if target_row_index >= changed_row + max(0, added_rows):
+            source_row_index -= max(0, added_rows)
+        if source_row_index >= len(source.rows):
+            continue
+        target_row = target.rows[target_row_index]
+        available_source_cells = list(source.rows[source_row_index].cells)
+        matched_cells: list[tuple[int, TableCellUnit, TableCellUnit]] = []
+        for cell_index, target_cell in enumerate(target_row.cells):
+            source_cell = next(
+                (
+                    cell
+                    for cell in available_source_cells
+                    if cell.cell_key == target_cell.cell_key
+                ),
+                None,
+            )
+            if source_cell is not None:
+                available_source_cells.remove(source_cell)
+                matched_cells.append((cell_index, source_cell, target_cell))
+
+        for cell_index, source_cell, target_cell in reversed(matched_cells):
+            edits.extend(
+                generate_edit_script(
+                    source=source_cell.content,
+                    target=target_cell.content,
+                    start_index=table_start_index
+                    + target.cell_content_offset(
+                        row_index=target_row_index,
+                        cell_index=cell_index,
+                    ),
+                ).edits
+            )
+
+    return edits
+
+
 def generate_text_edits(
     *,
+    source: ContentStream,
     target: ContentStream,
     opcode: Opcode,
-    source_utf16_offset_map: list[int],
+    start_index: int,
 ) -> list[Edit]:
     tag, source_start, source_end, target_start, target_end = opcode
-    index = source_utf16_offset_map[source_start]
+    index = source.utf16_index(source_start, start_index=start_index)
     edits: list[Edit] = []
 
     # A replacement deletes first so its insertion can reuse the same index.
@@ -148,7 +224,7 @@ def generate_text_edits(
         edits.append(
             DeleteContent(
                 start_index=index,
-                end_index=source_utf16_offset_map[source_end],
+                end_index=source.utf16_index(source_end, start_index=start_index),
             )
         )
     if tag in {"insert", "replace"}:
@@ -160,41 +236,41 @@ def generate_text_edits(
     return edits
 
 
-def generate_edit_script(*, source: ContentStream, target: ContentStream) -> EditScript:
+def compile_content(
+    *, source: ContentStream, target: ContentStream, start_index: int
+) -> list[Edit]:
+    opcodes = match_content(source=source, target=target)
+    edits: list[Edit] = []
+    for opcode in reversed(opcodes):
+        edits.extend(
+            generate_text_edits(
+                source=source,
+                target=target,
+                opcode=opcode,
+                start_index=start_index,
+            )
+        )
+    return edits
+
+
+def generate_edit_script(
+    *, source: ContentStream, target: ContentStream, start_index: int = 0
+) -> EditScript:
     """Describe how to change source content and styles into the target."""
-
-    # Match only visible content and paragraph boundaries. Style differences do
-    # not justify deleting text that can remain in place.
-    source_values = source.comparison_values()
-    target_values = target.comparison_values()
-
-    # SequenceMatcher reports Python list positions. These maps translate every
-    # position between stream items into the UTF-16 indices required by Docs.
-    source_utf16_offset_map = [0]
-    for item in source.items:
-        source_utf16_offset_map.append(source_utf16_offset_map[-1] + item.utf16_width)
-
-    target_utf16_offset_map = [0]
 
     # A paragraph ends at its boundary. Save its complete target range so a
     # boundary style change can style the paragraph rather than only its newline.
     target_paragraph_ranges: dict[int, tuple[int, int]] = {}
-    paragraph_start = 0
+    paragraph_start = start_index
+    target_index = start_index
     for position, item in enumerate(target.items):
-        target_utf16_offset_map.append(target_utf16_offset_map[-1] + item.utf16_width)
+        target_index += item.utf16_width
         if isinstance(item, ParagraphBoundary):
-            target_paragraph_ranges[position] = (
-                paragraph_start,
-                target_utf16_offset_map[-1],
-            )
-            paragraph_start = target_utf16_offset_map[-1]
+            target_paragraph_ranges[position] = (paragraph_start, target_index)
+            paragraph_start = target_index
 
     edits: list[Edit] = []
-    opcodes = SequenceMatcher(
-        a=source_values,
-        b=target_values,
-        autojunk=False,
-    ).get_opcodes()
+    opcodes = match_content(source=source, target=target)
 
     for tag, _source_start, _source_end, target_start, target_end in opcodes:
         if tag in {"insert", "replace"} and any(
@@ -223,24 +299,75 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
     # shift the source indices used by earlier changes.
     handled_table_target_positions: set[int] = set()
     for opcode in reversed(opcodes):
-        table_edits = generate_table_edits(
-            source=source,
-            target=target,
-            opcode=opcode,
-            source_utf16_offset_map=source_utf16_offset_map,
-            target_utf16_offset_map=target_utf16_offset_map,
-        )
-        if table_edits is not None:
-            edits.extend(table_edits)
-            _tag, _source_start, _source_end, target_start, target_end = opcode
-            handled_table_target_positions.update(range(target_start, target_end))
+        tag, source_start, source_end, target_start, target_end = opcode
+
+        if tag == "equal":
+            for target_position in range(target_start, target_end):
+                target_item = target.items[target_position]
+                source_item = source.items[
+                    source_start + target_position - target_start
+                ]
+                if isinstance(source_item, TableUnit) and isinstance(
+                    target_item, TableUnit
+                ):
+                    edits.extend(
+                        compile_table(
+                            source=source_item,
+                            target=target_item,
+                            table_start_index=source.utf16_index(
+                                source_start + target_position - target_start,
+                                start_index=start_index,
+                            ),
+                        )
+                    )
+                    handled_table_target_positions.add(target_position)
+            continue
+
+        inserted_tables = [
+            (target_position, item)
+            for target_position, item in enumerate(
+                target.items[target_start:target_end],
+                start=target_start,
+            )
+            if isinstance(item, TableUnit)
+        ]
+        if inserted_tables:
+            if tag == "replace":
+                edits.append(
+                    DeleteContent(
+                        start_index=source.utf16_index(
+                            source_start,
+                            start_index=start_index,
+                        ),
+                        end_index=source.utf16_index(
+                            source_end,
+                            start_index=start_index,
+                        ),
+                    )
+                )
+            insertion_index = source.utf16_index(
+                source_start,
+                start_index=start_index,
+            )
+            target_slice_index = target.utf16_index(target_start)
+            for target_position, table in inserted_tables:
+                edits.extend(
+                    compile_inserted_table(
+                        table=table,
+                        index=insertion_index
+                        + target.utf16_index(target_position)
+                        - target_slice_index,
+                    )
+                )
+                handled_table_target_positions.add(target_position)
             continue
 
         edits.extend(
             generate_text_edits(
+                source=source,
                 target=target,
                 opcode=opcode,
-                source_utf16_offset_map=source_utf16_offset_map,
+                start_index=start_index,
             )
         )
 
@@ -258,17 +385,17 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                     source_start + target_position - target_start
                 ]
 
-            start_index = target_utf16_offset_map[target_position]
-            end_index = target_utf16_offset_map[target_position + 1]
+            item_start_index = target.utf16_index(
+                target_position,
+                start_index=start_index,
+            )
+            item_end_index = target.utf16_index(
+                target_position + 1,
+                start_index=start_index,
+            )
 
             match target_item:
-                case (
-                    EquationUnit()
-                    | TableStart()
-                    | RowStart()
-                    | CellStart()
-                    | TableEnd()
-                ):
+                case EquationUnit() | TableUnit():
                     pass
 
                 case TextUnit() as target_text:
@@ -281,8 +408,8 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                     ):
                         edits.append(
                             ApplyTextStyle(
-                                start_index=start_index,
-                                end_index=end_index,
+                                start_index=item_start_index,
+                                end_index=item_end_index,
                                 text_style=target_text.text_style,
                             )
                         )
@@ -331,8 +458,8 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
                     ):
                         edits.append(
                             ApplyTextStyle(
-                                start_index=start_index,
-                                end_index=end_index,
+                                start_index=item_start_index,
+                                end_index=item_end_index,
                                 text_style=target_boundary.text_style,
                             )
                         )

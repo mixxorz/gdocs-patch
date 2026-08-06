@@ -4,18 +4,18 @@ from gdocs_patch.compiler import (
     ApplyParagraphStyle,
     ApplyTextStyle,
     BulletPreset,
-    CellStart,
     ContentStream,
     CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
     EquationUnit,
+    InsertTable,
     InsertTableRow,
     InsertText,
     ParagraphBoundary,
-    RowStart,
-    TableEnd,
-    TableStart,
+    TableCellUnit,
+    TableRowUnit,
+    TableUnit,
     TextUnit,
     UnsupportedTransformation,
     generate_edit_script,
@@ -23,32 +23,127 @@ from gdocs_patch.compiler import (
 from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle
 
 
-def test_generate_edit_script_inserts_a_table_row() -> None:
-    # The source is a 1x1 table whose cell contains "A".
+def test_generate_edit_script_inserts_two_table_rows() -> None:
+    # Duplicate row and cell keys are allowed. Matching deterministically
+    # retains the first two rows and treats the final two target rows as inserted.
     source = ContentStream(
         items=[
-            TableStart(),
-            RowStart(),
-            CellStart(),
-            TextUnit(content="A"),
-            ParagraphBoundary(),
-            TableEnd(),
+            TableUnit(
+                table_key="table-1",
+                rows=[
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="A"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="B"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="C"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="D"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            )
         ]
     )
-
-    # The target appends a second row whose cell contains "B".
     target = ContentStream(
         items=[
-            TableStart(),
-            RowStart(),
-            CellStart(),
-            TextUnit(content="A"),
-            ParagraphBoundary(),
-            RowStart(),
-            CellStart(),
-            TextUnit(content="B"),
-            ParagraphBoundary(),
-            TableEnd(),
+            TableUnit(
+                table_key="table-1",
+                rows=[
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="A"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="B"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="C"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="D"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="E"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="F"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                    TableRowUnit(
+                        row_key="row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="G"), ParagraphBoundary()]
+                                ),
+                            ),
+                            TableCellUnit(
+                                cell_key="cell",
+                                content=ContentStream(
+                                    items=[TextUnit(content="H"), ParagraphBoundary()]
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            )
         ]
     )
 
@@ -57,11 +152,114 @@ def test_generate_edit_script_inserts_a_table_row() -> None:
     assert script.edits == [
         InsertTableRow(
             table_start_index=0,
-            row_index=0,
+            row_index=1,
             column_index=0,
             insert_below=True,
         ),
-        InsertText(index=7, text="B"),
+        InsertTableRow(
+            table_start_index=0,
+            row_index=2,
+            column_index=0,
+            insert_below=True,
+        ),
+        InsertText(index=17, text="E"),
+        InsertText(index=20, text="F"),
+        InsertText(index=24, text="G"),
+        InsertText(index=27, text="H"),
+    ]
+
+
+def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
+    first_table = TableUnit(
+        table_key="table-1",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="A"), ParagraphBoundary()]
+                        ),
+                    ),
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="B"), ParagraphBoundary()]
+                        ),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="C"), ParagraphBoundary()]
+                        ),
+                    ),
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="D"), ParagraphBoundary()]
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+    second_table = TableUnit(
+        table_key="table-2",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="E"), ParagraphBoundary()]
+                        ),
+                    ),
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="F"), ParagraphBoundary()]
+                        ),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="G"), ParagraphBoundary()]
+                        ),
+                    ),
+                    TableCellUnit(
+                        cell_key="cell",
+                        content=ContentStream(
+                            items=[TextUnit(content="H"), ParagraphBoundary()]
+                        ),
+                    ),
+                ],
+            ),
+        ],
+    )
+    last_table = TableUnit(table_key="table-3", rows=first_table.rows)
+    source = ContentStream(items=[first_table, last_table])
+    target = ContentStream(items=[first_table, second_table, last_table])
+
+    script = generate_edit_script(source=source, target=target)
+
+    assert script.edits == [
+        InsertTable(index=16, rows=2, columns=2),
+        InsertText(index=19, text="E"),
+        InsertText(index=22, text="F"),
+        InsertText(index=26, text="G"),
+        InsertText(index=29, text="H"),
     ]
 
 

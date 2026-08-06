@@ -54,30 +54,6 @@ class EquationUnit(ContentUnit):
         return 1
 
 
-class TableStart(ContentUnit):
-    @property
-    def utf16_width(self) -> int:
-        return 1
-
-
-class RowStart(ContentUnit):
-    @property
-    def utf16_width(self) -> int:
-        return 1
-
-
-class CellStart(ContentUnit):
-    @property
-    def utf16_width(self) -> int:
-        return 1
-
-
-class TableEnd(ContentUnit):
-    @property
-    def utf16_width(self) -> int:
-        return 1
-
-
 class ParagraphBoundary(ContentUnit):
     def __init__(
         self,
@@ -107,6 +83,9 @@ class ContentStream:
     def utf16_width(self) -> int:
         return sum(item.utf16_width for item in self.items)
 
+    def utf16_index(self, position: int, *, start_index: int = 0) -> int:
+        return start_index + sum(item.utf16_width for item in self.items[:position])
+
     def comparison_values(self) -> list[tuple[str, str]]:
         values: list[tuple[str, str]] = []
         for item in self.items:
@@ -116,12 +95,61 @@ class ContentStream:
                 values.append(("equation", ""))
             elif isinstance(item, ParagraphBoundary):
                 values.append(("paragraph_boundary", ""))
-            elif isinstance(item, TableStart):
-                values.append(("table_start", ""))
-            elif isinstance(item, RowStart):
-                values.append(("row_start", ""))
-            elif isinstance(item, CellStart):
-                values.append(("cell_start", ""))
-            elif isinstance(item, TableEnd):
-                values.append(("table_end", ""))
+            elif isinstance(item, TableUnit):
+                values.append(("table", item.table_key))
         return values
+
+
+class TableCellUnit:
+    def __init__(
+        self,
+        *,
+        cell_key: str,
+        content: ContentStream,
+        row_span: int = 1,
+        column_span: int = 1,
+    ) -> None:
+        self.cell_key = cell_key
+        self.content = content
+        self.row_span = row_span
+        self.column_span = column_span
+
+    @property
+    def utf16_width(self) -> int:
+        return 1 + self.content.utf16_width
+
+
+class TableRowUnit:
+    def __init__(self, *, row_key: str, cells: list[TableCellUnit]) -> None:
+        self.row_key = row_key
+        self.cells = cells
+
+    @property
+    def utf16_width(self) -> int:
+        return 1 + sum(cell.utf16_width for cell in self.cells)
+
+
+class TableUnit(ContentUnit):
+    def __init__(self, *, table_key: str, rows: list[TableRowUnit]) -> None:
+        self.table_key = table_key
+        self.rows = rows
+
+    @property
+    def utf16_width(self) -> int:
+        return 2 + sum(row.utf16_width for row in self.rows)
+
+    @property
+    def column_count(self) -> int:
+        return max(
+            (sum(cell.column_span for cell in row.cells) for row in self.rows),
+            default=0,
+        )
+
+    def cell_content_offset(self, *, row_index: int, cell_index: int) -> int:
+        return (
+            1
+            + sum(row.utf16_width for row in self.rows[:row_index])
+            + 1
+            + sum(cell.utf16_width for cell in self.rows[row_index].cells[:cell_index])
+            + 1
+        )
