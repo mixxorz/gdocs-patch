@@ -86,8 +86,8 @@ class ContentStream:
     def utf16_index(self, position: int, *, start_index: int = 0) -> int:
         return start_index + sum(item.utf16_width for item in self.items[:position])
 
-    def comparison_values(self) -> list[tuple[str, str]]:
-        values: list[tuple[str, str]] = []
+    def comparison_values(self) -> list[tuple[str, object]]:
+        values: list[tuple[str, object]] = []
         for item in self.items:
             if isinstance(item, TextUnit):
                 values.append(("text", item.content))
@@ -96,7 +96,12 @@ class ContentStream:
             elif isinstance(item, ParagraphBoundary):
                 values.append(("paragraph_boundary", ""))
             elif isinstance(item, TableUnit):
-                values.append(("table", item.table_key))
+                values.append(
+                    (
+                        "table",
+                        item.table_key if item.table_key is not None else item,
+                    )
+                )
         return values
 
 
@@ -104,7 +109,7 @@ class TableCellUnit:
     def __init__(
         self,
         *,
-        cell_key: str,
+        cell_key: str | None = None,
         content: ContentStream,
         row_span: int = 1,
         column_span: int = 1,
@@ -120,7 +125,9 @@ class TableCellUnit:
 
 
 class TableRowUnit:
-    def __init__(self, *, row_key: str, cells: list[TableCellUnit]) -> None:
+    def __init__(
+        self, *, row_key: str | None = None, cells: list[TableCellUnit]
+    ) -> None:
         self.row_key = row_key
         self.cells = cells
 
@@ -130,7 +137,9 @@ class TableRowUnit:
 
 
 class TableUnit(ContentUnit):
-    def __init__(self, *, table_key: str, rows: list[TableRowUnit]) -> None:
+    def __init__(
+        self, *, table_key: str | None = None, rows: list[TableRowUnit]
+    ) -> None:
         self.table_key = table_key
         self.rows = rows
 

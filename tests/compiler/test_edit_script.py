@@ -109,16 +109,13 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
                         ],
                     ),
                     TableRowUnit(
-                        row_key="row",
                         cells=[
                             TableCellUnit(
-                                cell_key="cell",
                                 content=ContentStream(
                                     items=[TextUnit(content="E"), ParagraphBoundary()]
                                 ),
                             ),
                             TableCellUnit(
-                                cell_key="cell",
                                 content=ContentStream(
                                     items=[TextUnit(content="F"), ParagraphBoundary()]
                                 ),
@@ -126,16 +123,13 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
                         ],
                     ),
                     TableRowUnit(
-                        row_key="row",
                         cells=[
                             TableCellUnit(
-                                cell_key="cell",
                                 content=ContentStream(
                                     items=[TextUnit(content="G"), ParagraphBoundary()]
                                 ),
                             ),
                             TableCellUnit(
-                                cell_key="cell",
                                 content=ContentStream(
                                     items=[TextUnit(content="H"), ParagraphBoundary()]
                                 ),
@@ -210,19 +204,15 @@ def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
         ],
     )
     second_table = TableUnit(
-        table_key="table-2",
         rows=[
             TableRowUnit(
-                row_key="row-1",
                 cells=[
                     TableCellUnit(
-                        cell_key="cell",
                         content=ContentStream(
                             items=[TextUnit(content="E"), ParagraphBoundary()]
                         ),
                     ),
                     TableCellUnit(
-                        cell_key="cell",
                         content=ContentStream(
                             items=[TextUnit(content="F"), ParagraphBoundary()]
                         ),
@@ -230,16 +220,13 @@ def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
                 ],
             ),
             TableRowUnit(
-                row_key="row-2",
                 cells=[
                     TableCellUnit(
-                        cell_key="cell",
                         content=ContentStream(
                             items=[TextUnit(content="G"), ParagraphBoundary()]
                         ),
                     ),
                     TableCellUnit(
-                        cell_key="cell",
                         content=ContentStream(
                             items=[TextUnit(content="H"), ParagraphBoundary()]
                         ),

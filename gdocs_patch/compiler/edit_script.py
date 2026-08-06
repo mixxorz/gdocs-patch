@@ -45,6 +45,46 @@ class InsertTableRow(Edit):
 
 
 @dataclass(frozen=True, kw_only=True)
+class InsertTableColumn(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+    insert_right: bool
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeleteTableRow(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeleteTableColumn(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class MergeTableCells(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+    row_span: int
+    column_span: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnmergeTableCells(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+    row_span: int
+    column_span: int
+
+
+@dataclass(frozen=True, kw_only=True)
 class DeleteContent(Edit):
     start_index: int
     end_index: int
@@ -97,15 +137,6 @@ def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[O
     ).get_opcodes()
 
 
-def first_different_index(*, source: Sequence[object], target: Sequence[object]) -> int:
-    for index, (source_item, target_item) in enumerate(
-        zip(source, target, strict=False)
-    ):
-        if source_item != target_item:
-            return index
-    return min(len(source), len(target))
-
-
 def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
     edits: list[Edit] = [
         InsertTable(
@@ -136,74 +167,169 @@ def compile_table(
     target: TableUnit,
     table_start_index: int,
 ) -> list[Edit]:
-    changed_row = first_different_index(
-        source=[row.row_key for row in source.rows],
-        target=[row.row_key for row in target.rows],
-    )
-    added_rows = len(target.rows) - len(source.rows)
-    edits: list[Edit] = []
+    available_source_rows = list(enumerate(source.rows))
+    matched_rows: list[tuple[int, int]] = []
+    new_row_indices: list[int] = []
 
-    for offset in range(max(0, added_rows)):
-        new_row = changed_row + offset
-        edits.append(
-            InsertTableRow(
-                table_start_index=table_start_index,
-                row_index=max(0, new_row - 1),
-                column_index=0,
-                insert_below=new_row > 0,
-            )
+    for target_row_index, target_row in enumerate(target.rows):
+        source_row = next(
+            (
+                item
+                for item in available_source_rows
+                if item[1].row_key == target_row.row_key
+            ),
+            None,
         )
+        if source_row is None:
+            new_row_indices.append(target_row_index)
+        else:
+            available_source_rows.remove(source_row)
+            matched_rows.append((source_row[0], target_row_index))
 
-    for row_index in range(changed_row, changed_row + max(0, added_rows)):
-        for cell_index, cell in enumerate(target.rows[row_index].cells):
-            edits.extend(
-                compile_content(
-                    source=ContentStream(items=[ParagraphBoundary()]),
-                    target=cell.content,
-                    start_index=table_start_index
-                    + target.cell_content_offset(
-                        row_index=row_index,
-                        cell_index=cell_index,
-                    ),
+    edits: list[Edit] = []
+    if len(target.rows) > len(source.rows):
+        for row_index in new_row_indices:
+            edits.append(
+                InsertTableRow(
+                    table_start_index=table_start_index,
+                    row_index=max(0, row_index - 1),
+                    column_index=0,
+                    insert_below=row_index > 0,
+                )
+            )
+    elif len(source.rows) > len(target.rows):
+        for row_index, _row in reversed(available_source_rows):
+            edits.append(
+                DeleteTableRow(
+                    table_start_index=table_start_index,
+                    row_index=row_index,
+                    column_index=0,
                 )
             )
 
-    for target_row_index in reversed(range(len(target.rows))):
-        if changed_row <= target_row_index < changed_row + max(0, added_rows):
+    matched_cells: list[tuple[int, int, TableCellUnit, TableCellUnit]] = []
+    new_cells: list[tuple[int, int, TableCellUnit]] = []
+    deleted_cell_indices: dict[int, list[int]] = {}
+    source_rows_by_target = {
+        target_row_index: source.rows[source_row_index]
+        for source_row_index, target_row_index in matched_rows
+    }
+
+    for target_row_index, target_row in enumerate(target.rows):
+        source_row = source_rows_by_target.get(target_row_index)
+        if source_row is None:
+            new_cells.extend(
+                (target_row_index, cell_index, cell)
+                for cell_index, cell in enumerate(target_row.cells)
+            )
             continue
-        source_row_index = target_row_index
-        if target_row_index >= changed_row + max(0, added_rows):
-            source_row_index -= max(0, added_rows)
-        if source_row_index >= len(source.rows):
-            continue
-        target_row = target.rows[target_row_index]
-        available_source_cells = list(source.rows[source_row_index].cells)
-        matched_cells: list[tuple[int, TableCellUnit, TableCellUnit]] = []
-        for cell_index, target_cell in enumerate(target_row.cells):
+
+        available_source_cells = list(enumerate(source_row.cells))
+        for target_cell_index, target_cell in enumerate(target_row.cells):
             source_cell = next(
                 (
-                    cell
-                    for cell in available_source_cells
-                    if cell.cell_key == target_cell.cell_key
+                    item
+                    for item in available_source_cells
+                    if item[1].cell_key == target_cell.cell_key
                 ),
                 None,
             )
-            if source_cell is not None:
+            if source_cell is None:
+                new_cells.append((target_row_index, target_cell_index, target_cell))
+            else:
                 available_source_cells.remove(source_cell)
-                matched_cells.append((cell_index, source_cell, target_cell))
+                matched_cells.append(
+                    (
+                        target_row_index,
+                        target_cell_index,
+                        source_cell[1],
+                        target_cell,
+                    )
+                )
+        deleted_cell_indices[target_row_index] = [
+            cell_index for cell_index, _cell in available_source_cells
+        ]
 
-        for cell_index, source_cell, target_cell in reversed(matched_cells):
-            edits.extend(
-                generate_edit_script(
-                    source=source_cell.content,
-                    target=target_cell.content,
-                    start_index=table_start_index
-                    + target.cell_content_offset(
-                        row_index=target_row_index,
-                        cell_index=cell_index,
-                    ),
-                ).edits
+    column_delta = target.column_count - source.column_count
+    if column_delta > 0:
+        for column_index in [
+            cell_index for row_index, cell_index, _cell in new_cells if row_index == 0
+        ]:
+            edits.append(
+                InsertTableColumn(
+                    table_start_index=table_start_index,
+                    row_index=0,
+                    column_index=max(0, column_index - 1),
+                    insert_right=column_index > 0,
+                )
             )
+    elif column_delta < 0:
+        for column_index in reversed(deleted_cell_indices.get(0, [])):
+            edits.append(
+                DeleteTableColumn(
+                    table_start_index=table_start_index,
+                    row_index=0,
+                    column_index=column_index,
+                )
+            )
+
+    merged_target_cells: set[TableCellUnit] = set()
+    for row_index, cell_index, source_cell, target_cell in matched_cells:
+        if (
+            target_cell.row_span > source_cell.row_span
+            or target_cell.column_span > source_cell.column_span
+        ):
+            edits.append(
+                MergeTableCells(
+                    table_start_index=table_start_index,
+                    row_index=row_index,
+                    column_index=cell_index,
+                    row_span=target_cell.row_span,
+                    column_span=target_cell.column_span,
+                )
+            )
+            merged_target_cells.add(target_cell)
+        elif (
+            source_cell.row_span > target_cell.row_span
+            or source_cell.column_span > target_cell.column_span
+        ):
+            edits.append(
+                UnmergeTableCells(
+                    table_start_index=table_start_index,
+                    row_index=row_index,
+                    column_index=cell_index,
+                    row_span=source_cell.row_span,
+                    column_span=source_cell.column_span,
+                )
+            )
+
+    for row_index, cell_index, cell in new_cells:
+        edits.extend(
+            compile_content(
+                source=ContentStream(items=[ParagraphBoundary()]),
+                target=cell.content,
+                start_index=table_start_index
+                + target.cell_content_offset(
+                    row_index=row_index,
+                    cell_index=cell_index,
+                ),
+            )
+        )
+
+    for row_index, cell_index, source_cell, target_cell in reversed(matched_cells):
+        if target_cell in merged_target_cells:
+            continue
+        edits.extend(
+            generate_edit_script(
+                source=source_cell.content,
+                target=target_cell.content,
+                start_index=table_start_index
+                + target.cell_content_offset(
+                    row_index=row_index,
+                    cell_index=cell_index,
+                ),
+            ).edits
+        )
 
     return edits
 
