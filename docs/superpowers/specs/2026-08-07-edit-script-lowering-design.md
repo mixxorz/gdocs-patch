@@ -29,6 +29,12 @@ Lowering walks `edit_script.edits` once in their existing order and explicitly m
 
 Model values are converted with explicit serialization code in the lowering module. The code may be split later only if the module becomes genuinely difficult to follow.
 
+## Target bullet presets
+
+A retrieved paragraph uses `Bullet`, whose Google-assigned `list_id` identifies an existing list. A newly constructed target document instead needs to describe the preset Google should use to create a list.
+
+Move `BulletPreset` from `compiler.content_stream` to `gdocs_patch.models` as an ordinary mutable model class and allow `Paragraph.bullet` to contain `Bullet`, `BulletPreset`, or `UNSET`. Parsers continue to produce only `Bullet`; target-document producers may use `BulletPreset`. `ContentStream` and `CreateParagraphBullets` reuse the model type, so normalization carries the creation intent into reconciliation without a compiler-to-model dependency.
+
 ## Request mapping
 
 The semantic edits map to Google requests as follows:
