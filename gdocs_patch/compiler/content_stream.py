@@ -54,6 +54,30 @@ class EquationUnit(ContentUnit):
         return 1
 
 
+class TableStart(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+class RowStart(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+class CellStart(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+class TableEnd(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
 class ParagraphBoundary(ContentUnit):
     def __init__(
         self,
@@ -92,4 +116,12 @@ class ContentStream:
                 values.append(("equation", ""))
             elif isinstance(item, ParagraphBoundary):
                 values.append(("paragraph_boundary", ""))
+            elif isinstance(item, TableStart):
+                values.append(("table_start", ""))
+            elif isinstance(item, RowStart):
+                values.append(("row_start", ""))
+            elif isinstance(item, CellStart):
+                values.append(("cell_start", ""))
+            elif isinstance(item, TableEnd):
+                values.append(("table_end", ""))
         return values

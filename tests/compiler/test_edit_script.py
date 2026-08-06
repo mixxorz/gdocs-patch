@@ -4,18 +4,65 @@ from gdocs_patch.compiler import (
     ApplyParagraphStyle,
     ApplyTextStyle,
     BulletPreset,
+    CellStart,
     ContentStream,
     CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
     EquationUnit,
+    InsertTableRow,
     InsertText,
     ParagraphBoundary,
+    RowStart,
+    TableEnd,
+    TableStart,
     TextUnit,
     UnsupportedTransformation,
     generate_edit_script,
 )
 from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle
+
+
+def test_generate_edit_script_inserts_a_table_row() -> None:
+    # The source is a 1x1 table whose cell contains "A".
+    source = ContentStream(
+        items=[
+            TableStart(),
+            RowStart(),
+            CellStart(),
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            TableEnd(),
+        ]
+    )
+
+    # The target appends a second row whose cell contains "B".
+    target = ContentStream(
+        items=[
+            TableStart(),
+            RowStart(),
+            CellStart(),
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            RowStart(),
+            CellStart(),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+            TableEnd(),
+        ]
+    )
+
+    script = generate_edit_script(source=source, target=target)
+
+    assert script.edits == [
+        InsertTableRow(
+            table_start_index=0,
+            row_index=0,
+            column_index=0,
+            insert_below=True,
+        ),
+        InsertText(index=7, text="B"),
+    ]
 
 
 def test_generate_edit_script_handles_longer_content_and_style_ranges() -> None:

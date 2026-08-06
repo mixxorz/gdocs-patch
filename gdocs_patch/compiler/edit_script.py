@@ -5,9 +5,13 @@ from gdocs_patch.models import UNSET, ParagraphStyle, TextStyle, UnsetType
 
 from .content_stream import (
     BulletPreset,
+    CellStart,
     ContentStream,
     EquationUnit,
     ParagraphBoundary,
+    RowStart,
+    TableEnd,
+    TableStart,
     TextUnit,
 )
 
@@ -24,6 +28,14 @@ class Edit:
 class InsertText(Edit):
     index: int
     text: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class InsertTableRow(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+    insert_below: bool
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -66,6 +78,86 @@ class EditScript:
         edits: list[Edit],
     ) -> None:
         self.edits = edits
+
+
+Opcode = tuple[str, int, int, int, int]
+
+
+def generate_table_edits(
+    *,
+    source: ContentStream,
+    target: ContentStream,
+    opcode: Opcode,
+    source_utf16_offset_map: list[int],
+    target_utf16_offset_map: list[int],
+) -> list[Edit] | None:
+    tag, source_start, _source_end, target_start, target_end = opcode
+    target_slice = target.items[target_start:target_end]
+    if tag != "insert" or not target_slice or not isinstance(target_slice[0], RowStart):
+        return None
+
+    source_table_position = source_start - 1
+    while not isinstance(source.items[source_table_position], TableStart):
+        source_table_position -= 1
+
+    target_table_position = target_start - 1
+    while not isinstance(target.items[target_table_position], TableStart):
+        target_table_position -= 1
+
+    preceding_rows = sum(
+        isinstance(item, RowStart)
+        for item in target.items[target_table_position + 1 : target_start]
+    )
+    edits: list[Edit] = [
+        InsertTableRow(
+            table_start_index=source_utf16_offset_map[source_table_position],
+            row_index=max(0, preceding_rows - 1),
+            column_index=0,
+            insert_below=preceding_rows > 0,
+        )
+    ]
+
+    table_start_index = source_utf16_offset_map[source_table_position]
+    target_table_start_index = target_utf16_offset_map[target_table_position]
+    for target_position in range(target_start, target_end):
+        item = target.items[target_position]
+        if isinstance(item, TextUnit):
+            edits.append(
+                InsertText(
+                    index=table_start_index
+                    + target_utf16_offset_map[target_position]
+                    - target_table_start_index,
+                    text=item.content,
+                )
+            )
+    return edits
+
+
+def generate_text_edits(
+    *,
+    target: ContentStream,
+    opcode: Opcode,
+    source_utf16_offset_map: list[int],
+) -> list[Edit]:
+    tag, source_start, source_end, target_start, target_end = opcode
+    index = source_utf16_offset_map[source_start]
+    edits: list[Edit] = []
+
+    # A replacement deletes first so its insertion can reuse the same index.
+    if tag in {"delete", "replace"}:
+        edits.append(
+            DeleteContent(
+                start_index=index,
+                end_index=source_utf16_offset_map[source_end],
+            )
+        )
+    if tag in {"insert", "replace"}:
+        text = "".join(
+            item.content if isinstance(item, TextUnit) else "\n"
+            for item in target.items[target_start:target_end]
+        )
+        edits.append(InsertText(index=index, text=text))
+    return edits
 
 
 def generate_edit_script(*, source: ContentStream, target: ContentStream) -> EditScript:
@@ -129,28 +221,36 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
 
     # Apply content changes from right to left. Changes at later indices cannot
     # shift the source indices used by earlier changes.
-    for tag, source_start, source_end, target_start, target_end in reversed(opcodes):
-        index = source_utf16_offset_map[source_start]
-        # A replacement deletes first so its insertion can reuse the same index.
-        if tag in {"delete", "replace"}:
-            edits.append(
-                DeleteContent(
-                    start_index=index,
-                    end_index=source_utf16_offset_map[source_end],
-                )
+    handled_table_target_positions: set[int] = set()
+    for opcode in reversed(opcodes):
+        table_edits = generate_table_edits(
+            source=source,
+            target=target,
+            opcode=opcode,
+            source_utf16_offset_map=source_utf16_offset_map,
+            target_utf16_offset_map=target_utf16_offset_map,
+        )
+        if table_edits is not None:
+            edits.extend(table_edits)
+            _tag, _source_start, _source_end, target_start, target_end = opcode
+            handled_table_target_positions.update(range(target_start, target_end))
+            continue
+
+        edits.extend(
+            generate_text_edits(
+                target=target,
+                opcode=opcode,
+                source_utf16_offset_map=source_utf16_offset_map,
             )
-        if tag in {"insert", "replace"}:
-            text = "".join(
-                item.content if isinstance(item, TextUnit) else "\n"
-                for item in target.items[target_start:target_end]
-            )
-            edits.append(InsertText(index=index, text=text))
+        )
 
     # Content edits leave the document with the target shape, so style edits can
     # now use target indices. Equal opcodes provide a source style to compare;
     # inserted and replaced target items have no dependable inherited style.
     for tag, source_start, _source_end, target_start, target_end in opcodes:
         for target_position in range(target_start, target_end):
+            if target_position in handled_table_target_positions:
+                continue
             target_item = target.items[target_position]
             source_item = None
             if tag == "equal":
@@ -162,7 +262,13 @@ def generate_edit_script(*, source: ContentStream, target: ContentStream) -> Edi
             end_index = target_utf16_offset_map[target_position + 1]
 
             match target_item:
-                case EquationUnit():
+                case (
+                    EquationUnit()
+                    | TableStart()
+                    | RowStart()
+                    | CellStart()
+                    | TableEnd()
+                ):
                     pass
 
                 case TextUnit() as target_text:
