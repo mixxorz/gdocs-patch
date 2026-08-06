@@ -1,11 +1,21 @@
 from gdocs_patch.compiler.edit_script import (
     ApplyParagraphStyle,
+    ApplyTableCellStyle,
+    ApplyTableColumnProperties,
+    ApplyTableRowStyle,
     ApplyTextStyle,
     CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
+    DeleteTableColumn,
+    DeleteTableRow,
     EditScript,
+    InsertTable,
+    InsertTableColumn,
+    InsertTableRow,
     InsertText,
+    MergeTableCells,
+    UnmergeTableCells,
 )
 from gdocs_patch.compiler.lowering import lower_edit_script
 from gdocs_patch.models import (
@@ -16,6 +26,9 @@ from gdocs_patch.models import (
     Dimension,
     ParagraphBorder,
     ParagraphStyle,
+    TableCellBorder,
+    TableCellStyle,
+    TableColumn,
     TabStop,
     TextStyle,
 )
@@ -220,6 +233,250 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                     "endIndex": 27,
                     "tabId": "tab-1",
                 }
+            }
+        },
+    ]
+
+
+def test_lowers_all_table_edits() -> None:
+    edit_script = EditScript(
+        edits=[
+            InsertTable(index=10, rows=2, columns=3),
+            InsertTableRow(
+                table_start_index=10,
+                row_index=0,
+                column_index=1,
+                insert_below=True,
+            ),
+            InsertTableColumn(
+                table_start_index=10,
+                row_index=1,
+                column_index=0,
+                insert_right=False,
+            ),
+            DeleteTableRow(table_start_index=10, row_index=2, column_index=1),
+            DeleteTableColumn(table_start_index=10, row_index=0, column_index=2),
+            MergeTableCells(
+                table_start_index=10,
+                row_index=0,
+                column_index=0,
+                row_span=2,
+                column_span=2,
+            ),
+            UnmergeTableCells(
+                table_start_index=10,
+                row_index=1,
+                column_index=1,
+                row_span=2,
+                column_span=2,
+            ),
+            ApplyTableColumnProperties(
+                table_start_index=10,
+                column_index=1,
+                column_properties=TableColumn(
+                    width_type="FIXED_WIDTH",
+                    width=Dimension(magnitude=72, unit="PT"),
+                ),
+            ),
+            ApplyTableColumnProperties(
+                table_start_index=10,
+                column_index=2,
+                column_properties=UNSET,
+            ),
+            ApplyTableRowStyle(
+                table_start_index=10,
+                row_index=0,
+                min_height=Dimension(magnitude=24, unit="PT"),
+                prevent_overflow=True,
+                is_header=False,
+            ),
+            ApplyTableCellStyle(
+                table_start_index=10,
+                row_index=0,
+                column_index=0,
+                row_span=2,
+                column_span=2,
+                cell_style=TableCellStyle(
+                    row_span=2,
+                    column_span=2,
+                    background_color=Color(red=0.7, green=0.8, blue=0.9),
+                    border_left=TableCellBorder(
+                        color=Color(red=0.1, green=0.2, blue=0.3),
+                        width=Dimension(magnitude=1, unit="PT"),
+                        dash_style="DASH",
+                    ),
+                    padding_top=Dimension(magnitude=4, unit="PT"),
+                    content_alignment="MIDDLE",
+                ),
+            ),
+            ApplyTableCellStyle(
+                table_start_index=10,
+                row_index=2,
+                column_index=2,
+                row_span=1,
+                column_span=1,
+                cell_style=UNSET,
+            ),
+        ]
+    )
+    context = {"tabId": "tab-table", "segmentId": "footer-1"}
+
+    assert lower_edit_script(
+        edit_script=edit_script,
+        tab_id="tab-table",
+        segment_id="footer-1",
+    ) == [
+        {
+            "insertTable": {
+                "rows": 2,
+                "columns": 3,
+                "location": {"index": 9, **context},
+            }
+        },
+        {
+            "insertTableRow": {
+                "tableCellLocation": {
+                    "tableStartLocation": {"index": 10, **context},
+                    "rowIndex": 0,
+                    "columnIndex": 1,
+                },
+                "insertBelow": True,
+            }
+        },
+        {
+            "insertTableColumn": {
+                "tableCellLocation": {
+                    "tableStartLocation": {"index": 10, **context},
+                    "rowIndex": 1,
+                    "columnIndex": 0,
+                },
+                "insertRight": False,
+            }
+        },
+        {
+            "deleteTableRow": {
+                "tableCellLocation": {
+                    "tableStartLocation": {"index": 10, **context},
+                    "rowIndex": 2,
+                    "columnIndex": 1,
+                }
+            }
+        },
+        {
+            "deleteTableColumn": {
+                "tableCellLocation": {
+                    "tableStartLocation": {"index": 10, **context},
+                    "rowIndex": 0,
+                    "columnIndex": 2,
+                }
+            }
+        },
+        {
+            "mergeTableCells": {
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 10, **context},
+                        "rowIndex": 0,
+                        "columnIndex": 0,
+                    },
+                    "rowSpan": 2,
+                    "columnSpan": 2,
+                }
+            }
+        },
+        {
+            "unmergeTableCells": {
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 10, **context},
+                        "rowIndex": 1,
+                        "columnIndex": 1,
+                    },
+                    "rowSpan": 2,
+                    "columnSpan": 2,
+                }
+            }
+        },
+        {
+            "updateTableColumnProperties": {
+                "tableStartLocation": {"index": 10, **context},
+                "columnIndices": [1],
+                "tableColumnProperties": {
+                    "widthType": "FIXED_WIDTH",
+                    "width": {"magnitude": 72, "unit": "PT"},
+                },
+                "fields": "widthType,width",
+            }
+        },
+        {
+            "updateTableColumnProperties": {
+                "tableStartLocation": {"index": 10, **context},
+                "columnIndices": [2],
+                "tableColumnProperties": {},
+                "fields": "widthType,width",
+            }
+        },
+        {
+            "updateTableRowStyle": {
+                "tableStartLocation": {"index": 10, **context},
+                "rowIndices": [0],
+                "tableRowStyle": {
+                    "minRowHeight": {"magnitude": 24, "unit": "PT"},
+                    "preventOverflow": True,
+                    "tableHeader": False,
+                },
+                "fields": "minRowHeight,preventOverflow,tableHeader",
+            }
+        },
+        {
+            "updateTableCellStyle": {
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 10, **context},
+                        "rowIndex": 0,
+                        "columnIndex": 0,
+                    },
+                    "rowSpan": 2,
+                    "columnSpan": 2,
+                },
+                "tableCellStyle": {
+                    "backgroundColor": {
+                        "color": {"rgbColor": {"red": 0.7, "green": 0.8, "blue": 0.9}}
+                    },
+                    "borderLeft": {
+                        "color": {
+                            "color": {
+                                "rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.3}
+                            }
+                        },
+                        "width": {"magnitude": 1, "unit": "PT"},
+                        "dashStyle": "DASH",
+                    },
+                    "paddingTop": {"magnitude": 4, "unit": "PT"},
+                    "contentAlignment": "MIDDLE",
+                },
+                "fields": (
+                    "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,"
+                    "paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment"
+                ),
+            }
+        },
+        {
+            "updateTableCellStyle": {
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": {"index": 10, **context},
+                        "rowIndex": 2,
+                        "columnIndex": 2,
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": 1,
+                },
+                "tableCellStyle": {},
+                "fields": (
+                    "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,"
+                    "paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment"
+                ),
             }
         },
     ]

@@ -9,6 +9,9 @@ from gdocs_patch.models import (
     Link,
     ParagraphBorder,
     ParagraphStyle,
+    TableCellBorder,
+    TableCellStyle,
+    TableColumn,
     TabLink,
     TextStyle,
     UnsetType,
@@ -17,12 +20,22 @@ from gdocs_patch.models import (
 
 from .edit_script import (
     ApplyParagraphStyle,
+    ApplyTableCellStyle,
+    ApplyTableColumnProperties,
+    ApplyTableRowStyle,
     ApplyTextStyle,
     CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
+    DeleteTableColumn,
+    DeleteTableRow,
     EditScript,
+    InsertTable,
+    InsertTableColumn,
+    InsertTableRow,
     InsertText,
+    MergeTableCells,
+    UnmergeTableCells,
 )
 
 TEXT_STYLE_FIELDS = (
@@ -34,6 +47,12 @@ PARAGRAPH_STYLE_FIELDS = (
     "spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,"
     "keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,"
     "borderBottom,borderLeft,borderRight,shading"
+)
+TABLE_COLUMN_FIELDS = "widthType,width"
+TABLE_ROW_FIELDS = "minRowHeight,preventOverflow,tableHeader"
+TABLE_CELL_STYLE_FIELDS = (
+    "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,"
+    "paddingRight,paddingTop,paddingBottom,contentAlignment"
 )
 
 
@@ -189,6 +208,68 @@ def serialize_paragraph_style(
     return result
 
 
+def serialize_table_column(value: TableColumn | UnsetType) -> dict[str, object]:
+    if isinstance(value, UnsetType):
+        return {}
+
+    result: dict[str, object] = {"widthType": value.width_type}
+    if value.width is not UNSET:
+        result["width"] = serialize_dimension(cast(Dimension, value.width))
+    return result
+
+
+def serialize_table_cell_border(value: TableCellBorder) -> dict[str, object]:
+    return {
+        "color": serialize_optional_color(value.color),
+        "width": serialize_dimension(value.width),
+        "dashStyle": value.dash_style,
+    }
+
+
+def serialize_table_cell_style(
+    value: TableCellStyle | UnsetType,
+) -> dict[str, object]:
+    if isinstance(value, UnsetType):
+        return {}
+
+    result: dict[str, object] = {}
+    if value.background_color is not UNSET:
+        result["backgroundColor"] = serialize_optional_color(
+            cast("Color | None", value.background_color)
+        )
+    if value.border_left is not UNSET:
+        result["borderLeft"] = serialize_table_cell_border(
+            cast(TableCellBorder, value.border_left)
+        )
+    if value.border_right is not UNSET:
+        result["borderRight"] = serialize_table_cell_border(
+            cast(TableCellBorder, value.border_right)
+        )
+    if value.border_top is not UNSET:
+        result["borderTop"] = serialize_table_cell_border(
+            cast(TableCellBorder, value.border_top)
+        )
+    if value.border_bottom is not UNSET:
+        result["borderBottom"] = serialize_table_cell_border(
+            cast(TableCellBorder, value.border_bottom)
+        )
+    if value.padding_left is not UNSET:
+        result["paddingLeft"] = serialize_dimension(cast(Dimension, value.padding_left))
+    if value.padding_right is not UNSET:
+        result["paddingRight"] = serialize_dimension(
+            cast(Dimension, value.padding_right)
+        )
+    if value.padding_top is not UNSET:
+        result["paddingTop"] = serialize_dimension(cast(Dimension, value.padding_top))
+    if value.padding_bottom is not UNSET:
+        result["paddingBottom"] = serialize_dimension(
+            cast(Dimension, value.padding_bottom)
+        )
+    if value.content_alignment is not UNSET:
+        result["contentAlignment"] = value.content_alignment
+    return result
+
+
 def lower_edit_script(
     *,
     edit_script: EditScript,
@@ -285,6 +366,178 @@ def lower_edit_script(
                                 "endIndex": edit.end_index,
                                 **context,
                             }
+                        }
+                    }
+                )
+            case InsertTable():
+                requests.append(
+                    {
+                        "insertTable": {
+                            "rows": edit.rows,
+                            "columns": edit.columns,
+                            "location": {"index": edit.index - 1, **context},
+                        }
+                    }
+                )
+            case InsertTableRow():
+                requests.append(
+                    {
+                        "insertTableRow": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {
+                                    "index": edit.table_start_index,
+                                    **context,
+                                },
+                                "rowIndex": edit.row_index,
+                                "columnIndex": edit.column_index,
+                            },
+                            "insertBelow": edit.insert_below,
+                        }
+                    }
+                )
+            case InsertTableColumn():
+                requests.append(
+                    {
+                        "insertTableColumn": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {
+                                    "index": edit.table_start_index,
+                                    **context,
+                                },
+                                "rowIndex": edit.row_index,
+                                "columnIndex": edit.column_index,
+                            },
+                            "insertRight": edit.insert_right,
+                        }
+                    }
+                )
+            case DeleteTableRow():
+                requests.append(
+                    {
+                        "deleteTableRow": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {
+                                    "index": edit.table_start_index,
+                                    **context,
+                                },
+                                "rowIndex": edit.row_index,
+                                "columnIndex": edit.column_index,
+                            }
+                        }
+                    }
+                )
+            case DeleteTableColumn():
+                requests.append(
+                    {
+                        "deleteTableColumn": {
+                            "tableCellLocation": {
+                                "tableStartLocation": {
+                                    "index": edit.table_start_index,
+                                    **context,
+                                },
+                                "rowIndex": edit.row_index,
+                                "columnIndex": edit.column_index,
+                            }
+                        }
+                    }
+                )
+            case MergeTableCells():
+                requests.append(
+                    {
+                        "mergeTableCells": {
+                            "tableRange": {
+                                "tableCellLocation": {
+                                    "tableStartLocation": {
+                                        "index": edit.table_start_index,
+                                        **context,
+                                    },
+                                    "rowIndex": edit.row_index,
+                                    "columnIndex": edit.column_index,
+                                },
+                                "rowSpan": edit.row_span,
+                                "columnSpan": edit.column_span,
+                            }
+                        }
+                    }
+                )
+            case UnmergeTableCells():
+                requests.append(
+                    {
+                        "unmergeTableCells": {
+                            "tableRange": {
+                                "tableCellLocation": {
+                                    "tableStartLocation": {
+                                        "index": edit.table_start_index,
+                                        **context,
+                                    },
+                                    "rowIndex": edit.row_index,
+                                    "columnIndex": edit.column_index,
+                                },
+                                "rowSpan": edit.row_span,
+                                "columnSpan": edit.column_span,
+                            }
+                        }
+                    }
+                )
+            case ApplyTableColumnProperties():
+                requests.append(
+                    {
+                        "updateTableColumnProperties": {
+                            "tableStartLocation": {
+                                "index": edit.table_start_index,
+                                **context,
+                            },
+                            "columnIndices": [edit.column_index],
+                            "tableColumnProperties": serialize_table_column(
+                                edit.column_properties
+                            ),
+                            "fields": TABLE_COLUMN_FIELDS,
+                        }
+                    }
+                )
+            case ApplyTableRowStyle():
+                table_row_style: dict[str, object] = {}
+                if edit.min_height is not UNSET:
+                    table_row_style["minRowHeight"] = serialize_dimension(
+                        cast(Dimension, edit.min_height)
+                    )
+                if edit.prevent_overflow is not UNSET:
+                    table_row_style["preventOverflow"] = edit.prevent_overflow
+                if edit.is_header is not UNSET:
+                    table_row_style["tableHeader"] = edit.is_header
+                requests.append(
+                    {
+                        "updateTableRowStyle": {
+                            "tableStartLocation": {
+                                "index": edit.table_start_index,
+                                **context,
+                            },
+                            "rowIndices": [edit.row_index],
+                            "tableRowStyle": table_row_style,
+                            "fields": TABLE_ROW_FIELDS,
+                        }
+                    }
+                )
+            case ApplyTableCellStyle():
+                requests.append(
+                    {
+                        "updateTableCellStyle": {
+                            "tableRange": {
+                                "tableCellLocation": {
+                                    "tableStartLocation": {
+                                        "index": edit.table_start_index,
+                                        **context,
+                                    },
+                                    "rowIndex": edit.row_index,
+                                    "columnIndex": edit.column_index,
+                                },
+                                "rowSpan": edit.row_span,
+                                "columnSpan": edit.column_span,
+                            },
+                            "tableCellStyle": serialize_table_cell_style(
+                                edit.cell_style
+                            ),
+                            "fields": TABLE_CELL_STYLE_FIELDS,
                         }
                     }
                 )
