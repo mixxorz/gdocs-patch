@@ -1,4 +1,7 @@
 from gdocs_patch.compiler import (
+    ApplyTableCellStyle,
+    ApplyTableColumnProperties,
+    ApplyTableRowStyle,
     ContentStream,
     DeleteTableColumn,
     DeleteTableRow,
@@ -13,6 +16,7 @@ from gdocs_patch.compiler import (
     UnmergeTableCells,
     generate_edit_script,
 )
+from gdocs_patch.models import Color, Dimension, TableCellStyle, TableColumn
 
 
 def test_generate_edit_script_inserts_a_table_column() -> None:
@@ -122,8 +126,8 @@ def test_generate_edit_script_inserts_a_table_column() -> None:
             column_index=0,
             insert_right=True,
         ),
-        InsertText(index=6, text="B"),
         InsertText(index=16, text="E"),
+        InsertText(index=6, text="B"),
     ]
 
 
@@ -531,5 +535,266 @@ def test_generate_edit_script_unmerges_table_cells() -> None:
             column_index=0,
             row_span=1,
             column_span=2,
+        )
+    ]
+
+
+def test_generate_edit_script_applies_changed_table_column_properties() -> None:
+    fixed_width = TableColumn(
+        width_type="FIXED_WIDTH",
+        width=Dimension(magnitude=144, unit="PT"),
+    )
+    source_table = TableUnit(
+        table_key="table",
+        column_properties=[
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+        ],
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+    target_table = TableUnit(
+        table_key="table",
+        column_properties=[
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+            fixed_width,
+        ],
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    script = generate_edit_script(
+        source=ContentStream(items=[source_table]),
+        target=ContentStream(items=[target_table]),
+    )
+
+    assert script.edits == [
+        ApplyTableColumnProperties(
+            table_start_index=0,
+            column_index=1,
+            column_properties=fixed_width,
+        )
+    ]
+
+
+def test_generate_edit_script_applies_changed_table_row_style() -> None:
+    target_min_height = Dimension(magnitude=36, unit="PT")
+    source_table = TableUnit(
+        table_key="table",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+    target_table = TableUnit(
+        table_key="table",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                min_height=target_min_height,
+                prevent_overflow=True,
+                is_header=False,
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    script = generate_edit_script(
+        source=ContentStream(items=[source_table]),
+        target=ContentStream(items=[target_table]),
+    )
+
+    assert script.edits == [
+        ApplyTableRowStyle(
+            table_start_index=0,
+            row_index=1,
+            min_height=target_min_height,
+            prevent_overflow=True,
+            is_header=False,
+        )
+    ]
+
+
+def test_generate_edit_script_applies_changed_table_cell_style() -> None:
+    target_cell_style = TableCellStyle(
+        background_color=Color(red=0.25, green=0.5, blue=0.75),
+        padding_left=Dimension(magnitude=12, unit="PT"),
+        content_alignment="MIDDLE",
+    )
+    source_table = TableUnit(
+        table_key="table",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+    target_table = TableUnit(
+        table_key="table",
+        rows=[
+            TableRowUnit(
+                row_key="row-1",
+                cells=[
+                    TableCellUnit(
+                        cell_key="a",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+            TableRowUnit(
+                row_key="row-2",
+                cells=[
+                    TableCellUnit(
+                        cell_key="c",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                    TableCellUnit(
+                        cell_key="d",
+                        style=target_cell_style,
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    script = generate_edit_script(
+        source=ContentStream(items=[source_table]),
+        target=ContentStream(items=[target_table]),
+    )
+
+    assert script.edits == [
+        ApplyTableCellStyle(
+            table_start_index=0,
+            row_index=1,
+            column_index=1,
+            row_span=1,
+            column_span=1,
+            cell_style=target_cell_style,
         )
     ]

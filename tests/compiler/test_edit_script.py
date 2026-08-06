@@ -156,10 +156,12 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
             column_index=0,
             insert_below=True,
         ),
-        InsertText(index=17, text="E"),
-        InsertText(index=20, text="F"),
-        InsertText(index=24, text="G"),
+        # Populate cells from right to left so earlier insertions cannot shift
+        # the indices of cells that have not been populated yet.
         InsertText(index=27, text="H"),
+        InsertText(index=24, text="G"),
+        InsertText(index=20, text="F"),
+        InsertText(index=17, text="E"),
     ]
 
 
@@ -243,10 +245,10 @@ def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
 
     assert script.edits == [
         InsertTable(index=16, rows=2, columns=2),
-        InsertText(index=19, text="E"),
-        InsertText(index=22, text="F"),
-        InsertText(index=26, text="G"),
         InsertText(index=29, text="H"),
+        InsertText(index=26, text="G"),
+        InsertText(index=22, text="F"),
+        InsertText(index=19, text="E"),
     ]
 
 

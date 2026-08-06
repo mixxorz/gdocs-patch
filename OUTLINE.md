@@ -1,43 +1,206 @@
-Implementation Outline
+# Compiler Support Outline
 
-1.  Product Contract
-    - Define supported behavior, preservation guarantees, safety rules, and explicit limitations.
+This is a current implementation roadmap, not an immutable specification. Items describe the intended behavior; suggested mechanisms are defaults that may change as simpler or more reliable designs emerge.
 
-2.  Google-Native Document Model
-    - Losslessly represent the physical Google document structure relevant to reading and mutation.
+## Goal
 
-3.  Google API Ingress
-    - Convert a Google Docs response into the native model without semantic normalization or structural information loss.
+Transform an independently produced target document tree into Google Docs `batchUpdate` requests while preserving existing content and opaque elements whenever possible.
 
-4.  User-Facing Document View
-    - Project the native model into a stable, editable representation and map that representation back to native nodes.
+## Current support
 
-5.  Edit Intent
-    - Express the user’s requested change independently of Google API requests and indices.
+The compiler currently accepts manually constructed `ContentStream` objects and produces an `EditScript` for:
 
-6.  Native Document Editor
-    - Apply edit intent directly to the Google-native model while retaining untouched nodes and provider state.
+- text insertion, deletion, and replacement using UTF-16 indices;
+- paragraph splitting and merging through paragraph boundaries;
+- text and paragraph styles;
+- basic paragraph bullet creation and deletion;
+- equation preservation and deletion, while rejecting equation insertion;
+- keyed table matching;
+- table, row, and column insertion and deletion;
+- table-cell merge and unmerge operations;
+- reconciliation of existing table-cell content;
+- table column properties, row styles, and cell styles.
 
-7.  Google Mutation Generation
-    - Derive the minimal Google API operations needed to move from the current native document to the edited native document.
+The compiler does not yet normalize document models or lower an `EditScript` into real Google API requests.
 
-8.  Mutation Execution
-    - Submit revision-controlled operations safely, classify outcomes, and avoid unsafe retries.
+## Next: complete the end-to-end path
 
-9.  Result Verification
-    - Read the resulting document and confirm that the requested user-visible change occurred while required untouched state survived.
+### 1. Normalize document models into ContentStreams
 
-10. Capability and Preservation Boundaries
-    - Reject operations that cannot safely preserve unsupported or externally anchored provider state.
+Build `ContentStream` producers for independently indexed regions:
 
-11. Command Interface
-    - Connect read, edit, and write commands to the same small set of deep document operations.
+- tab bodies;
+- headers and footers;
+- footnotes;
+- table cells.
 
-12. Testing Strategy
-    - Test native model fidelity, general editing laws, exact API behavior, preservation, and complete user journeys.
+Normalization should handle paragraphs, text runs, tables, and supported paragraph elements. Text must be divided finely enough that a small edit does not replace an entire long `TextRun`, which would unnecessarily threaten attached comments.
 
-13. Migration
-    - Build the new path independently, prove it against current behavior, switch over, and delete the old compiler architecture.
+### 2. Carry compilation-region context
 
-14. Complexity and Deletion Acceptance
-    - Enforce the production-module, class, test-matrix, and line-deletion requirements recorded in the redesign specification.
+Each independently indexed region needs enough context to lower its edits:
+
+- tab ID;
+- segment ID when applicable;
+- body, header, footer, footnote, or table-cell location.
+
+Prefer keeping this context on the compilation region rather than repeating it on every content unit.
+
+### 3. Define synthetic structural keys
+
+Google does not return IDs for tables, rows, or cells. Define how source normalization assigns synthetic `table_key`, `row_key`, and `cell_key` values and how independently produced target trees retain those keys.
+
+Missing target keys continue to mean newly created structures. Duplicate keys remain valid and are matched deterministically.
+
+### 4. Lower EditScript operations
+
+Convert semantic edits into concrete Google Docs requests, including:
+
+- locations and ranges;
+- tab and segment IDs;
+- style payloads and field masks;
+- `UNSET` resets;
+- table locations and table ranges;
+- bullet nesting mechanics;
+- request payload serialization.
+
+Start by lowering the existing numeric EditScript directly. Add another scheduling representation only if concrete ordering problems justify it.
+
+### 5. Plan request batches
+
+Keep independent requests in as few batches as practical. Split batches only when a later request requires an ID returned by an earlier request, such as a new tab, header, footer, or footnote.
+
+### 6. Add an end-to-end compiler test
+
+Exercise:
+
+```text
+source Document + target Document
+    -> ContentStreams
+    -> EditScript
+    -> batchUpdate requests
+```
+
+Use a representative document rather than testing internal delegation.
+
+## Complete existing content behavior
+
+### Text and paragraph matching
+
+- Match text below whole-run granularity.
+- Preserve unchanged text whenever possible.
+- Retain paragraph split and merge behavior.
+- Produce correct style resets and field masks.
+- Validate UTF-16 behavior for non-BMP characters.
+
+### Lists
+
+- Change an existing paragraph from one list to another.
+- Change nesting levels.
+- Support creation from bullet presets.
+- Translate nesting levels into Google’s required temporary leading-tab behavior.
+- Decide the supported boundary for custom list definitions.
+
+Existing list IDs should be preserved when source and target retain the same list membership.
+
+### Tables
+
+- Insert tables containing merged cells.
+- Compile complete content and styles for newly inserted cells.
+- Support tables nested inside newly inserted cells.
+- Handle meaningful combinations of row, column, merge, content, and style edits.
+- Decide how row and column reordering should behave when Google has no direct move operation.
+- Verify local edit ordering against actual Google request behavior.
+
+## Paragraph elements
+
+### Directly creatable elements
+
+Add ContentStream units, reconciliation, and EditScript operations for:
+
+- `DateElement` via `insertDate`;
+- `PersonReference` via `insertPerson`;
+- `RichLink` via `insertRichLink`;
+- `PageBreak` via `insertPageBreak`;
+- `FootnoteReference` via `createFootnote`.
+
+Creating a footnote is response-dependent because Google assigns its ID before its segment can be populated.
+
+### Preserve-or-delete elements
+
+Support deterministic matching, preservation, and deletion for elements that cannot be recreated from the current model:
+
+- `AutoText`;
+- `ColumnBreak`;
+- `Equation`;
+- `HorizontalRule`;
+- `InlineObjectReference`;
+- `TableOfContents`.
+
+Fail before mutation when the target requires creating one of these elements. Inline images are insertable by Google, but the current model intentionally discards the URI and object resource data required to recreate them.
+
+## Structural document features
+
+### Sections
+
+- Insert and delete section breaks.
+- Reconcile section styles.
+- Respect body-only restrictions for section operations.
+
+### Headers and footers
+
+- Create and delete segments.
+- Compile their content.
+- Reconcile document and section references to their generated IDs.
+
+### Footnotes
+
+- Preserve retained footnotes and their content.
+- Delete removed references safely.
+- Create new footnotes and populate their generated segments in a later batch.
+
+### Tabs
+
+- Add and delete tabs.
+- Update titles, order, and hierarchy where supported.
+- Compile every tab’s independently indexed content.
+- Track IDs returned for newly created tabs.
+
+### Table of contents
+
+Treat a table of contents as an opaque, non-creatable structure unless API behavior proves that editing its nested content is safe.
+
+## Document-level features
+
+- Reconcile writable `DocumentStyle` fields.
+- Reconcile named styles.
+- Reconcile writable tab properties.
+- Delete positioned objects that disappear from the target.
+- Preserve positioned and inline objects that remain referenced.
+- Add revision/write-control data to mutation execution.
+- Treat document-title changes separately because Docs `batchUpdate` cannot rename the Drive file.
+
+## Feasibility and preservation
+
+Before producing requests:
+
+- prove that every target insertion can be created;
+- preserve matched opaque elements as anchors;
+- reject transformations requiring unavailable resource data;
+- avoid replacing unchanged text or structure;
+- resolve ambiguous equivalent matches deterministically;
+- ensure unsupported transformations fail before any batch is submitted.
+
+## Suggested implementation order
+
+1. Normalize bodies, paragraphs, text, and tables.
+2. Resolve synthetic table, row, and cell key propagation.
+3. Lower the existing EditScript operations into batchUpdate requests.
+4. Add one complete document-to-requests integration test.
+5. Complete table and list edge cases.
+6. Add directly creatable paragraph elements.
+7. Add sections and multiple indexed regions.
+8. Add tabs, headers, footers, and footnotes with response-dependent batching.
+9. Add preserve-or-delete opaque elements and document-level metadata.
+
+Implement one vertical slice at a time. For each slice, agree on its ContentStream representation, matching behavior, EditScript operations, lowering behavior, and a small set of meaningful behavioral tests.

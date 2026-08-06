@@ -11,6 +11,9 @@ from .content_stream import (
 )
 from .edit_script import (
     ApplyParagraphStyle,
+    ApplyTableCellStyle,
+    ApplyTableColumnProperties,
+    ApplyTableRowStyle,
     ApplyTextStyle,
     CreateParagraphBullets,
     DeleteContent,
@@ -31,6 +34,9 @@ from .edit_script import (
 
 __all__ = [
     "ApplyParagraphStyle",
+    "ApplyTableCellStyle",
+    "ApplyTableColumnProperties",
+    "ApplyTableRowStyle",
     "ApplyTextStyle",
     "BulletPreset",
     "ContentStream",

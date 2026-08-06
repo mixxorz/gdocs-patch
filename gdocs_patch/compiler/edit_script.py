@@ -2,7 +2,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from gdocs_patch.models import UNSET, ParagraphStyle, TextStyle, UnsetType
+from gdocs_patch.models import (
+    UNSET,
+    Dimension,
+    ParagraphStyle,
+    TableCellStyle,
+    TableColumn,
+    TextStyle,
+    UnsetType,
+)
 
 from .content_stream import (
     BulletPreset,
@@ -117,6 +125,32 @@ class ApplyParagraphStyle(Edit):
     paragraph_style: ParagraphStyle | UnsetType
 
 
+@dataclass(frozen=True, kw_only=True)
+class ApplyTableColumnProperties(Edit):
+    table_start_index: int
+    column_index: int
+    column_properties: TableColumn | UnsetType
+
+
+@dataclass(frozen=True, kw_only=True)
+class ApplyTableRowStyle(Edit):
+    table_start_index: int
+    row_index: int
+    min_height: Dimension | UnsetType
+    prevent_overflow: bool | UnsetType
+    is_header: bool | UnsetType
+
+
+@dataclass(frozen=True, kw_only=True)
+class ApplyTableCellStyle(Edit):
+    table_start_index: int
+    row_index: int
+    column_index: int
+    row_span: int
+    column_span: int
+    cell_style: TableCellStyle | UnsetType
+
+
 class EditScript:
     def __init__(
         self,
@@ -145,19 +179,63 @@ def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
             columns=table.column_count,
         )
     ]
-    for row_index, row in enumerate(table.rows):
-        for cell_index, cell in enumerate(row.cells):
-            edits.extend(
-                compile_content(
-                    source=ContentStream(items=[ParagraphBoundary()]),
-                    target=cell.content,
-                    start_index=index
-                    + table.cell_content_offset(
-                        row_index=row_index,
-                        cell_index=cell_index,
-                    ),
+    cells = [
+        (row_index, cell_index, cell)
+        for row_index, row in enumerate(table.rows)
+        for cell_index, cell in enumerate(row.cells)
+    ]
+    for row_index, cell_index, cell in reversed(cells):
+        edits.extend(
+            compile_content(
+                source=ContentStream(items=[ParagraphBoundary()]),
+                target=cell.content,
+                start_index=index
+                + table.cell_content_offset(
+                    row_index=row_index,
+                    cell_index=cell_index,
+                ),
+            )
+        )
+
+    if isinstance(table.column_properties, list):
+        for column_index, column_properties in enumerate(table.column_properties):
+            edits.append(
+                ApplyTableColumnProperties(
+                    table_start_index=index,
+                    column_index=column_index,
+                    column_properties=column_properties,
                 )
             )
+    for row_index, row in enumerate(table.rows):
+        if (row.min_height, row.prevent_overflow, row.is_header) != (
+            UNSET,
+            UNSET,
+            UNSET,
+        ):
+            edits.append(
+                ApplyTableRowStyle(
+                    table_start_index=index,
+                    row_index=row_index,
+                    min_height=row.min_height,
+                    prevent_overflow=row.prevent_overflow,
+                    is_header=row.is_header,
+                )
+            )
+        for cell_index, cell in enumerate(row.cells):
+            if cell.style is not UNSET:
+                edits.append(
+                    ApplyTableCellStyle(
+                        table_start_index=index,
+                        row_index=row_index,
+                        column_index=sum(
+                            previous_cell.column_span
+                            for previous_cell in row.cells[:cell_index]
+                        ),
+                        row_span=cell.row_span,
+                        column_span=cell.column_span,
+                        cell_style=cell.style,
+                    )
+                )
     return edits
 
 
@@ -303,7 +381,7 @@ def compile_table(
                 )
             )
 
-    for row_index, cell_index, cell in new_cells:
+    for row_index, cell_index, cell in reversed(new_cells):
         edits.extend(
             compile_content(
                 source=ContentStream(items=[ParagraphBoundary()]),
@@ -330,6 +408,86 @@ def compile_table(
                 ),
             ).edits
         )
+
+    source_column_properties = (
+        source.column_properties if isinstance(source.column_properties, list) else None
+    )
+    target_column_properties = (
+        target.column_properties if isinstance(target.column_properties, list) else None
+    )
+    columns_changed = source.column_count != target.column_count
+    if source_column_properties is not None or target_column_properties is not None:
+        for column_index in range(target.column_count):
+            source_properties = (
+                source_column_properties[column_index]
+                if source_column_properties is not None
+                and column_index < len(source_column_properties)
+                else UNSET
+            )
+            target_properties = (
+                target_column_properties[column_index]
+                if target_column_properties is not None
+                and column_index < len(target_column_properties)
+                else UNSET
+            )
+            if columns_changed or source_properties != target_properties:
+                edits.append(
+                    ApplyTableColumnProperties(
+                        table_start_index=table_start_index,
+                        column_index=column_index,
+                        column_properties=target_properties,
+                    )
+                )
+
+    for target_row_index, target_row in enumerate(target.rows):
+        source_row = source_rows_by_target.get(target_row_index)
+        source_row_style = (
+            (
+                source_row.min_height,
+                source_row.prevent_overflow,
+                source_row.is_header,
+            )
+            if source_row is not None
+            else (UNSET, UNSET, UNSET)
+        )
+        target_row_style = (
+            target_row.min_height,
+            target_row.prevent_overflow,
+            target_row.is_header,
+        )
+        if source_row_style != target_row_style:
+            edits.append(
+                ApplyTableRowStyle(
+                    table_start_index=table_start_index,
+                    row_index=target_row_index,
+                    min_height=target_row.min_height,
+                    prevent_overflow=target_row.prevent_overflow,
+                    is_header=target_row.is_header,
+                )
+            )
+
+    source_cells_by_target = {
+        (row_index, cell_index): source_cell
+        for row_index, cell_index, source_cell, _target_cell in matched_cells
+    }
+    for row_index, row in enumerate(target.rows):
+        for cell_index, target_cell in enumerate(row.cells):
+            source_cell = source_cells_by_target.get((row_index, cell_index))
+            source_style = source_cell.style if source_cell is not None else UNSET
+            if source_style != target_cell.style:
+                edits.append(
+                    ApplyTableCellStyle(
+                        table_start_index=table_start_index,
+                        row_index=row_index,
+                        column_index=sum(
+                            previous_cell.column_span
+                            for previous_cell in row.cells[:cell_index]
+                        ),
+                        row_span=target_cell.row_span,
+                        column_span=target_cell.column_span,
+                        cell_style=target_cell.style,
+                    )
+                )
 
     return edits
 

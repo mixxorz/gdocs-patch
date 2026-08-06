@@ -1,7 +1,16 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle, UnsetType
+from gdocs_patch.models import (
+    UNSET,
+    Bullet,
+    Dimension,
+    ParagraphStyle,
+    TableCellStyle,
+    TableColumn,
+    TextStyle,
+    UnsetType,
+)
 
 
 class ContentUnit:
@@ -113,11 +122,13 @@ class TableCellUnit:
         content: ContentStream,
         row_span: int = 1,
         column_span: int = 1,
+        style: TableCellStyle | UnsetType = UNSET,
     ) -> None:
         self.cell_key = cell_key
         self.content = content
         self.row_span = row_span
         self.column_span = column_span
+        self.style = style
 
     @property
     def utf16_width(self) -> int:
@@ -126,10 +137,19 @@ class TableCellUnit:
 
 class TableRowUnit:
     def __init__(
-        self, *, row_key: str | None = None, cells: list[TableCellUnit]
+        self,
+        *,
+        row_key: str | None = None,
+        cells: list[TableCellUnit],
+        min_height: Dimension | UnsetType = UNSET,
+        prevent_overflow: bool | UnsetType = UNSET,
+        is_header: bool | UnsetType = UNSET,
     ) -> None:
         self.row_key = row_key
         self.cells = cells
+        self.min_height = min_height
+        self.prevent_overflow = prevent_overflow
+        self.is_header = is_header
 
     @property
     def utf16_width(self) -> int:
@@ -138,10 +158,15 @@ class TableRowUnit:
 
 class TableUnit(ContentUnit):
     def __init__(
-        self, *, table_key: str | None = None, rows: list[TableRowUnit]
+        self,
+        *,
+        table_key: str | None = None,
+        rows: list[TableRowUnit],
+        column_properties: list[TableColumn] | UnsetType = UNSET,
     ) -> None:
         self.table_key = table_key
         self.rows = rows
+        self.column_properties = column_properties
 
     @property
     def utf16_width(self) -> int:
