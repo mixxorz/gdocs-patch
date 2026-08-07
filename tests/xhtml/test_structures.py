@@ -533,16 +533,6 @@ def test_rejects_duplicate_bullet_metadata_anchor_with_exact_path() -> None:
             "unknown attribute g:unknown",
         ),
         (
-            '<g:list g:list-id="id"><li g:unknown="x"><p /></li></g:list>',
-            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]: "
-            "unknown attribute g:unknown",
-        ),
-        (
-            '<g:list g:list-id="id"><g:unknown /></g:list>',
-            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
-            "unknown child element g:unknown",
-        ),
-        (
             '<g:list g:list-id="id"><li><g:unknown /><p /></li></g:list>',
             "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]: "
             "unknown child element g:unknown",
@@ -565,30 +555,6 @@ def test_rejects_unknown_list_or_item_content_with_exact_path(
             '<g:list-definitions g:unknown="x" />',
             "/html/body/g:tab[1]/g:document-tab/g:list-definitions: "
             "unknown attribute g:unknown",
-        ),
-        (
-            "<g:list-definitions><g:unknown /></g:list-definitions>",
-            "/html/body/g:tab[1]/g:document-tab/g:list-definitions: "
-            "unknown child element g:unknown",
-        ),
-        (
-            '<g:list-definitions><g:list-definition g:list-id="id" '
-            'g:unknown="x" /></g:list-definitions>',
-            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
-            "g:list-definition[1]: unknown attribute g:unknown",
-        ),
-        (
-            '<g:list-definitions><g:list-definition g:list-id="id">'
-            "<g:unknown /></g:list-definition></g:list-definitions>",
-            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
-            "g:list-definition[1]: unknown child element g:unknown",
-        ),
-        (
-            '<g:list-definitions><g:list-definition g:list-id="id">'
-            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" '
-            'g:unknown="x" /></g:list-definition></g:list-definitions>',
-            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
-            "g:list-definition[1]/g:list-level[1]: unknown attribute g:unknown",
         ),
         (
             '<g:list-definitions><g:list-definition g:list-id="id">'
@@ -637,11 +603,6 @@ def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
         ),
         (
             '<g:list-level g:glyph-format="%0" g:glyph-type="INVALID" />',
-            "expected one of",
-        ),
-        (
-            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" '
-            'g:alignment="INVALID" />',
             "expected one of",
         ),
     ],

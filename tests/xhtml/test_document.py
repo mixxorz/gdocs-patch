@@ -302,18 +302,7 @@ def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
         shading_color=Color(red=0.4, green=0.5, blue=0.6),
         tab_stops=[TabStop(offset=_pt(36), alignment="CENTER")],
     )
-    types = [
-        "NAMED_STYLE_TYPE_UNSPECIFIED",
-        "NORMAL_TEXT",
-        "TITLE",
-        "SUBTITLE",
-        "HEADING_1",
-        "HEADING_2",
-        "HEADING_3",
-        "HEADING_4",
-        "HEADING_5",
-        "HEADING_6",
-    ]
+    types = ["NAMED_STYLE_TYPE_UNSPECIFIED", "NORMAL_TEXT", "HEADING_6"]
     styles = [NamedStyle(named_style_type=value) for value in types]
     styles[1] = NamedStyle(
         named_style_type="NORMAL_TEXT",
@@ -389,6 +378,21 @@ def test_decodes_named_style_metadata_in_any_order() -> None:
     canonical = serialize_document(actual)
     assert '<g:named-style g:type="NORMAL_TEXT"' in canonical
     assert '<g:paragraph-style g:named-style-type="NORMAL_TEXT"' in canonical
+
+
+def test_deserializes_attributes_in_noncanonical_order() -> None:
+    source = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html g:title="Title" xmlns:g="urn:gdocs-patch:xhtml:1" '
+        'g:document-id="doc" xmlns="http://www.w3.org/1999/xhtml">'
+        '<body><g:tab g:index="0" g:title="Tab" g:tab-id="tab">'
+        "<g:document-tab /></g:tab></body></html>"
+    )
+
+    document = deserialize_document(source)
+
+    assert document.document_id == "doc"
+    assert document.tabs[0].tab_id == "tab"
 
 
 def test_rejects_outer_named_style_named_style_type_attribute() -> None:

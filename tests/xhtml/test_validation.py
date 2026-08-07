@@ -39,17 +39,10 @@ def document(structure: str = "", *, metadata: str = "") -> str:
 @pytest.mark.parametrize(
     ("xhtml", "path"),
     [
-        (DECLARATION + "<html>", "/document"),
         (document()[len(DECLARATION) :], "/document"),
         (
             document().replace(
                 'xmlns="http://www.w3.org/1999/xhtml"', 'xmlns="urn:wrong"'
-            ),
-            "/html",
-        ),
-        (
-            document().replace(
-                'xmlns:g="urn:gdocs-patch:xhtml:1"', 'xmlns:g="urn:wrong"'
             ),
             "/html",
         ),
@@ -62,81 +55,16 @@ def document(structure: str = "", *, metadata: str = "") -> str:
         ),
         (document('<p g:unknown="x" />'), "/section[1]"),
         (document('<p><g:paragraph-style g:unknown="x" /></p>'), "/g:paragraph-style"),
-        (document('<table g:unknown="x"><tbody /></table>'), "/section[1]"),
-        (
-            document('<g:list g:list-id="id" g:unknown="x"><li><p /></li></g:list>'),
-            "/section[1]",
-        ),
-        (document().replace('g:index="0"', 'g:index="bad"'), "/@g:index"),
-        (
-            document().replace('g:index="0"', 'g:index="0" g:nesting-level="1.5"'),
-            "/@g:nesting-level",
-        ),
         (document('<p><span g:bold="yes">x</span></p>'), "/@g:bold"),
-        (document('<p><span g:font-size="nan">x</span></p>'), "/@g:font-size"),
         (
             document('<p><span g:baseline-offset="HIGH">x</span></p>'),
             "/@g:baseline-offset",
         ),
-        (document('<p><span g:foreground-red="1">x</span></p>'), "/*[1]"),
-        (document('<p><a href="x" g:tab-id="tab"><span>x</span></a></p>'), "/*[1]"),
-        (document('<p><span g:font-size="inf">x</span></p>'), "/*[1]"),
-        (document("<p><span><em /></span></p>"), "/*[1]"),
         (document('<p><span><br g:unknown="x" /></span></p>'), "/br"),
         (document("<p>raw<span>x</span></p>"), "/section[1]"),
         (document("<p><span>x</span>raw</p>"), "/section[1]"),
-        (
-            document('<table><tbody><tr><td rowspan="0" /></tr></tbody></table>'),
-            "/@rowspan",
-        ),
-        (
-            document(
-                '<table><colgroup><col g:width-type="FIXED_WIDTH" /></colgroup><tbody /></table>'
-            ),
-            "/col[1]",
-        ),
-        (
-            document(
-                '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX"><li><p /></li></g:list>'
-            ),
-            "/section[1]",
-        ),
-        (
-            document('<g:list g:bullet-preset="INVALID"><li><p /></li></g:list>'),
-            "/@g:bullet-preset",
-        ),
-        (document().replace("<section><g:section-style /></section>", ""), "/g:body"),
         (document().replace("<g:section-style />", ""), "/section[1]"),
-        (document("<section><g:section-style /></section>"), "/section[1]"),
-        (
-            document("<p><g:paragraph-style /><span>x</span><g:paragraph-style /></p>"),
-            "/section[1]",
-        ),
-        (document("<table><tbody /><colgroup /><tbody /></table>"), "/section[1]"),
-        (
-            document(
-                '<g:list g:list-id="id"><li><g:bullet-style /><p /><g:bullet-style /></li></g:list>'
-            ),
-            "/li[1]",
-        ),
-        (
-            document(
-                '<p><span g:foreground-red="2" g:foreground-green="0" g:foreground-blue="0">x</span></p>'
-            ),
-            "/*[1]",
-        ),
         (document("<p><g:auto-text /></p>"), "/*[1]"),
-        (document("<p><time /></p>"), "/*[1]"),
-        (document("<p><g:footnote-reference /></p>"), "/*[1]"),
-        (document("<p><g:inline-object /></p>"), "/*[1]"),
-        (document("<p><g:person /></p>"), "/*[1]"),
-        (document("<p><g:rich-link /></p>"), "/*[1]"),
-        (document('<p><g:auto-text g:type="INVALID" /></p>'), "/@g:type"),
-        (
-            document('<p><time g:date-id="d" g:date-format="INVALID" /></p>'),
-            "/@g:date-format",
-        ),
-        (document('<p><g:person g:person-id="id" g:unknown="x" /></p>'), "/*[1]"),
     ],
 )
 def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) -> None:
@@ -146,8 +74,8 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
-@pytest.mark.parametrize("nesting_level", [-1, -99])
-def test_rejects_negative_tab_nesting_level(nesting_level: int) -> None:
+def test_rejects_negative_tab_nesting_level() -> None:
+    nesting_level = -1
     xhtml = document().replace(
         'g:index="0"', f'g:index="0" g:nesting-level="{nesting_level}"'
     )

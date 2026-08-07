@@ -4,18 +4,27 @@ import pytest
 
 from gdocs_patch.models import (
     Body,
+    BulletPreset,
+    Color,
     Document,
     DocumentTab,
     Paragraph,
     SectionBreak,
     SectionStyle,
     Tab,
+    Table,
+    TableCell,
+    TableCellStyle,
     TableOfContents,
+    TableRow,
     TextRun,
+    TextStyle,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
+MAX_XHTML_CHARACTERS = 10_000_000
+MAX_ELEMENT_DEPTH = 256
 
 
 def xhtml(structure: str = "") -> str:
@@ -51,6 +60,17 @@ def model_document() -> Document:
     )
 
 
+def text_run(document: Document) -> TextRun:
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    paragraph = content.body.content[1]
+    assert isinstance(paragraph, Paragraph)
+    run = paragraph.elements[0]
+    assert isinstance(run, TextRun)
+    return run
+
+
 @pytest.mark.parametrize(
     "declaration",
     [
@@ -68,61 +88,113 @@ def test_rejects_dtd_and_entity_declarations(declaration: str) -> None:
         deserialize_document(source)
 
 
-def test_rejects_input_over_documented_character_limit() -> None:
+def test_documented_character_limit_accepts_boundary_and_rejects_excess() -> None:
+    source = xhtml()
+    at_input_limit = source + " " * (MAX_XHTML_CHARACTERS - len(source))
+    assert deserialize_document(at_input_limit).document_id == "doc"
     with pytest.raises(XHTMLParseError, match="10000000 characters"):
-        deserialize_document(xhtml() + " " * 10_000_000)
+        deserialize_document(at_input_limit + " ")
 
-
-def test_rejects_input_over_documented_element_depth_limit() -> None:
-    source = DECLARATION + "<x>" * 257 + "</x>" * 257
-
-    with pytest.raises(XHTMLParseError, match="element depth") as error:
-        deserialize_document(source)
-
-    assert not isinstance(error.value.__cause__, RecursionError)
-
-
-def test_serializer_rejects_output_over_documented_character_limit() -> None:
     document = model_document()
-    document.title = "x" * 10_000_000
-
+    document.title = ""
+    base_length = len(serialize_document(document))
+    document.title = "x" * (MAX_XHTML_CHARACTERS - base_length)
+    at_output_limit = serialize_document(document)
+    assert len(at_output_limit) == MAX_XHTML_CHARACTERS
+    assert deserialize_document(at_output_limit) == document
+    document.title += "x"
     with pytest.raises(ValueError, match="10000000 characters"):
         serialize_document(document)
 
 
-def test_serializer_rejects_output_over_documented_element_depth_limit() -> None:
+def nested_xml(depth: int) -> str:
+    return DECLARATION + "<x>" * depth + "</x>" * depth
+
+
+def document_with_table_of_contents_depth(depth: int) -> Document:
     document = model_document()
     content = document.tabs[0].content
     assert isinstance(content, DocumentTab)
     assert isinstance(content.body, Body)
     nested: list[TableOfContents] = []
-    for _ in range(251):
+    for _ in range(depth):
         nested = [TableOfContents(content=nested)]
     content.body.content[:] = [SectionBreak(style=SectionStyle()), *nested]
+    return document
 
+
+def test_documented_element_depth_accepts_boundary_and_rejects_excess() -> None:
+    with pytest.raises(XHTMLParseError, match="expected XHTML"):
+        deserialize_document(nested_xml(MAX_ELEMENT_DEPTH))
+    with pytest.raises(XHTMLParseError, match="element depth") as error:
+        deserialize_document(nested_xml(MAX_ELEMENT_DEPTH + 1))
+    assert not isinstance(error.value.__cause__, RecursionError)
+
+    # The document envelope contributes six levels, leaving 250 nested TOCs.
+    boundary = document_with_table_of_contents_depth(MAX_ELEMENT_DEPTH - 6)
+    assert deserialize_document(serialize_document(boundary)) == boundary
+    excess = document_with_table_of_contents_depth(MAX_ELEMENT_DEPTH - 5)
     with pytest.raises(ValueError, match="element depth") as error:
-        serialize_document(document)
-
+        serialize_document(excess)
     assert not isinstance(error.value.__cause__, RecursionError)
 
 
-@pytest.mark.parametrize("invalid", ["\x00", "\ud800"])
-def test_serializer_rejects_illegal_xml_10_characters(invalid: str) -> None:
+@pytest.mark.parametrize("channel", ["attribute", "text", "tail"])
+def test_serializer_rejects_illegal_xml_character_in_output_channel(
+    channel: str,
+) -> None:
     document = model_document()
-    document.title = invalid
+    if channel == "attribute":
+        document.tabs[0].title = "\x00"
+    elif channel == "text":
+        text_run(document).content = "\x00"
+    else:
+        text_run(document).content = "line\n\x00"
 
     with pytest.raises(ValueError, match="XML 1.0"):
         serialize_document(document)
 
 
+def mutate_nested_enum(document: Document) -> None:
+    paragraph = document.tabs[0].content.body.content[1]  # type: ignore[union-attr]
+    assert isinstance(paragraph, Paragraph)
+    paragraph.bullet = BulletPreset(preset="BULLET_CHECKBOX")
+    paragraph.bullet.preset = "INVALID"  # type: ignore[assignment,union-attr]
+
+
+def mutate_nested_range(document: Document) -> None:
+    run = text_run(document)
+    run.text_style = TextStyle(foreground_color=Color(red=0, green=0, blue=0))
+    run.text_style.foreground_color.red = 2  # type: ignore[union-attr]
+
+
+def mutate_nested_span(document: Document) -> None:
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    style = TableCellStyle(row_span=2)
+    style.row_span = 0
+    content.body.content.append(
+        Table(rows=[TableRow(cells=[TableCell(content=[], style=style)])])
+    )
+
+
+def mutate_nested_collection(document: Document) -> None:
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    content.named_styles = ()  # type: ignore[assignment]
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda document: setattr(document, "title", 1),
-        lambda document: setattr(document, "tabs", "not-a-list"),
+        mutate_nested_enum,
+        mutate_nested_range,
+        mutate_nested_span,
+        mutate_nested_collection,
     ],
 )
-def test_serializer_rejects_invalid_mutated_model_state(
+def test_serializer_rejects_representative_invalid_nested_model_state(
     mutation: Callable[[Document], None],
 ) -> None:
     document = model_document()
