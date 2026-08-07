@@ -431,7 +431,7 @@ class _Decoder:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
             validate_attributes(
                 child,
-                {gdocs_name("named-style-type")} | text_style_attributes(),
+                {gdocs_name("type")} | text_style_attributes(),
                 child_path,
             )
             validate_whitespace(child, child_path)
@@ -453,9 +453,9 @@ class _Decoder:
                 _validate_no_children(anchor, anchor_path)
                 link = decode_link(anchor, anchor_path)
             named_style_type = parse_allowed(
-                required_string(child, gdocs_name("named-style-type"), child_path),
+                required_string(child, gdocs_name("type"), child_path),
                 _NAMED_STYLE_TYPES,
-                f"{child_path}/@g:named-style-type",
+                f"{child_path}/@g:type",
             )
             result.append(
                 NamedStyle(

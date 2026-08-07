@@ -174,7 +174,7 @@ class _Encoder:
         wrapper = ElementTree.Element(gdocs_name("named-styles"))
         for style in styles:
             element = ElementTree.SubElement(wrapper, gdocs_name("named-style"))
-            element.set(gdocs_name("named-style-type"), style.named_style_type)
+            element.set(gdocs_name("type"), style.named_style_type)
             self.encode_metadata_text_style(element, style.text_style)
             if style.paragraph_style is not UNSET:
                 paragraph = self.encode_paragraph_style(

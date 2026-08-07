@@ -356,7 +356,8 @@ def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
     assert isinstance(ordered, list)
     assert [style.named_style_type for style in ordered] == types
     assert "<a" in xhtml
-    assert 'g:named-style-type="NORMAL_TEXT"' in xhtml
+    assert '<g:named-style g:type="NORMAL_TEXT"' in xhtml
+    assert '<g:paragraph-style g:named-style-type="NORMAL_TEXT"' in xhtml
     assert actual.tabs[1].content.named_styles == []
     assert actual.tabs[2].content.named_styles is UNSET
 
@@ -368,7 +369,7 @@ def test_decodes_named_style_metadata_in_any_order() -> None:
         'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Named">'
         '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
         "<g:document-tab><g:named-styles><g:named-style "
-        'g:named-style-type="NORMAL_TEXT" g:bold="true">'
+        'g:type="NORMAL_TEXT" g:bold="true">'
         '<g:paragraph-style g:named-style-type="NORMAL_TEXT" />'
         '<a href="https://example.test" />'
         "</g:named-style></g:named-styles></g:document-tab>"
@@ -385,6 +386,27 @@ def test_decodes_named_style_metadata_in_any_order() -> None:
             paragraph_style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
         )
     ]
+    canonical = serialize_document(actual)
+    assert '<g:named-style g:type="NORMAL_TEXT"' in canonical
+    assert '<g:paragraph-style g:named-style-type="NORMAL_TEXT"' in canonical
+
+
+def test_rejects_outer_named_style_named_style_type_attribute() -> None:
+    xhtml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Named">'
+        '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
+        "<g:document-tab><g:named-styles><g:named-style "
+        'g:named-style-type="NORMAL_TEXT" />'
+        "</g:named-styles></g:document-tab></g:tab></body></html>"
+    )
+
+    with pytest.raises(
+        XHTMLParseError,
+        match=r"g:named-style\[1\].*unknown attribute g:named-style-type",
+    ):
+        deserialize_document(xhtml)
 
 
 def test_rejects_nested_child_in_empty_section_style() -> None:
