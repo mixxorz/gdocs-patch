@@ -1,5 +1,6 @@
 import os
 import queue
+import socketserver
 import tempfile
 import threading
 import webbrowser
@@ -33,6 +34,15 @@ class QuietRequestHandler(wsgiref.simple_server.WSGIRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass
+
+
+class ThreadingWSGIServer(
+    socketserver.ThreadingMixIn,
+    wsgiref.simple_server.WSGIServer,
+):
+    """Handle callback connections without blocking the server accept loop."""
+
+    daemon_threads = True
 
 
 def save_credentials(credentials: Credentials) -> None:
@@ -73,8 +83,11 @@ def login(*, client_secrets: Path | None = None) -> Path:
     oauth_state = ""
 
     def submit_callback(callback_url: str) -> bool:
-        candidate = urlsplit(callback_url)
-        expected = urlsplit(redirect_uri)
+        try:
+            candidate = urlsplit(callback_url)
+            expected = urlsplit(redirect_uri)
+        except ValueError:
+            return False
         query = parse_qs(candidate.query, keep_blank_values=True)
         has_oauth_result = any(query.get(name, []) for name in ("code", "error"))
         if (
@@ -108,6 +121,7 @@ def login(*, client_secrets: Path | None = None) -> Path:
         "localhost",
         0,
         receive_callback,
+        server_class=ThreadingWSGIServer,
         handler_class=QuietRequestHandler,
     )
 
