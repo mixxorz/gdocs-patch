@@ -268,6 +268,12 @@ def mutate_nested_type(document: Document) -> None:
     run.content = 1  # type: ignore[assignment]
 
 
+def mutate_nested_collection_type(document: Document) -> None:
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    document_tab.named_styles = ()  # type: ignore[assignment]
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -286,6 +292,7 @@ def mutate_nested_type(document: Document) -> None:
         mutate_number_type,
         mutate_collection_type,
         mutate_nested_type,
+        mutate_nested_collection_type,
     ],
 )
 def test_encoder_rejects_mutated_state_that_decoder_would_reject(

@@ -131,6 +131,16 @@ def require_enum(value: object, allowed: Collection[str], field: str) -> str:
     return result
 
 
+def require_list(value: object, field: str) -> None:
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list")
+
+
+def require_dict(value: object, field: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} must be a dictionary")
+
+
 def validate_attributes(
     element: ElementTree.Element, allowed: Collection[str], path: str
 ) -> None:

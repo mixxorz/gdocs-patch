@@ -58,8 +58,10 @@ from .base import (
     format_number,
     gdocs_name,
     require_boolean,
+    require_dict,
     require_enum,
     require_integer,
+    require_list,
     require_number,
     require_string,
     xhtml_name,
@@ -107,8 +109,7 @@ class _Encoder:
                 ),
             )
 
-        if not isinstance(document.tabs, list):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ValueError("Document.tabs must be a list")
+        require_list(document.tabs, "Document.tabs")
         body = ElementTree.SubElement(root, xhtml_name("body"))
         for tab in document.tabs:
             body.append(self.encode_tab(tab))
@@ -139,8 +140,7 @@ class _Encoder:
             if not isinstance(tab.content, DocumentTab):
                 raise ValueError("Tab.content must be a DocumentTab or UNSET")
             element.append(self.encode_document_tab(tab.content))
-        if not isinstance(tab.children, list):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ValueError("Tab.children must be a list")
+        require_list(tab.children, "Tab.children")
         if tab.children:
             child_tabs = ElementTree.SubElement(element, gdocs_name("child-tabs"))
             for child in tab.children:
@@ -149,6 +149,10 @@ class _Encoder:
 
     def encode_document_tab(self, document_tab: DocumentTab) -> ElementTree.Element:
         element = ElementTree.Element(gdocs_name("document-tab"))
+        if document_tab.named_styles is not UNSET:
+            require_list(document_tab.named_styles, "DocumentTab.named_styles")
+        if document_tab.lists is not UNSET:
+            require_dict(document_tab.lists, "DocumentTab.lists")
         if document_tab.document_style is not UNSET:
             element.append(
                 self.encode_document_style(
@@ -214,6 +218,7 @@ class _Encoder:
         return element
 
     def encode_named_styles(self, styles: list[NamedStyle]) -> ElementTree.Element:
+        require_list(styles, "DocumentTab.named_styles")
         wrapper = ElementTree.Element(gdocs_name("named-styles"))
         for style in styles:
             element = ElementTree.SubElement(wrapper, gdocs_name("named-style"))
@@ -229,6 +234,7 @@ class _Encoder:
         return wrapper
 
     def encode_body(self, body: Body) -> ElementTree.Element:
+        require_list(body.content, "Body.content")
         element = ElementTree.Element(gdocs_name("body"))
         if not body.content or not isinstance(body.content[0], SectionBreak):
             raise ValueError("Body.content must begin with SectionBreak")
@@ -252,8 +258,10 @@ class _Encoder:
     def encode_list_definitions(
         self, parent: ElementTree.Element, definitions: dict[str, ListDefinition]
     ) -> None:
+        require_dict(definitions, "DocumentTab.lists")
         wrapper = ElementTree.SubElement(parent, gdocs_name("list-definitions"))
         for list_id, definition in definitions.items():
+            require_list(definition.levels, "ListDefinition.levels")
             element = ElementTree.SubElement(wrapper, gdocs_name("list-definition"))
             element.set(gdocs_name("list-id"), list_id)
             for level in definition.levels:
@@ -323,6 +331,7 @@ class _Encoder:
         ):
             self.encode_point_attribute(element, name, value)
         if style.columns is not UNSET:
+            require_list(style.columns, "SectionStyle.columns")
             columns = ElementTree.SubElement(element, gdocs_name("columns"))
             for column in cast(list[SectionColumn], style.columns):
                 child = ElementTree.SubElement(columns, gdocs_name("column"))
@@ -381,17 +390,20 @@ class _Encoder:
     ) -> None:
         if segments is UNSET:
             return
+        require_dict(segments, f"DocumentTab.{wrapper_name}")
         decoded_segments = cast(dict[str, Segment], segments)
         wrapper = ElementTree.SubElement(document_tab, gdocs_name(wrapper_name))
         for key, segment in decoded_segments.items():
             item = ElementTree.SubElement(wrapper, gdocs_name(item_name))
             item.set(gdocs_name("key"), key)
             item.set(gdocs_name("segment-id"), segment.segment_id)
+            require_list(segment.content, "Segment.content")
             item.extend(self.encode_structural_sequence(segment.content))
 
     def encode_structural_sequence(
         self, elements: list[StructuralElement], body: bool = False
     ) -> list[ElementTree.Element]:
+        require_list(elements, "structural content")
         encoded: list[ElementTree.Element] = []
         index = 0
         while index < len(elements):
@@ -444,6 +456,7 @@ class _Encoder:
     def encode_list(
         self, paragraphs: list[Paragraph], key: tuple[str, str]
     ) -> ElementTree.Element:
+        require_list(paragraphs, "list paragraphs")
         element = ElementTree.Element(gdocs_name("list"))
         kind, identity = key
         element.set(
@@ -464,10 +477,12 @@ class _Encoder:
         return element
 
     def encode_table(self, table: Table) -> ElementTree.Element:
+        require_list(table.rows, "Table.rows")
         element = ElementTree.Element(xhtml_name("table"))
         if table.table_key is not None:
             element.set(gdocs_name("table-key"), table.table_key)
         if table.column_styles is not UNSET:
+            require_list(table.column_styles, "Table.column_styles")
             colgroup = ElementTree.SubElement(element, xhtml_name("colgroup"))
             for column in cast(list[TableColumn], table.column_styles):
                 child = ElementTree.SubElement(colgroup, xhtml_name("col"))
@@ -479,6 +494,7 @@ class _Encoder:
         return element
 
     def encode_table_row(self, row: TableRow) -> ElementTree.Element:
+        require_list(row.cells, "TableRow.cells")
         element = ElementTree.Element(xhtml_name("tr"))
         if row.row_key is not None:
             element.set(gdocs_name("row-key"), row.row_key)
@@ -490,6 +506,7 @@ class _Encoder:
         return element
 
     def encode_table_cell(self, cell: TableCell) -> ElementTree.Element:
+        require_list(cell.content, "TableCell.content")
         element = ElementTree.Element(xhtml_name("td"))
         if cell.cell_key is not None:
             element.set(gdocs_name("cell-key"), cell.cell_key)
@@ -557,10 +574,14 @@ class _Encoder:
             if metadata is not None:
                 element.append(metadata)
         if paragraph.positioned_object_ids is not UNSET:
+            require_list(
+                paragraph.positioned_object_ids, "Paragraph.positioned_object_ids"
+            )
             wrapper = ElementTree.SubElement(element, gdocs_name("positioned-objects"))
             for object_id in cast(list[str], paragraph.positioned_object_ids):
                 item = ElementTree.SubElement(wrapper, gdocs_name("positioned-object"))
                 item.set(gdocs_name("id"), object_id)
+        require_list(paragraph.elements, "Paragraph.elements")
         for item in paragraph.elements:
             element.append(self.encode_paragraph_element(item))
         return element
@@ -672,6 +693,7 @@ class _Encoder:
                 cast(Color | None, style.shading_color),
             )
         if style.tab_stops is not UNSET:
+            require_list(style.tab_stops, "ParagraphStyle.tab_stops")
             wrapper = ElementTree.SubElement(element, gdocs_name("tab-stops"))
             for stop in cast(list[TabStop], style.tab_stops):
                 child = ElementTree.SubElement(wrapper, gdocs_name("tab-stop"))
