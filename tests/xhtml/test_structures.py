@@ -6,10 +6,13 @@ from gdocs_patch.models import (
     Dimension,
     Document,
     DocumentTab,
+    Paragraph,
     SectionBreak,
     SectionColumn,
     SectionStyle,
     Tab,
+    TableOfContents,
+    TextRun,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 
@@ -37,6 +40,47 @@ def decoded_section_style(document: Document) -> SectionStyle:
     section = content.body.content[0]
     assert isinstance(section, SectionBreak)
     return section.style
+
+
+def test_round_trips_recursive_table_of_contents_in_body() -> None:
+    table_of_contents = TableOfContents(
+        content=[
+            Paragraph(elements=[TextRun(content="First heading")]),
+            Paragraph(elements=[TextRun(content="Second heading")]),
+            TableOfContents(content=[]),
+        ]
+    )
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(table_of_contents)
+
+    xhtml = serialize_document(document)
+
+    assert xhtml.count("<g:table-of-contents") == 2
+    assert "<g:table-of-contents />" in xhtml
+    decoded_content = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded_content, DocumentTab)
+    assert isinstance(decoded_content.body, Body)
+    assert decoded_content.body.content[1] == table_of_contents
+
+
+def test_rejects_body_section_inside_table_of_contents() -> None:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(TableOfContents(content=[]))
+    xhtml = serialize_document(document).replace(
+        "<g:table-of-contents />",
+        "<g:table-of-contents><section><g:section-style /></section></g:table-of-contents>",
+    )
+
+    with pytest.raises(
+        XHTMLParseError, match="section elements are only valid in a body"
+    ):
+        deserialize_document(xhtml)
 
 
 def test_round_trips_complete_section_style() -> None:

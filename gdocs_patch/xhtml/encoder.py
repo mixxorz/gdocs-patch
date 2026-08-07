@@ -3,19 +3,31 @@ from xml.etree import ElementTree
 
 from gdocs_patch.models import (
     UNSET,
+    AutoText,
     Body,
     Color,
+    ColumnBreak,
+    DateElement,
     Dimension,
     Document,
     DocumentTab,
+    Equation,
+    FootnoteReference,
+    HorizontalRule,
+    InlineObjectReference,
+    PageBreak,
     Paragraph,
     ParagraphBorder,
+    ParagraphElement,
     ParagraphStyle,
+    PersonReference,
+    RichLink,
     SectionBreak,
     SectionColumn,
     Segment,
     StructuralElement,
     Tab,
+    TableOfContents,
     TabStop,
     TextRun,
     UnsetType,
@@ -206,6 +218,12 @@ class _Encoder:
                 raise ValueError("SectionBreak is only valid in a body")
             if isinstance(element, Paragraph):
                 encoded.append(self.encode_paragraph(element))
+            elif isinstance(element, TableOfContents):
+                table_of_contents = ElementTree.Element(gdocs_name("table-of-contents"))
+                table_of_contents.extend(
+                    self.encode_structural_sequence(element.content, body=False)
+                )
+                encoded.append(table_of_contents)
             else:
                 raise ValueError(
                     f"unsupported structural element {type(element).__name__}"
@@ -232,10 +250,61 @@ class _Encoder:
                 item = ElementTree.SubElement(wrapper, gdocs_name("positioned-object"))
                 item.set(gdocs_name("id"), object_id)
         for item in paragraph.elements:
-            if not isinstance(item, TextRun):
-                raise ValueError(f"unsupported paragraph element {type(item).__name__}")
-            element.append(self.encode_text_run(item))
+            element.append(self.encode_paragraph_element(item))
         return element
+
+    def encode_paragraph_element(self, item: ParagraphElement) -> ElementTree.Element:
+        if isinstance(item, TextRun):
+            return self.encode_text_run(item)
+        if isinstance(item, AutoText):
+            element = ElementTree.Element(gdocs_name("auto-text"))
+            element.set(gdocs_name("type"), item.auto_text_type)
+        elif isinstance(item, ColumnBreak):
+            element = ElementTree.Element(gdocs_name("column-break"))
+        elif isinstance(item, DateElement):
+            element = ElementTree.Element(xhtml_name("time"))
+            element.set(gdocs_name("date-id"), item.date_id)
+            for value, name in (
+                (item.date_format, gdocs_name("date-format")),
+                (item.display_text, gdocs_name("display-text")),
+                (item.locale, gdocs_name("locale")),
+                (item.time_format, gdocs_name("time-format")),
+                (item.time_zone_id, gdocs_name("time-zone-id")),
+                (item.timestamp, "datetime"),
+            ):
+                if value is not UNSET:
+                    element.set(name, cast(str, value))
+        elif isinstance(item, Equation):
+            return ElementTree.Element(gdocs_name("equation"))
+        elif isinstance(item, FootnoteReference):
+            element = ElementTree.Element(gdocs_name("footnote-reference"))
+            element.set(gdocs_name("footnote-id"), item.footnote_id)
+            element.set(gdocs_name("footnote-number"), item.footnote_number)
+        elif isinstance(item, HorizontalRule):
+            element = ElementTree.Element(xhtml_name("hr"))
+        elif isinstance(item, InlineObjectReference):
+            element = ElementTree.Element(gdocs_name("inline-object"))
+            element.set(gdocs_name("inline-object-id"), item.inline_object_id)
+        elif isinstance(item, PageBreak):
+            element = ElementTree.Element(gdocs_name("page-break"))
+        elif isinstance(item, PersonReference):
+            element = ElementTree.Element(gdocs_name("person"))
+            element.set(gdocs_name("person-id"), item.person_id)
+            if item.email is not UNSET:
+                element.set(gdocs_name("email"), cast(str, item.email))
+            if item.name is not UNSET:
+                element.set(gdocs_name("name"), cast(str, item.name))
+        elif isinstance(item, RichLink):
+            element = ElementTree.Element(gdocs_name("rich-link"))
+            element.set(gdocs_name("rich-link-id"), item.rich_link_id)
+            element.set(gdocs_name("uri"), item.uri)
+            if item.title is not UNSET:
+                element.set(gdocs_name("title"), cast(str, item.title))
+            if item.mime_type is not UNSET:
+                element.set(gdocs_name("mime-type"), cast(str, item.mime_type))
+        else:
+            raise ValueError(f"unsupported paragraph element {type(item).__name__}")
+        return encode_text_style(element, item.text_style)
 
     def encode_paragraph_style(
         self, style: ParagraphStyle, *, include_named_style: bool = True

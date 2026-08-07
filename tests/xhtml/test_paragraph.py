@@ -2,26 +2,38 @@ import pytest
 
 from gdocs_patch.models import (
     UNSET,
+    AutoText,
     Body,
     BookmarkLink,
     Color,
+    ColumnBreak,
+    DateElement,
     Dimension,
     Document,
     DocumentTab,
+    Equation,
+    FootnoteReference,
+    HorizontalRule,
+    InlineObjectReference,
+    PageBreak,
     Paragraph,
     ParagraphBorder,
+    ParagraphElement,
     ParagraphStyle,
+    PersonReference,
+    RichLink,
     SectionBreak,
     SectionStyle,
     Tab,
     TabStop,
     TextRun,
     TextStyle,
+    UrlLink,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 
 
-def document_with_runs(*runs: TextRun) -> Document:
+def document_with_runs(*runs: ParagraphElement) -> Document:
     return Document(
         document_id="doc-1",
         title="Paragraph",
@@ -54,6 +66,151 @@ def paragraph_from(document: Document) -> Paragraph:
     paragraph = content.body.content[1]
     assert isinstance(paragraph, Paragraph)
     return paragraph
+
+
+@pytest.mark.parametrize(
+    ("paragraph_element", "expected_tag"),
+    [
+        (
+            AutoText(
+                auto_text_type="PAGE_NUMBER",
+                text_style=TextStyle(bold=True),
+            ),
+            "g:auto-text",
+        ),
+        (ColumnBreak(text_style=TextStyle(italic=False)), "g:column-break"),
+        (
+            DateElement(
+                date_id="date-1",
+                date_format="DATE_FORMAT_ISO8601",
+                display_text="",
+                locale="en-US",
+                time_format="TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+                time_zone_id="UTC",
+                timestamp="2026-08-08T12:00:00Z",
+                text_style=TextStyle(underline=True),
+            ),
+            "time",
+        ),
+        (Equation(), "g:equation"),
+        (
+            FootnoteReference(
+                footnote_id="footnote-1",
+                footnote_number="3",
+                text_style=TextStyle(strikethrough=False),
+            ),
+            "g:footnote-reference",
+        ),
+        (HorizontalRule(text_style=TextStyle(small_caps=True)), "hr"),
+        (
+            InlineObjectReference(
+                inline_object_id="object-1",
+                text_style=TextStyle(baseline_offset="SUBSCRIPT"),
+            ),
+            "g:inline-object",
+        ),
+        (PageBreak(text_style=TextStyle(font_family="Arial")), "g:page-break"),
+        (
+            PersonReference(
+                person_id="person-1",
+                email="",
+                name="",
+                text_style=TextStyle(font_weight=700),
+            ),
+            "g:person",
+        ),
+        (
+            RichLink(
+                rich_link_id="rich-link-1",
+                uri="https://smart-chip.example/document",
+                title="",
+                mime_type="",
+                text_style=TextStyle(
+                    link=UrlLink(url="https://outer-link.example/target")
+                ),
+            ),
+            "g:rich-link",
+        ),
+    ],
+    ids=lambda value: (
+        type(value).__name__ if isinstance(value, ParagraphElement) else str(value)
+    ),
+)
+def test_round_trips_non_text_paragraph_element(
+    paragraph_element: ParagraphElement, expected_tag: str
+) -> None:
+    document = document_with_runs(paragraph_element)
+
+    xhtml = serialize_document(document)
+
+    assert f"<{expected_tag}" in xhtml
+    if isinstance(paragraph_element, RichLink):
+        assert 'href="https://outer-link.example/target"' in xhtml
+        assert 'g:uri="https://smart-chip.example/document"' in xhtml
+    assert paragraph_from(deserialize_document(xhtml)).elements == [paragraph_element]
+
+
+@pytest.mark.parametrize(
+    "date_format",
+    [
+        "DATE_FORMAT_UNSPECIFIED",
+        "DATE_FORMAT_CUSTOM",
+        "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
+        "DATE_FORMAT_MONTH_DAY_FULL",
+        "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
+        "DATE_FORMAT_ISO8601",
+    ],
+)
+def test_round_trips_every_date_format(date_format: str) -> None:
+    element = DateElement(date_id="date", date_format=date_format)  # type: ignore[arg-type]
+
+    decoded = paragraph_from(
+        deserialize_document(serialize_document(document_with_runs(element)))
+    )
+
+    assert decoded.elements == [element]
+
+
+@pytest.mark.parametrize(
+    "time_format",
+    [
+        "TIME_FORMAT_UNSPECIFIED",
+        "TIME_FORMAT_DISABLED",
+        "TIME_FORMAT_HOUR_MINUTE",
+        "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+    ],
+)
+def test_round_trips_every_time_format(time_format: str) -> None:
+    element = DateElement(date_id="date", time_format=time_format)  # type: ignore[arg-type]
+
+    decoded = paragraph_from(
+        deserialize_document(serialize_document(document_with_runs(element)))
+    )
+
+    assert decoded.elements == [element]
+
+
+def test_rejects_multiple_children_in_content_link() -> None:
+    xhtml = serialize_document(
+        document_with_runs(
+            TextRun(
+                content="linked",
+                text_style=TextStyle(link=UrlLink(url="https://example.com")),
+            )
+        )
+    )
+    xhtml = xhtml.replace("</a>", "<g:page-break /></a>", 1)
+
+    with pytest.raises(XHTMLParseError, match="exactly one"):
+        deserialize_document(xhtml)
+
+
+def test_rejects_child_on_opaque_paragraph_element() -> None:
+    xhtml = serialize_document(document_with_runs(Equation()))
+    xhtml = xhtml.replace("<g:equation />", "<g:equation><g:unknown /></g:equation>")
+
+    with pytest.raises(XHTMLParseError, match="unknown child element"):
+        deserialize_document(xhtml)
 
 
 def test_round_trips_complete_paragraph_metadata() -> None:

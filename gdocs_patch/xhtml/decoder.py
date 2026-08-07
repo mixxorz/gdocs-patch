@@ -3,22 +3,33 @@ from xml.etree import ElementTree
 
 from gdocs_patch.models import (
     UNSET,
+    AutoText,
     Body,
     Color,
+    ColumnBreak,
+    DateElement,
     Dimension,
     Document,
     DocumentTab,
+    Equation,
+    FootnoteReference,
+    HorizontalRule,
+    InlineObjectReference,
     Link,
+    PageBreak,
     Paragraph,
     ParagraphBorder,
     ParagraphElement,
     ParagraphStyle,
+    PersonReference,
+    RichLink,
     SectionBreak,
     SectionColumn,
     SectionStyle,
     Segment,
     StructuralElement,
     Tab,
+    TableOfContents,
     TabStop,
     TextRun,
     UnsetType,
@@ -70,6 +81,20 @@ _DIRECTIONS = {"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"
 _SPACING_MODES = {"SPACING_MODE_UNSPECIFIED", "NEVER_COLLAPSE", "COLLAPSE_LISTS"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 _TAB_ALIGNMENTS = {"TAB_STOP_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
+_DATE_FORMATS = {
+    "DATE_FORMAT_UNSPECIFIED",
+    "DATE_FORMAT_CUSTOM",
+    "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
+    "DATE_FORMAT_MONTH_DAY_FULL",
+    "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
+    "DATE_FORMAT_ISO8601",
+}
+_TIME_FORMATS = {
+    "TIME_FORMAT_UNSPECIFIED",
+    "TIME_FORMAT_DISABLED",
+    "TIME_FORMAT_HOUR_MINUTE",
+    "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+}
 
 _SUGGESTIONS_VIEW_MODES = {
     "DEFAULT_FOR_CURRENT_ACCESS",
@@ -447,6 +472,16 @@ class _Decoder:
                 parse_error(child_path, "section elements are only valid in a body")
             if element.tag in _PARAGRAPH_TAGS:
                 decoded.append(self.decode_paragraph(element, child_path))
+            elif element.tag == gdocs_name("table-of-contents"):
+                validate_attributes(element, set(), child_path)
+                validate_whitespace(element, child_path)
+                decoded.append(
+                    TableOfContents(
+                        content=self.decode_structural_sequence(
+                            list(element), child_path, body=False
+                        )
+                    )
+                )
             else:
                 parse_error(
                     child_path,
@@ -484,18 +519,153 @@ class _Decoder:
             if child in (metadata, positioned):
                 continue
             child_path = f"{path}/*[{index + 1}]"
-            if child.tag == xhtml_name("span"):
-                runs.append(self.decode_text_run(child, UNSET, child_path))
-            elif child.tag == xhtml_name("a"):
-                runs.append(self.decode_linked_text_run(child, child_path))
-            else:
-                parse_error(
-                    child_path, f"unknown paragraph element {display_name(child.tag)}"
-                )
+            runs.append(self.decode_paragraph_element(child, child_path))
         return Paragraph(
             elements=runs,
             style=decoded_style,
             positioned_object_ids=positioned_ids,
+        )
+
+    def decode_paragraph_element(
+        self, element: ElementTree.Element, path: str
+    ) -> ParagraphElement:
+        if element.tag == xhtml_name("a"):
+            if element.text is not None and element.text.strip():
+                parse_error(path, "unexpected text in link")
+            link = decode_link(element, path)
+            children = list(element)
+            if len(children) != 1:
+                parse_error(
+                    path, "link target must contain exactly one paragraph element"
+                )
+            child = children[0]
+            if child.tail is not None and child.tail.strip():
+                parse_error(path, "unexpected text after linked paragraph element")
+            return self.decode_unlinked_paragraph_element(child, link, f"{path}/*[1]")
+        return self.decode_unlinked_paragraph_element(element, UNSET, path)
+
+    def decode_unlinked_paragraph_element(
+        self,
+        element: ElementTree.Element,
+        link: Link | UnsetType,
+        path: str,
+    ) -> ParagraphElement:
+        if element.tag == xhtml_name("span"):
+            return self.decode_text_run(element, link, path)
+        if element.tag == gdocs_name("equation"):
+            if link is not UNSET:
+                parse_error(path, "equation cannot be a link target")
+            validate_attributes(element, set(), path)
+            validate_whitespace(element, path)
+            _validate_no_children(element, path)
+            return Equation()
+
+        fields: set[str]
+        if element.tag == gdocs_name("auto-text"):
+            fields = {"type"}
+        elif element.tag == gdocs_name("column-break"):
+            fields = set()
+        elif element.tag == xhtml_name("time"):
+            fields = {
+                "date-id",
+                "date-format",
+                "display-text",
+                "locale",
+                "time-format",
+                "time-zone-id",
+            }
+        elif element.tag == gdocs_name("footnote-reference"):
+            fields = {"footnote-id", "footnote-number"}
+        elif element.tag == xhtml_name("hr"):
+            fields = set()
+        elif element.tag == gdocs_name("inline-object"):
+            fields = {"inline-object-id"}
+        elif element.tag == gdocs_name("page-break"):
+            fields = set()
+        elif element.tag == gdocs_name("person"):
+            fields = {"person-id", "email", "name"}
+        elif element.tag == gdocs_name("rich-link"):
+            fields = {"rich-link-id", "uri", "title", "mime-type"}
+        else:
+            parse_error(path, f"unknown paragraph element {display_name(element.tag)}")
+
+        allowed = {gdocs_name(name) for name in fields} | text_style_attributes()
+        if element.tag == xhtml_name("time"):
+            allowed.add("datetime")
+        validate_attributes(element, allowed, path)
+        validate_whitespace(element, path)
+        _validate_no_children(element, path)
+        style = decode_text_style(element, link, path)
+
+        if element.tag == gdocs_name("auto-text"):
+            return AutoText(
+                auto_text_type=parse_allowed(
+                    required_string(element, gdocs_name("type"), path),
+                    {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"},
+                    f"{path}/@g:type",
+                ),  # type: ignore[arg-type]
+                text_style=style,
+            )
+        if element.tag == gdocs_name("column-break"):
+            return ColumnBreak(text_style=style)
+        if element.tag == xhtml_name("time"):
+            raw_date_format = element.get(gdocs_name("date-format"))
+            raw_time_format = element.get(gdocs_name("time-format"))
+            return DateElement(
+                date_id=required_string(element, gdocs_name("date-id"), path),
+                date_format=(
+                    UNSET
+                    if raw_date_format is None
+                    else parse_allowed(
+                        raw_date_format, _DATE_FORMATS, f"{path}/@g:date-format"
+                    )
+                ),  # type: ignore[arg-type]
+                display_text=optional_string(element, gdocs_name("display-text")),
+                locale=optional_string(element, gdocs_name("locale")),
+                time_format=(
+                    UNSET
+                    if raw_time_format is None
+                    else parse_allowed(
+                        raw_time_format, _TIME_FORMATS, f"{path}/@g:time-format"
+                    )
+                ),  # type: ignore[arg-type]
+                time_zone_id=optional_string(element, gdocs_name("time-zone-id")),
+                timestamp=optional_string(element, "datetime"),
+                text_style=style,
+            )
+        if element.tag == gdocs_name("footnote-reference"):
+            return FootnoteReference(
+                footnote_id=required_string(element, gdocs_name("footnote-id"), path),
+                footnote_number=required_string(
+                    element, gdocs_name("footnote-number"), path
+                ),
+                text_style=style,
+            )
+        if element.tag == xhtml_name("hr"):
+            return HorizontalRule(text_style=style)
+        if element.tag == gdocs_name("inline-object"):
+            return InlineObjectReference(
+                inline_object_id=required_string(
+                    element, gdocs_name("inline-object-id"), path
+                ),
+                text_style=style,
+            )
+        if element.tag == gdocs_name("page-break"):
+            return PageBreak(text_style=style)
+        if element.tag == gdocs_name("person"):
+            return PersonReference(
+                person_id=required_string(element, gdocs_name("person-id"), path),
+                email=optional_string(element, gdocs_name("email")),
+                name=optional_string(element, gdocs_name("name")),
+                text_style=style,
+            )
+        assert element.tag == gdocs_name("rich-link")
+        return RichLink(
+            rich_link_id=required_string(element, gdocs_name("rich-link-id"), path),
+            uri=required_string(element, gdocs_name("uri"), path),
+            title=optional_string(element, gdocs_name("title")),
+            mime_type=optional_string(element, gdocs_name("mime-type")),
+            text_style=style,
         )
 
     def decode_positioned_objects(
