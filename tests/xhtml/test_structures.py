@@ -227,6 +227,27 @@ def document_with_table(table: Table) -> Document:
     return document
 
 
+def xhtml_with_table_tree(table_tree: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Tables">'
+        '<body><g:tab g:tab-id="tab" g:title="Main" g:index="0">'
+        "<g:document-tab><g:body><section><g:section-style />"
+        f"{table_tree}"
+        "</section></g:body></g:document-tab></g:tab></body></html>"
+    )
+
+
+def decoded_table(document: Document) -> Table:
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    table = content.body.content[1]
+    assert isinstance(table, Table)
+    return table
+
+
 def test_round_trips_complete_recursive_table() -> None:
     border = TableCellBorder(
         color=Color(red=0.1, green=0.2, blue=0.3),
@@ -268,7 +289,7 @@ def test_round_trips_complete_recursive_table() -> None:
                 row_key="header-row",
                 min_height=Dimension(magnitude=24, unit="PT"),
                 prevent_overflow=True,
-                is_header=False,
+                is_header=True,
                 cells=[
                     styled_cell,
                     TableCell(
@@ -278,7 +299,7 @@ def test_round_trips_complete_recursive_table() -> None:
                     ),
                 ],
             ),
-            TableRow(cells=[]),
+            TableRow(cells=[], is_header=False),
         ],
     )
 
@@ -290,7 +311,7 @@ def test_round_trips_complete_recursive_table() -> None:
     assert xhtml.index("<colgroup>") < xhtml.index("<tbody>")
     assert (
         '<tr g:row-key="header-row" g:min-height="24" '
-        'g:prevent-overflow="true" g:is-header="false">'
+        'g:prevent-overflow="true" g:is-header="true">'
     ) in xhtml
     assert '<td g:cell-key="merged-cell" rowspan="2" colspan="2">' in xhtml
     for fragment in (
@@ -306,11 +327,88 @@ def test_round_trips_complete_recursive_table() -> None:
         '<g:border-bottom g:dash-style="SOLID" g:width="1.5">',
         '<g:color g:red="0.1" g:green="0.2" g:blue="0.3" />',
         '<g:background-color g:transparent="true" />',
-        "<tr />",
+        '<tr g:is-header="false" />',
     ):
         assert fragment in xhtml
     assert xhtml.count("<table") == 2
-    assert deserialize_document(xhtml) == document_with_table(table)
+    expected_document = document_with_table(table)
+    decoded_document = deserialize_document(xhtml)
+    assert decoded_document == expected_document
+    assert decoded_table(decoded_document) == table
+    assert decoded_table(decoded_document).rows[0].is_header is True
+    assert decoded_table(decoded_document).rows[1].is_header is False
+
+
+def test_accepts_table_and_cell_metadata_after_content_without_reordering() -> None:
+    xhtml = xhtml_with_table_tree(
+        "<table><tbody><tr><td>"
+        "<g:paragraph><span>first</span></g:paragraph>"
+        '<g:cell-style g:content-alignment="BOTTOM" />'
+        "<g:paragraph><span>second</span></g:paragraph>"
+        "</td></tr></tbody>"
+        '<colgroup><col g:width-type="EVENLY_DISTRIBUTED" /></colgroup>'
+        "</table>"
+    )
+    expected = Table(
+        column_styles=[TableColumn(width_type="EVENLY_DISTRIBUTED")],
+        rows=[
+            TableRow(
+                cells=[
+                    TableCell(
+                        content=[
+                            Paragraph(elements=[TextRun(content="first")]),
+                            Paragraph(elements=[TextRun(content="second")]),
+                        ],
+                        style=TableCellStyle(content_alignment="BOTTOM"),
+                    )
+                ]
+            )
+        ],
+    )
+
+    assert decoded_table(deserialize_document(xhtml)) == expected
+
+
+@pytest.mark.parametrize(
+    ("table_tree", "expected_error"),
+    [
+        (
+            "<table><colgroup /><colgroup /><tbody /></table>",
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
+            "expected at most one colgroup child",
+        ),
+        (
+            "<table><tbody /><tbody /></table>",
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
+            "expected at most one tbody child",
+        ),
+        (
+            "<table><tbody><tr><td><g:cell-style /><g:cell-style />"
+            "</td></tr></tbody></table>",
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]"
+            "/tbody/tr[1]/td[1]: expected at most one g:cell-style child",
+        ),
+    ],
+)
+def test_rejects_duplicate_singular_table_or_cell_metadata(
+    table_tree: str, expected_error: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_table_tree(table_tree))
+
+    assert str(error.value) == expected_error
+
+
+def test_rejects_unknown_table_child_with_exact_path() -> None:
+    xhtml = xhtml_with_table_tree("<table><caption /><tbody /></table>")
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert str(error.value) == (
+        "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
+        "unknown child element caption"
+    )
 
 
 @pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<colgroup />")])
