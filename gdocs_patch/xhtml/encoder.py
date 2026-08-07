@@ -68,6 +68,83 @@ from .base import (
 )
 from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
 
+_DOCUMENT_MODES = {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"}
+_NAMED_STYLE_TYPES = {
+    "NAMED_STYLE_TYPE_UNSPECIFIED",
+    "NORMAL_TEXT",
+    "TITLE",
+    "SUBTITLE",
+    "HEADING_1",
+    "HEADING_2",
+    "HEADING_3",
+    "HEADING_4",
+    "HEADING_5",
+    "HEADING_6",
+}
+_SECTION_SEPARATOR_STYLES = {
+    "COLUMN_SEPARATOR_STYLE_UNSPECIFIED",
+    "NONE",
+    "BETWEEN_EACH_COLUMN",
+}
+_DIRECTIONS = {"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"}
+_SECTION_TYPES = {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"}
+_GLYPH_TYPES = {
+    "GLYPH_TYPE_UNSPECIFIED",
+    "NONE",
+    "DECIMAL",
+    "ZERO_DECIMAL",
+    "UPPER_ALPHA",
+    "ALPHA",
+    "UPPER_ROMAN",
+    "ROMAN",
+}
+_BULLET_ALIGNMENTS = {"BULLET_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
+_CONTENT_ALIGNMENTS = {
+    "CONTENT_ALIGNMENT_UNSPECIFIED",
+    "CONTENT_ALIGNMENT_UNSUPPORTED",
+    "TOP",
+    "MIDDLE",
+    "BOTTOM",
+}
+_WIDTH_TYPES = {"WIDTH_TYPE_UNSPECIFIED", "EVENLY_DISTRIBUTED", "FIXED_WIDTH"}
+_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
+_ALIGNMENTS = {"ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END", "JUSTIFIED"}
+_SPACING_MODES = {"SPACING_MODE_UNSPECIFIED", "NEVER_COLLAPSE", "COLLAPSE_LISTS"}
+_TAB_ALIGNMENTS = {"TAB_STOP_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
+_AUTO_TEXT_TYPES = {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"}
+_DATE_FORMATS = {
+    "DATE_FORMAT_UNSPECIFIED",
+    "DATE_FORMAT_CUSTOM",
+    "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
+    "DATE_FORMAT_MONTH_DAY_FULL",
+    "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
+    "DATE_FORMAT_ISO8601",
+}
+_TIME_FORMATS = {
+    "TIME_FORMAT_UNSPECIFIED",
+    "TIME_FORMAT_DISABLED",
+    "TIME_FORMAT_HOUR_MINUTE",
+    "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+}
+_BULLET_PRESETS = {
+    "BULLET_GLYPH_PRESET_UNSPECIFIED",
+    "BULLET_DISC_CIRCLE_SQUARE",
+    "BULLET_DIAMONDX_ARROW3D_SQUARE",
+    "BULLET_CHECKBOX",
+    "BULLET_ARROW_DIAMOND_DISC",
+    "BULLET_STAR_CIRCLE_SQUARE",
+    "BULLET_ARROW3D_CIRCLE_SQUARE",
+    "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
+    "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
+    "BULLET_DIAMOND_CIRCLE_SQUARE",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
+    "NUMBERED_DECIMAL_NESTED",
+    "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
+    "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
+    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
+}
+
 _SUGGESTIONS_VIEW_MODES = {
     "DEFAULT_FOR_CURRENT_ACCESS",
     "SUGGESTIONS_INLINE",
@@ -178,18 +255,34 @@ class _Encoder:
 
     def encode_document_style(self, style: DocumentStyle) -> ElementTree.Element:
         element = ElementTree.Element(gdocs_name("document-style"))
+        if style.document_mode is not UNSET:
+            element.set(
+                gdocs_name("document-mode"),
+                require_enum(
+                    style.document_mode, _DOCUMENT_MODES, "DocumentStyle.document_mode"
+                ),
+            )
         for value, name in (
-            (style.document_mode, "document-mode"),
             (style.default_header_id, "default-header-id"),
             (style.default_footer_id, "default-footer-id"),
             (style.even_page_header_id, "even-page-header-id"),
             (style.even_page_footer_id, "even-page-footer-id"),
             (style.first_page_header_id, "first-page-header-id"),
             (style.first_page_footer_id, "first-page-footer-id"),
-            (style.page_number_start, "page-number-start"),
         ):
             if value is not UNSET:
-                element.set(gdocs_name(name), str(value))
+                element.set(
+                    gdocs_name(name), require_string(value, f"DocumentStyle.{name}")
+                )
+        if style.page_number_start is not UNSET:
+            element.set(
+                gdocs_name("page-number-start"),
+                str(
+                    require_integer(
+                        style.page_number_start, "DocumentStyle.page_number_start"
+                    )
+                ),
+            )
         for value, name in (
             (style.use_even_page_header_footer, "use-even-page-header-footer"),
             (style.use_first_page_header_footer, "use-first-page-header-footer"),
@@ -222,7 +315,14 @@ class _Encoder:
         wrapper = ElementTree.Element(gdocs_name("named-styles"))
         for style in styles:
             element = ElementTree.SubElement(wrapper, gdocs_name("named-style"))
-            element.set(gdocs_name("type"), style.named_style_type)
+            element.set(
+                gdocs_name("type"),
+                require_enum(
+                    style.named_style_type,
+                    _NAMED_STYLE_TYPES,
+                    "NamedStyle.named_style_type",
+                ),
+            )
             self.encode_metadata_text_style(element, style.text_style)
             if style.paragraph_style is not UNSET:
                 paragraph = self.encode_paragraph_style(
@@ -263,25 +363,41 @@ class _Encoder:
         for list_id, definition in definitions.items():
             require_list(definition.levels, "ListDefinition.levels")
             element = ElementTree.SubElement(wrapper, gdocs_name("list-definition"))
-            element.set(gdocs_name("list-id"), list_id)
+            element.set(
+                gdocs_name("list-id"),
+                require_string(list_id, "DocumentTab.lists key"),
+            )
             for level in definition.levels:
                 element.append(self.encode_list_level(level))
 
     def encode_list_level(self, level: ListLevel) -> ElementTree.Element:
         element = ElementTree.Element(gdocs_name("list-level"))
-        element.set(gdocs_name("glyph-format"), level.glyph_format)
+        element.set(
+            gdocs_name("glyph-format"),
+            require_string(level.glyph_format, "ListLevel.glyph_format"),
+        )
         if level.glyph_type is not UNSET:
-            element.set(gdocs_name("glyph-type"), cast(str, level.glyph_type))
+            element.set(
+                gdocs_name("glyph-type"),
+                require_enum(level.glyph_type, _GLYPH_TYPES, "ListLevel.glyph_type"),
+            )
         if level.glyph_symbol is not UNSET:
-            element.set(gdocs_name("glyph-symbol"), cast(str, level.glyph_symbol))
-        if level.alignment != "BULLET_ALIGNMENT_UNSPECIFIED":
-            element.set(gdocs_name("alignment"), level.alignment)
+            element.set(
+                gdocs_name("glyph-symbol"),
+                require_string(level.glyph_symbol, "ListLevel.glyph_symbol"),
+            )
+        alignment = require_enum(
+            level.alignment, _BULLET_ALIGNMENTS, "ListLevel.alignment"
+        )
+        if alignment != "BULLET_ALIGNMENT_UNSPECIFIED":
+            element.set(gdocs_name("alignment"), alignment)
         self.encode_point_attribute(
             element, "indent-first-line", level.indent_first_line
         )
         self.encode_point_attribute(element, "indent-start", level.indent_start)
-        if level.start_number != 0:
-            element.set(gdocs_name("start-number"), str(level.start_number))
+        start_number = require_integer(level.start_number, "ListLevel.start_number")
+        if start_number != 0:
+            element.set(gdocs_name("start-number"), str(start_number))
         self.encode_metadata_text_style(element, level.text_style)
         return element
 
@@ -300,21 +416,41 @@ class _Encoder:
     ) -> None:
         style = section_break.style
         element = ElementTree.SubElement(section, gdocs_name("section-style"))
-        scalar_fields = (
-            (style.column_separator_style, "column-separator-style"),
-            (style.content_direction, "content-direction"),
-            (style.section_type, "section-type"),
+        for value, name, allowed in (
+            (
+                style.column_separator_style,
+                "column-separator-style",
+                _SECTION_SEPARATOR_STYLES,
+            ),
+            (style.content_direction, "content-direction", _DIRECTIONS),
+            (style.section_type, "section-type", _SECTION_TYPES),
+        ):
+            if value is not UNSET:
+                element.set(
+                    gdocs_name(name),
+                    require_enum(value, allowed, f"SectionStyle.{name}"),
+                )
+        for value, name in (
             (style.default_header_id, "default-header-id"),
             (style.default_footer_id, "default-footer-id"),
             (style.even_page_header_id, "even-page-header-id"),
             (style.even_page_footer_id, "even-page-footer-id"),
             (style.first_page_header_id, "first-page-header-id"),
             (style.first_page_footer_id, "first-page-footer-id"),
-            (style.page_number_start, "page-number-start"),
-        )
-        for value, name in scalar_fields:
+        ):
             if value is not UNSET:
-                element.set(gdocs_name(name), str(value))
+                element.set(
+                    gdocs_name(name), require_string(value, f"SectionStyle.{name}")
+                )
+        if style.page_number_start is not UNSET:
+            element.set(
+                gdocs_name("page-number-start"),
+                str(
+                    require_integer(
+                        style.page_number_start, "SectionStyle.page_number_start"
+                    )
+                ),
+            )
         self.encode_boolean_attribute(
             element, "use-first-page-header-footer", style.use_first_page_header_footer
         )
@@ -395,8 +531,14 @@ class _Encoder:
         wrapper = ElementTree.SubElement(document_tab, gdocs_name(wrapper_name))
         for key, segment in decoded_segments.items():
             item = ElementTree.SubElement(wrapper, gdocs_name(item_name))
-            item.set(gdocs_name("key"), key)
-            item.set(gdocs_name("segment-id"), segment.segment_id)
+            item.set(
+                gdocs_name("key"),
+                require_string(key, f"DocumentTab.{wrapper_name} key"),
+            )
+            item.set(
+                gdocs_name("segment-id"),
+                require_string(segment.segment_id, "Segment.segment_id"),
+            )
             require_list(segment.content, "Segment.content")
             item.extend(self.encode_structural_sequence(segment.content))
 
@@ -446,9 +588,12 @@ class _Encoder:
     def bullet_group_key(self, paragraph: Paragraph) -> tuple[str, str] | None:
         bullet = paragraph.bullet
         if isinstance(bullet, Bullet):
-            return ("existing", bullet.list_id)
+            return ("existing", require_string(bullet.list_id, "Bullet.list_id"))
         if isinstance(bullet, BulletPreset):
-            return ("preset", bullet.preset)
+            return (
+                "preset",
+                require_enum(bullet.preset, _BULLET_PRESETS, "BulletPreset.preset"),
+            )
         if bullet is UNSET:
             return None
         raise ValueError(f"unsupported paragraph bullet object {type(bullet).__name__}")
@@ -466,8 +611,11 @@ class _Encoder:
             item = ElementTree.SubElement(element, xhtml_name("li"))
             bullet = paragraph.bullet
             assert isinstance(bullet, (Bullet, BulletPreset))
-            if bullet.nesting_level != 0:
-                item.set(gdocs_name("nesting-level"), str(bullet.nesting_level))
+            nesting_level = require_integer(
+                bullet.nesting_level, f"{type(bullet).__name__}.nesting_level"
+            )
+            if nesting_level != 0:
+                item.set(gdocs_name("nesting-level"), str(nesting_level))
             if isinstance(bullet, Bullet) and bullet.text_style is not UNSET:
                 metadata = ElementTree.Element(gdocs_name("bullet-style"))
                 self.encode_metadata_text_style(metadata, bullet.text_style)
@@ -480,13 +628,21 @@ class _Encoder:
         require_list(table.rows, "Table.rows")
         element = ElementTree.Element(xhtml_name("table"))
         if table.table_key is not None:
-            element.set(gdocs_name("table-key"), table.table_key)
+            element.set(
+                gdocs_name("table-key"),
+                require_string(table.table_key, "Table.table_key"),
+            )
         if table.column_styles is not UNSET:
             require_list(table.column_styles, "Table.column_styles")
             colgroup = ElementTree.SubElement(element, xhtml_name("colgroup"))
             for column in cast(list[TableColumn], table.column_styles):
                 child = ElementTree.SubElement(colgroup, xhtml_name("col"))
-                child.set(gdocs_name("width-type"), column.width_type)
+                child.set(
+                    gdocs_name("width-type"),
+                    require_enum(
+                        column.width_type, _WIDTH_TYPES, "TableColumn.width_type"
+                    ),
+                )
                 self.encode_point_attribute(child, "width", column.width)
         tbody = ElementTree.SubElement(element, xhtml_name("tbody"))
         for row in table.rows:
@@ -497,7 +653,9 @@ class _Encoder:
         require_list(row.cells, "TableRow.cells")
         element = ElementTree.Element(xhtml_name("tr"))
         if row.row_key is not None:
-            element.set(gdocs_name("row-key"), row.row_key)
+            element.set(
+                gdocs_name("row-key"), require_string(row.row_key, "TableRow.row_key")
+            )
         self.encode_point_attribute(element, "min-height", row.min_height)
         self.encode_boolean_attribute(element, "prevent-overflow", row.prevent_overflow)
         self.encode_boolean_attribute(element, "is-header", row.is_header)
@@ -509,13 +667,20 @@ class _Encoder:
         require_list(cell.content, "TableCell.content")
         element = ElementTree.Element(xhtml_name("td"))
         if cell.cell_key is not None:
-            element.set(gdocs_name("cell-key"), cell.cell_key)
+            element.set(
+                gdocs_name("cell-key"),
+                require_string(cell.cell_key, "TableCell.cell_key"),
+            )
         if cell.style is not UNSET:
             style = cast(TableCellStyle, cell.style)
-            if style.row_span != 1:
-                element.set("rowspan", str(style.row_span))
-            if style.column_span != 1:
-                element.set("colspan", str(style.column_span))
+            row_span = require_integer(style.row_span, "TableCellStyle.row_span")
+            column_span = require_integer(
+                style.column_span, "TableCellStyle.column_span"
+            )
+            if row_span != 1:
+                element.set("rowspan", str(row_span))
+            if column_span != 1:
+                element.set("colspan", str(column_span))
             metadata = self.encode_table_cell_style(style)
             if metadata is not None:
                 element.append(metadata)
@@ -528,7 +693,12 @@ class _Encoder:
         element = ElementTree.Element(gdocs_name("cell-style"))
         if style.content_alignment is not UNSET:
             element.set(
-                gdocs_name("content-alignment"), cast(str, style.content_alignment)
+                gdocs_name("content-alignment"),
+                require_enum(
+                    style.content_alignment,
+                    _CONTENT_ALIGNMENTS,
+                    "TableCellStyle.content_alignment",
+                ),
             )
         for value, name in (
             (style.padding_left, "padding-left"),
@@ -557,7 +727,10 @@ class _Encoder:
         self, parent: ElementTree.Element, name: str, border: TableCellBorder
     ) -> None:
         element = ElementTree.SubElement(parent, gdocs_name(name))
-        element.set(gdocs_name("dash-style"), border.dash_style)
+        element.set(
+            gdocs_name("dash-style"),
+            require_enum(border.dash_style, _DASH_STYLES, "TableCellBorder.dash_style"),
+        )
         self.encode_point_attribute(element, "width", border.width)
         self.encode_optional_color(element, "color", border.color)
 
@@ -567,7 +740,12 @@ class _Encoder:
         if paragraph.style is not UNSET:
             style = cast(ParagraphStyle, paragraph.style)
             if style.named_style_type is not UNSET:
-                tag = _PARAGRAPH_TAGS[cast(str, style.named_style_type)]
+                named_style_type = require_enum(
+                    style.named_style_type,
+                    _NAMED_STYLE_TYPES,
+                    "ParagraphStyle.named_style_type",
+                )
+                tag = _PARAGRAPH_TAGS[named_style_type]
         element = ElementTree.Element(tag)
         if style is not None:
             metadata = self.encode_paragraph_style(style, include_named_style=False)
@@ -580,7 +758,10 @@ class _Encoder:
             wrapper = ElementTree.SubElement(element, gdocs_name("positioned-objects"))
             for object_id in cast(list[str], paragraph.positioned_object_ids):
                 item = ElementTree.SubElement(wrapper, gdocs_name("positioned-object"))
-                item.set(gdocs_name("id"), object_id)
+                item.set(
+                    gdocs_name("id"),
+                    require_string(object_id, "Paragraph.positioned_object_ids entry"),
+                )
         require_list(paragraph.elements, "Paragraph.elements")
         for item in paragraph.elements:
             element.append(self.encode_paragraph_element(item))
@@ -591,50 +772,100 @@ class _Encoder:
             return self.encode_text_run(item)
         if isinstance(item, AutoText):
             element = ElementTree.Element(gdocs_name("auto-text"))
-            element.set(gdocs_name("type"), item.auto_text_type)
+            element.set(
+                gdocs_name("type"),
+                require_enum(
+                    item.auto_text_type, _AUTO_TEXT_TYPES, "AutoText.auto_text_type"
+                ),
+            )
         elif isinstance(item, ColumnBreak):
             element = ElementTree.Element(gdocs_name("column-break"))
         elif isinstance(item, DateElement):
             element = ElementTree.Element(xhtml_name("time"))
-            element.set(gdocs_name("date-id"), item.date_id)
-            for value, name in (
-                (item.date_format, gdocs_name("date-format")),
-                (item.display_text, gdocs_name("display-text")),
-                (item.locale, gdocs_name("locale")),
-                (item.time_format, gdocs_name("time-format")),
-                (item.time_zone_id, gdocs_name("time-zone-id")),
-                (item.timestamp, "datetime"),
+            element.set(
+                gdocs_name("date-id"),
+                require_string(item.date_id, "DateElement.date_id"),
+            )
+            if item.date_format is not UNSET:
+                element.set(
+                    gdocs_name("date-format"),
+                    require_enum(
+                        item.date_format, _DATE_FORMATS, "DateElement.date_format"
+                    ),
+                )
+            if item.time_format is not UNSET:
+                element.set(
+                    gdocs_name("time-format"),
+                    require_enum(
+                        item.time_format, _TIME_FORMATS, "DateElement.time_format"
+                    ),
+                )
+            for value, name, field in (
+                (item.display_text, gdocs_name("display-text"), "display_text"),
+                (item.locale, gdocs_name("locale"), "locale"),
+                (item.time_zone_id, gdocs_name("time-zone-id"), "time_zone_id"),
+                (item.timestamp, "datetime", "timestamp"),
             ):
                 if value is not UNSET:
-                    element.set(name, cast(str, value))
+                    element.set(name, require_string(value, f"DateElement.{field}"))
         elif isinstance(item, Equation):
             return ElementTree.Element(gdocs_name("equation"))
         elif isinstance(item, FootnoteReference):
             element = ElementTree.Element(gdocs_name("footnote-reference"))
-            element.set(gdocs_name("footnote-id"), item.footnote_id)
-            element.set(gdocs_name("footnote-number"), item.footnote_number)
+            element.set(
+                gdocs_name("footnote-id"),
+                require_string(item.footnote_id, "FootnoteReference.footnote_id"),
+            )
+            element.set(
+                gdocs_name("footnote-number"),
+                require_string(
+                    item.footnote_number, "FootnoteReference.footnote_number"
+                ),
+            )
         elif isinstance(item, HorizontalRule):
             element = ElementTree.Element(xhtml_name("hr"))
         elif isinstance(item, InlineObjectReference):
             element = ElementTree.Element(gdocs_name("inline-object"))
-            element.set(gdocs_name("inline-object-id"), item.inline_object_id)
+            element.set(
+                gdocs_name("inline-object-id"),
+                require_string(
+                    item.inline_object_id, "InlineObjectReference.inline_object_id"
+                ),
+            )
         elif isinstance(item, PageBreak):
             element = ElementTree.Element(gdocs_name("page-break"))
         elif isinstance(item, PersonReference):
             element = ElementTree.Element(gdocs_name("person"))
-            element.set(gdocs_name("person-id"), item.person_id)
+            element.set(
+                gdocs_name("person-id"),
+                require_string(item.person_id, "PersonReference.person_id"),
+            )
             if item.email is not UNSET:
-                element.set(gdocs_name("email"), cast(str, item.email))
+                element.set(
+                    gdocs_name("email"),
+                    require_string(item.email, "PersonReference.email"),
+                )
             if item.name is not UNSET:
-                element.set(gdocs_name("name"), cast(str, item.name))
+                element.set(
+                    gdocs_name("name"),
+                    require_string(item.name, "PersonReference.name"),
+                )
         elif isinstance(item, RichLink):
             element = ElementTree.Element(gdocs_name("rich-link"))
-            element.set(gdocs_name("rich-link-id"), item.rich_link_id)
-            element.set(gdocs_name("uri"), item.uri)
+            element.set(
+                gdocs_name("rich-link-id"),
+                require_string(item.rich_link_id, "RichLink.rich_link_id"),
+            )
+            element.set(gdocs_name("uri"), require_string(item.uri, "RichLink.uri"))
             if item.title is not UNSET:
-                element.set(gdocs_name("title"), cast(str, item.title))
+                element.set(
+                    gdocs_name("title"), require_string(item.title, "RichLink.title")
+                )
             if item.mime_type is not UNSET:
-                element.set(gdocs_name("mime-type"), cast(str, item.mime_type))
+                element.set(
+                    gdocs_name("mime-type"),
+                    require_string(item.mime_type, "RichLink.mime_type"),
+                )
         else:
             raise ValueError(f"unsupported paragraph element {type(item).__name__}")
         return encode_text_style(element, item.text_style)
@@ -643,23 +874,37 @@ class _Encoder:
         self, style: ParagraphStyle, *, include_named_style: bool = True
     ) -> ElementTree.Element | None:
         element = ElementTree.Element(gdocs_name("paragraph-style"))
-        scalar_fields = (
-            (style.alignment, "alignment"),
-            (style.direction, "direction"),
-            (style.line_spacing, "line-spacing"),
-            (style.spacing_mode, "spacing-mode"),
-            (style.heading_id, "heading-id"),
-        )
         if include_named_style and style.named_style_type is not UNSET:
             element.set(
-                gdocs_name("named-style-type"), cast(str, style.named_style_type)
+                gdocs_name("named-style-type"),
+                require_enum(
+                    style.named_style_type,
+                    _NAMED_STYLE_TYPES,
+                    "ParagraphStyle.named_style_type",
+                ),
             )
-        for value, name in scalar_fields:
+        for value, name, allowed in (
+            (style.alignment, "alignment", _ALIGNMENTS),
+            (style.direction, "direction", _DIRECTIONS),
+            (style.spacing_mode, "spacing-mode", _SPACING_MODES),
+        ):
             if value is not UNSET:
                 element.set(
                     gdocs_name(name),
-                    format_number(value) if isinstance(value, float) else str(value),
+                    require_enum(value, allowed, f"ParagraphStyle.{name}"),
                 )
+        if style.line_spacing is not UNSET:
+            element.set(
+                gdocs_name("line-spacing"),
+                format_number(
+                    require_number(style.line_spacing, "ParagraphStyle.line_spacing")
+                ),
+            )
+        if style.heading_id is not UNSET:
+            element.set(
+                gdocs_name("heading-id"),
+                require_string(style.heading_id, "ParagraphStyle.heading_id"),
+            )
         for value, name in (
             (style.space_above, "space-above"),
             (style.space_below, "space-below"),
@@ -697,7 +942,10 @@ class _Encoder:
             wrapper = ElementTree.SubElement(element, gdocs_name("tab-stops"))
             for stop in cast(list[TabStop], style.tab_stops):
                 child = ElementTree.SubElement(wrapper, gdocs_name("tab-stop"))
-                child.set(gdocs_name("alignment"), stop.alignment)
+                child.set(
+                    gdocs_name("alignment"),
+                    require_enum(stop.alignment, _TAB_ALIGNMENTS, "TabStop.alignment"),
+                )
                 self.encode_point_attribute(child, "offset", stop.offset)
         return element if element.attrib or list(element) else None
 
@@ -705,7 +953,10 @@ class _Encoder:
         self, parent: ElementTree.Element, name: str, border: ParagraphBorder
     ) -> None:
         element = ElementTree.SubElement(parent, gdocs_name(name))
-        element.set(gdocs_name("dash-style"), border.dash_style)
+        element.set(
+            gdocs_name("dash-style"),
+            require_enum(border.dash_style, _DASH_STYLES, "ParagraphBorder.dash_style"),
+        )
         self.encode_point_attribute(element, "width", border.width)
         self.encode_point_attribute(element, "padding", border.padding)
         self.encode_optional_color(element, "color", border.color)

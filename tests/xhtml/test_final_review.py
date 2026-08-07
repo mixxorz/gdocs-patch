@@ -8,6 +8,7 @@ from gdocs_patch.models import (
     Color,
     Dimension,
     Document,
+    DocumentStyle,
     DocumentTab,
     ListDefinition,
     ListLevel,
@@ -274,6 +275,55 @@ def mutate_nested_collection_type(document: Document) -> None:
     document_tab.named_styles = ()  # type: ignore[assignment]
 
 
+def mutate_bullet_nesting_scalar(document: Document) -> None:
+    paragraph = document.tabs[0].content.body.content[1]  # type: ignore[union-attr]
+    assert isinstance(paragraph, Paragraph)
+    paragraph.bullet = BulletPreset(preset="BULLET_CHECKBOX", nesting_level=0)
+    paragraph.bullet.nesting_level = "1"  # type: ignore[assignment,union-attr]
+
+
+def mutate_line_spacing_scalar(document: Document) -> None:
+    paragraph = document.tabs[0].content.body.content[1]  # type: ignore[union-attr]
+    assert isinstance(paragraph, Paragraph)
+    paragraph.style = ParagraphStyle(line_spacing=1.5)
+    paragraph.style.line_spacing = "1.5"  # type: ignore[assignment,union-attr]
+
+
+def mutate_document_page_number_scalar(document: Document) -> None:
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    document_tab.document_style = DocumentStyle(page_number_start=1)
+    document_tab.document_style.page_number_start = "1"  # type: ignore[assignment,union-attr]
+
+
+def mutate_section_page_number_scalar(document: Document) -> None:
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    assert isinstance(document_tab.body, Body)
+    section = document_tab.body.content[0]
+    assert isinstance(section, SectionBreak)
+    section.style.page_number_start = "1"  # type: ignore[assignment]
+
+
+def mutate_list_start_number_scalar(document: Document) -> None:
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    level = ListLevel(glyph_format="%0", glyph_symbol="x", start_number=1)
+    level.start_number = "1"  # type: ignore[assignment]
+    document_tab.lists = {"id": ListDefinition(levels=[level])}
+
+
+def mutate_table_span_scalar(document: Document) -> None:
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    assert isinstance(document_tab.body, Body)
+    style = TableCellStyle(row_span=2)
+    style.row_span = True
+    document_tab.body.content.append(
+        Table(rows=[TableRow(cells=[TableCell(content=[], style=style)])])
+    )
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -293,6 +343,12 @@ def mutate_nested_collection_type(document: Document) -> None:
         mutate_collection_type,
         mutate_nested_type,
         mutate_nested_collection_type,
+        mutate_bullet_nesting_scalar,
+        mutate_line_spacing_scalar,
+        mutate_document_page_number_scalar,
+        mutate_section_page_number_scalar,
+        mutate_list_start_number_scalar,
+        mutate_table_span_scalar,
     ],
 )
 def test_encoder_rejects_mutated_state_that_decoder_would_reject(
@@ -312,6 +368,24 @@ def test_encoder_rejects_mutated_state_that_decoder_would_reject(
 def test_rejects_noncanonical_integer_lexemes(value: str) -> None:
     with pytest.raises(XHTMLParseError, match="integer"):
         deserialize_document(xhtml().replace('g:index="0"', f'g:index="{value}"'))
+
+
+@pytest.mark.parametrize("line_spacing", [120, 120.5])
+def test_serializer_preserves_valid_integer_and_float_numbers(
+    line_spacing: int | float,
+) -> None:
+    document = model_document()
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    assert isinstance(document_tab.body, Body)
+    paragraph = document_tab.body.content[1]
+    assert isinstance(paragraph, Paragraph)
+    paragraph.style = ParagraphStyle(line_spacing=line_spacing)
+
+    output = serialize_document(document)
+
+    assert f'g:line-spacing="{base_module.format_number(line_spacing)}"' in output
+    assert deserialize_document(output) == document
 
 
 @pytest.mark.parametrize(
