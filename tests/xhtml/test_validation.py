@@ -150,6 +150,26 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
+@pytest.mark.parametrize(
+    "style_attributes",
+    [
+        'g:foreground-red="invalid"',
+        'g:foreground-color="transparent" g:foreground-red="invalid"',
+    ],
+    ids=["missing-components", "transparent-marker"],
+)
+def test_invalid_rgb_scalar_precedes_color_combination_error(
+    style_attributes: str,
+) -> None:
+    xhtml = document(f"<p><span {style_attributes}>x</span></p>")
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/section[1]/*[1]/*[1]/@g:foreground-red" in str(error.value)
+    assert "expected a float" in str(error.value)
+
+
 @pytest.mark.parametrize("nesting_level", [-1, -99])
 def test_rejects_negative_tab_nesting_level(nesting_level: int) -> None:
     xhtml = document().replace(

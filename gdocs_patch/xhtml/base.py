@@ -351,6 +351,10 @@ def decode_text_color(
         gdocs_name(f"{prefix}-{component}") for component in ("red", "green", "blue")
     ]
     components = [element.get(name) for name in names]
+    parsed_components = [
+        None if value is None else parse_float(value, f"{path}/@{display_name(name)}")
+        for name, value in zip(names, components, strict=True)
+    ]
     if marker is not None:
         if marker != "transparent" or any(value is not None for value in components):
             parse_error(path, f"invalid {prefix} color")
@@ -359,9 +363,7 @@ def decode_text_color(
         return UNSET
     if not all(value is not None for value in components):
         parse_error(path, f"opaque {prefix} color requires red, green, and blue")
-    red = parse_float(components[0], f"{path}/@{display_name(names[0])}")  # type: ignore[arg-type]
-    green = parse_float(components[1], f"{path}/@{display_name(names[1])}")  # type: ignore[arg-type]
-    blue = parse_float(components[2], f"{path}/@{display_name(names[2])}")  # type: ignore[arg-type]
+    red, green, blue = cast("list[float]", parsed_components)
     try:
         return Color(red=red, green=green, blue=blue)
     except ValueError as error:
