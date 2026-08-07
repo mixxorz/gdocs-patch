@@ -313,7 +313,9 @@ class _Encoder:
             return ("existing", bullet.list_id)
         if isinstance(bullet, BulletPreset):
             return ("preset", bullet.preset)
-        return None
+        if bullet is UNSET:
+            return None
+        raise ValueError(f"unsupported paragraph bullet object {type(bullet).__name__}")
 
     def encode_list(
         self, paragraphs: list[Paragraph], key: tuple[str, str]

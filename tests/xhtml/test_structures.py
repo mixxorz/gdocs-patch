@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 from gdocs_patch.models import (
@@ -13,6 +15,7 @@ from gdocs_patch.models import (
     ListDefinition,
     ListLevel,
     Paragraph,
+    ParagraphStyle,
     SectionBreak,
     SectionColumn,
     SectionStyle,
@@ -280,6 +283,60 @@ def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
     assert decoded.body.content[1:] == paragraphs
 
 
+def test_rejects_invalid_mutated_paragraph_bullet() -> None:
+    paragraph = Paragraph(elements=[TextRun(content="invalid")])
+    paragraph.bullet = cast("Bullet | BulletPreset", object())
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(paragraph)
+
+    with pytest.raises(ValueError, match="unsupported paragraph bullet object"):
+        serialize_document(document)
+
+
+def test_same_list_key_separated_by_paragraph_creates_two_groups() -> None:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(
+        Paragraph(elements=[TextRun(content="first")], bullet=Bullet(list_id="id"))
+    )
+    content.body.add_child(Paragraph(elements=[TextRun(content="separator")]))
+    content.body.add_child(
+        Paragraph(elements=[TextRun(content="second")], bullet=Bullet(list_id="id"))
+    )
+
+    xhtml = serialize_document(document)
+
+    assert xhtml.count('<g:list g:list-id="id">') == 2
+    assert xhtml.index("first") < xhtml.index("separator") < xhtml.index("second")
+
+
+def test_accepts_bullet_style_metadata_after_item_paragraph() -> None:
+    xhtml = xhtml_with_structure(
+        '<g:list g:list-id="id"><li g:nesting-level="2">'
+        '<p><span>item</span></p><g:bullet-style g:bold="true">'
+        '<a href="https://example.com" /></g:bullet-style></li></g:list>'
+    )
+
+    decoded = deserialize_document(xhtml).tabs[0].content
+
+    assert isinstance(decoded, DocumentTab)
+    assert isinstance(decoded.body, Body)
+    assert decoded.body.content[1] == Paragraph(
+        elements=[TextRun(content="item")],
+        style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
+        bullet=Bullet(
+            list_id="id",
+            nesting_level=2,
+            text_style=TextStyle(bold=True, link=UrlLink(url="https://example.com")),
+        ),
+    )
+
+
 def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
     paragraph = Paragraph(
         elements=[TextRun(content="item")],
@@ -434,6 +491,138 @@ def xhtml_with_structure(structure: str, metadata: str = "") -> str:
 def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
     with pytest.raises(XHTMLParseError, match=message):
         deserialize_document(xhtml_with_structure(structure))
+
+
+def test_rejects_duplicate_bullet_style_with_exact_path() -> None:
+    structure = (
+        '<g:list g:list-id="id"><li><g:bullet-style /><p />'
+        "<g:bullet-style /></li></g:list>"
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value) == (
+        "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]: "
+        "expected at most one g:bullet-style child"
+    )
+
+
+def test_rejects_duplicate_bullet_metadata_anchor_with_exact_path() -> None:
+    structure = (
+        '<g:list g:list-id="id"><li><p /><g:bullet-style>'
+        '<a href="https://one.example" /><a href="https://two.example" />'
+        "</g:bullet-style></li></g:list>"
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value) == (
+        "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]"
+        "/g:bullet-style: expected at most one a child"
+    )
+
+
+@pytest.mark.parametrize(
+    ("structure", "expected_error"),
+    [
+        (
+            '<g:list g:list-id="id" g:unknown="x"><li><p /></li></g:list>',
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
+            "unknown attribute g:unknown",
+        ),
+        (
+            '<g:list g:list-id="id"><li g:unknown="x"><p /></li></g:list>',
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]: "
+            "unknown attribute g:unknown",
+        ),
+        (
+            '<g:list g:list-id="id"><g:unknown /></g:list>',
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]: "
+            "unknown child element g:unknown",
+        ),
+        (
+            '<g:list g:list-id="id"><li><g:unknown /><p /></li></g:list>',
+            "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/*[1]/li[1]: "
+            "unknown child element g:unknown",
+        ),
+    ],
+)
+def test_rejects_unknown_list_or_item_content_with_exact_path(
+    structure: str, expected_error: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value) == expected_error
+
+
+@pytest.mark.parametrize(
+    ("definitions", "expected_error"),
+    [
+        (
+            '<g:list-definitions g:unknown="x" />',
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions: "
+            "unknown attribute g:unknown",
+        ),
+        (
+            "<g:list-definitions><g:unknown /></g:list-definitions>",
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions: "
+            "unknown child element g:unknown",
+        ),
+        (
+            '<g:list-definitions><g:list-definition g:list-id="id" '
+            'g:unknown="x" /></g:list-definitions>',
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
+            "g:list-definition[1]: unknown attribute g:unknown",
+        ),
+        (
+            '<g:list-definitions><g:list-definition g:list-id="id">'
+            "<g:unknown /></g:list-definition></g:list-definitions>",
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
+            "g:list-definition[1]: unknown child element g:unknown",
+        ),
+        (
+            '<g:list-definitions><g:list-definition g:list-id="id">'
+            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" '
+            'g:unknown="x" /></g:list-definition></g:list-definitions>',
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
+            "g:list-definition[1]/g:list-level[1]: unknown attribute g:unknown",
+        ),
+        (
+            '<g:list-definitions><g:list-definition g:list-id="id">'
+            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x">'
+            "<g:unknown /></g:list-level></g:list-definition></g:list-definitions>",
+            "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
+            "g:list-definition[1]/g:list-level[1]: unknown child element g:unknown",
+        ),
+    ],
+)
+def test_rejects_unknown_list_definition_content_with_exact_path(
+    definitions: str, expected_error: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure("", definitions))
+
+    assert str(error.value) == expected_error
+
+
+def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
+    definitions = (
+        "<g:list-definitions>"
+        '<g:list-definition g:list-id="duplicate" />'
+        '<g:list-definition g:list-id="duplicate" />'
+        "</g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure("", definitions))
+
+    assert str(error.value) == (
+        "/html/body/g:tab[1]/g:document-tab/g:list-definitions/"
+        "g:list-definition[2]: duplicate list key 'duplicate'"
+    )
 
 
 @pytest.mark.parametrize(
