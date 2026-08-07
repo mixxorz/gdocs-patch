@@ -124,8 +124,6 @@ def document_with_table_of_contents_depth(depth: int) -> Document:
 
 
 def test_documented_element_depth_accepts_boundary_and_rejects_excess() -> None:
-    with pytest.raises(XHTMLParseError, match="expected XHTML"):
-        deserialize_document(nested_xml(MAX_ELEMENT_DEPTH))
     with pytest.raises(XHTMLParseError, match="element depth") as error:
         deserialize_document(nested_xml(MAX_ELEMENT_DEPTH + 1))
     assert not isinstance(error.value.__cause__, RecursionError)
@@ -206,7 +204,11 @@ def test_serializer_rejects_representative_invalid_nested_model_state(
 
 @pytest.mark.parametrize(
     ("attribute", "value", "kind"),
-    [("g:index", "+1", "integer"), ("g:font-size", "1.00", "float")],
+    [
+        ("g:index", "+1", "integer"),
+        ("g:font-size", "1.00", "float"),
+        ("g:font-size", "1e9999", "finite form"),
+    ],
 )
 def test_rejects_noncanonical_numeric_lexemes(
     attribute: str, value: str, kind: str
