@@ -3,6 +3,7 @@ import pytest
 from gdocs_patch.models import (
     UNSET,
     Body,
+    Color,
     Dimension,
     Document,
     DocumentTab,
@@ -11,7 +12,13 @@ from gdocs_patch.models import (
     SectionColumn,
     SectionStyle,
     Tab,
+    Table,
+    TableCell,
+    TableCellBorder,
+    TableCellStyle,
+    TableColumn,
     TableOfContents,
+    TableRow,
     TextRun,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
@@ -208,4 +215,208 @@ def test_rejects_section_column_missing_required_dimension(missing: str) -> None
     )
 
     with pytest.raises(XHTMLParseError, match="missing required attribute"):
+        deserialize_document(xhtml)
+
+
+def document_with_table(table: Table) -> Document:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(table)
+    return document
+
+
+def test_round_trips_complete_recursive_table() -> None:
+    border = TableCellBorder(
+        color=Color(red=0.1, green=0.2, blue=0.3),
+        width=Dimension(magnitude=1.5, unit="PT"),
+        dash_style="SOLID",
+    )
+    styled_cell = TableCell(
+        cell_key="merged-cell",
+        style=TableCellStyle(
+            row_span=2,
+            column_span=2,
+            background_color=Color(red=0.4, green=0.5, blue=0.6),
+            border_left=border,
+            border_right=border,
+            border_top=border,
+            border_bottom=border,
+            padding_left=Dimension(magnitude=6, unit="PT"),
+            padding_right=Dimension(magnitude=7, unit="PT"),
+            padding_top=Dimension(magnitude=4, unit="PT"),
+            padding_bottom=Dimension(magnitude=5, unit="PT"),
+            content_alignment="MIDDLE",
+        ),
+        content=[
+            Paragraph(elements=[TextRun(content="Cell paragraph")]),
+            Table(rows=[TableRow(cells=[TableCell(content=[])])]),
+            TableOfContents(content=[Paragraph(elements=[TextRun(content="TOC")])]),
+        ],
+    )
+    table = Table(
+        table_key="table-1",
+        column_styles=[
+            TableColumn(
+                width_type="FIXED_WIDTH", width=Dimension(magnitude=144, unit="PT")
+            ),
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+        ],
+        rows=[
+            TableRow(
+                row_key="header-row",
+                min_height=Dimension(magnitude=24, unit="PT"),
+                prevent_overflow=True,
+                is_header=False,
+                cells=[
+                    styled_cell,
+                    TableCell(
+                        cell_key="transparent-cell",
+                        style=TableCellStyle(background_color=None),
+                        content=[],
+                    ),
+                ],
+            ),
+            TableRow(cells=[]),
+        ],
+    )
+
+    xhtml = serialize_document(document_with_table(table))
+
+    assert '<table g:table-key="table-1">' in xhtml
+    assert '<col g:width-type="FIXED_WIDTH" g:width="144" />' in xhtml
+    assert '<col g:width-type="EVENLY_DISTRIBUTED" />' in xhtml
+    assert xhtml.index("<colgroup>") < xhtml.index("<tbody>")
+    assert (
+        '<tr g:row-key="header-row" g:min-height="24" '
+        'g:prevent-overflow="true" g:is-header="false">'
+    ) in xhtml
+    assert '<td g:cell-key="merged-cell" rowspan="2" colspan="2">' in xhtml
+    for fragment in (
+        'g:content-alignment="MIDDLE"',
+        'g:padding-left="6"',
+        'g:padding-right="7"',
+        'g:padding-top="4"',
+        'g:padding-bottom="5"',
+        '<g:background-color g:red="0.4" g:green="0.5" g:blue="0.6" />',
+        '<g:border-left g:dash-style="SOLID" g:width="1.5">',
+        '<g:border-right g:dash-style="SOLID" g:width="1.5">',
+        '<g:border-top g:dash-style="SOLID" g:width="1.5">',
+        '<g:border-bottom g:dash-style="SOLID" g:width="1.5">',
+        '<g:color g:red="0.1" g:green="0.2" g:blue="0.3" />',
+        '<g:background-color g:transparent="true" />',
+        "<tr />",
+    ):
+        assert fragment in xhtml
+    assert xhtml.count("<table") == 2
+    assert deserialize_document(xhtml) == document_with_table(table)
+
+
+@pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<colgroup />")])
+def test_preserves_unset_versus_empty_table_columns(
+    columns: object, fragment: str
+) -> None:
+    table = Table(rows=[], column_styles=columns)  # type: ignore[arg-type]
+
+    xhtml = serialize_document(document_with_table(table))
+
+    assert ("<colgroup" in xhtml) is bool(fragment)
+    assert fragment in xhtml
+    decoded = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded, DocumentTab)
+    assert isinstance(decoded.body, Body)
+    decoded_table = decoded.body.content[1]
+    assert isinstance(decoded_table, Table)
+    assert decoded_table.column_styles == columns
+
+
+def test_normalizes_default_only_table_cell_style_to_unset() -> None:
+    table = Table(
+        rows=[TableRow(cells=[TableCell(content=[], style=TableCellStyle())])]
+    )
+
+    decoded = deserialize_document(serialize_document(document_with_table(table)))
+
+    content = decoded.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    decoded_table = content.body.content[1]
+    assert isinstance(decoded_table, Table)
+    assert decoded_table.rows[0].cells[0].style is UNSET
+
+
+@pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])
+def test_rejects_explicit_default_cell_span(attribute: str) -> None:
+    xhtml = serialize_document(
+        document_with_table(Table(rows=[TableRow(cells=[TableCell(content=[])])]))
+    ).replace("<td />", f"<td {attribute} />")
+
+    with pytest.raises(XHTMLParseError, match="must be greater than 1"):
+        deserialize_document(xhtml)
+
+
+@pytest.mark.parametrize(
+    ("column", "replacement"),
+    [
+        ('g:width-type="FIXED_WIDTH"', 'g:width-type="FIXED_WIDTH"'),
+        (
+            'g:width-type="EVENLY_DISTRIBUTED"',
+            'g:width-type="EVENLY_DISTRIBUTED" g:width="10"',
+        ),
+    ],
+)
+def test_rejects_invalid_table_column_width(column: str, replacement: str) -> None:
+    width = Dimension(magnitude=10) if "FIXED_WIDTH" in column else UNSET
+    table = Table(
+        rows=[],
+        column_styles=[TableColumn(width_type=column.split('"')[1], width=width)],  # type: ignore[arg-type]
+    )
+    xhtml = serialize_document(document_with_table(table))
+    if "FIXED_WIDTH" in column:
+        xhtml = xhtml.replace(' g:width="10"', "")
+    else:
+        xhtml = xhtml.replace(column, replacement)
+
+    with pytest.raises(XHTMLParseError, match="width"):
+        deserialize_document(xhtml)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            '<g:background-color g:red="0.1" g:green="0.2" g:blue="0.3" />',
+            '<g:background-color g:red="0.1" />',
+            "requires red, green, and blue",
+        ),
+        (' g:width="1"', "", "missing required attribute"),
+    ],
+)
+def test_rejects_invalid_table_cell_color_or_border(
+    old: str, new: str, message: str
+) -> None:
+    border = TableCellBorder(
+        color=Color(red=0, green=0, blue=0),
+        width=Dimension(magnitude=1),
+        dash_style="SOLID",
+    )
+    table = Table(
+        rows=[
+            TableRow(
+                cells=[
+                    TableCell(
+                        content=[],
+                        style=TableCellStyle(
+                            background_color=Color(red=0.1, green=0.2, blue=0.3),
+                            border_left=border,
+                        ),
+                    )
+                ]
+            )
+        ]
+    )
+    xhtml = serialize_document(document_with_table(table)).replace(old, new, 1)
+
+    with pytest.raises(XHTMLParseError, match=message):
         deserialize_document(xhtml)

@@ -29,7 +29,13 @@ from gdocs_patch.models import (
     Segment,
     StructuralElement,
     Tab,
+    Table,
+    TableCell,
+    TableCellBorder,
+    TableCellStyle,
+    TableColumn,
     TableOfContents,
+    TableRow,
     TabStop,
     TextRun,
     UnsetType,
@@ -472,6 +478,8 @@ class _Decoder:
                 parse_error(child_path, "section elements are only valid in a body")
             if element.tag in _PARAGRAPH_TAGS:
                 decoded.append(self.decode_paragraph(element, child_path))
+            elif element.tag == xhtml_name("table"):
+                decoded.append(self.decode_table(element, child_path))
             elif element.tag == gdocs_name("table-of-contents"):
                 validate_attributes(element, set(), child_path)
                 validate_whitespace(element, child_path)
@@ -488,6 +496,224 @@ class _Decoder:
                     f"unknown structural element {display_name(element.tag)}",
                 )
         return decoded
+
+    def decode_table(self, element: ElementTree.Element, path: str) -> Table:
+        validate_attributes(element, {gdocs_name("table-key")}, path)
+        validate_whitespace(element, path)
+        children = list(element)
+        colgroup = extract_one_child(children, xhtml_name("colgroup"), path)
+        tbody = extract_one_child(children, xhtml_name("tbody"), path, required=True)
+        assert tbody is not None
+        for child in children:
+            if child not in (colgroup, tbody):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        columns: list[TableColumn] | UnsetType = UNSET
+        if colgroup is not None:
+            columns = self.decode_table_columns(colgroup, f"{path}/colgroup")
+        tbody_path = f"{path}/tbody"
+        validate_attributes(tbody, set(), tbody_path)
+        validate_whitespace(tbody, tbody_path)
+        rows: list[TableRow] = []
+        for index, child in enumerate(tbody):
+            if child.tag != xhtml_name("tr"):
+                parse_error(
+                    tbody_path, f"unknown child element {display_name(child.tag)}"
+                )
+            rows.append(self.decode_table_row(child, f"{tbody_path}/tr[{index + 1}]"))
+        return Table(
+            rows=rows,
+            column_styles=columns,
+            table_key=element.get(gdocs_name("table-key")),
+        )
+
+    def decode_table_columns(
+        self, element: ElementTree.Element, path: str
+    ) -> list[TableColumn]:
+        validate_attributes(element, set(), path)
+        validate_whitespace(element, path)
+        result: list[TableColumn] = []
+        allowed_width_types = {
+            "WIDTH_TYPE_UNSPECIFIED",
+            "EVENLY_DISTRIBUTED",
+            "FIXED_WIDTH",
+        }
+        for index, child in enumerate(element):
+            child_path = f"{path}/col[{index + 1}]"
+            if child.tag != xhtml_name("col"):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+            validate_attributes(
+                child, {gdocs_name("width-type"), gdocs_name("width")}, child_path
+            )
+            validate_whitespace(child, child_path)
+            _validate_no_children(child, child_path)
+            width_type = parse_allowed(
+                required_string(child, gdocs_name("width-type"), child_path),
+                allowed_width_types,
+                f"{child_path}/@g:width-type",
+            )
+            raw_width = child.get(gdocs_name("width"))
+            if width_type == "FIXED_WIDTH" and raw_width is None:
+                parse_error(child_path, "FIXED_WIDTH column requires width")
+            if width_type != "FIXED_WIDTH" and raw_width is not None:
+                parse_error(
+                    child_path, "width is forbidden unless width type is FIXED_WIDTH"
+                )
+            width = (
+                UNSET
+                if raw_width is None
+                else Dimension(
+                    magnitude=parse_float(raw_width, f"{child_path}/@g:width"),
+                    unit="PT",
+                )
+            )
+            result.append(TableColumn(width_type=width_type, width=width))  # type: ignore[arg-type]
+        return result
+
+    def decode_table_row(self, element: ElementTree.Element, path: str) -> TableRow:
+        validate_attributes(
+            element,
+            {
+                gdocs_name("row-key"),
+                gdocs_name("min-height"),
+                gdocs_name("prevent-overflow"),
+                gdocs_name("is-header"),
+            },
+            path,
+        )
+        validate_whitespace(element, path)
+        cells: list[TableCell] = []
+        for index, child in enumerate(element):
+            if child.tag != xhtml_name("td"):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+            cells.append(self.decode_table_cell(child, f"{path}/td[{index + 1}]"))
+        return TableRow(
+            cells=cells,
+            min_height=self.optional_point(element, "min-height", path),
+            prevent_overflow=self.optional_boolean(element, "prevent-overflow", path),
+            is_header=self.optional_boolean(element, "is-header", path),
+            row_key=element.get(gdocs_name("row-key")),
+        )
+
+    def decode_table_cell(self, element: ElementTree.Element, path: str) -> TableCell:
+        validate_attributes(
+            element,
+            {gdocs_name("cell-key"), "rowspan", "colspan"},
+            path,
+        )
+        validate_whitespace(element, path)
+        row_span = self.decode_cell_span(element, "rowspan", path)
+        column_span = self.decode_cell_span(element, "colspan", path)
+        children = list(element)
+        metadata = extract_one_child(children, gdocs_name("cell-style"), path)
+        style_fields: dict[str, object] = {}
+        if metadata is not None:
+            style_fields = self.decode_table_cell_style(
+                metadata, f"{path}/g:cell-style"
+            )
+        has_style = (
+            row_span != 1
+            or column_span != 1
+            or any(value is not UNSET for value in style_fields.values())
+        )
+        style: TableCellStyle | UnsetType = UNSET
+        if has_style:
+            style = TableCellStyle(
+                row_span=row_span,
+                column_span=column_span,
+                **style_fields,  # type: ignore[arg-type]
+            )
+        return TableCell(
+            content=self.decode_structural_sequence(
+                [child for child in children if child is not metadata], path
+            ),
+            style=style,
+            cell_key=element.get(gdocs_name("cell-key")),
+        )
+
+    def decode_cell_span(
+        self, element: ElementTree.Element, name: str, path: str
+    ) -> int:
+        raw = element.get(name)
+        if raw is None:
+            return 1
+        value = parse_integer(raw, f"{path}/@{name}")
+        if value <= 1:
+            parse_error(f"{path}/@{name}", "cell span must be greater than 1")
+        return value
+
+    def decode_table_cell_style(
+        self, element: ElementTree.Element, path: str
+    ) -> dict[str, object]:
+        attribute_names = {
+            "content-alignment",
+            "padding-left",
+            "padding-right",
+            "padding-top",
+            "padding-bottom",
+        }
+        validate_attributes(
+            element, {gdocs_name(name) for name in attribute_names}, path
+        )
+        validate_whitespace(element, path)
+        children = list(element)
+        background = extract_one_child(children, gdocs_name("background-color"), path)
+        result: dict[str, object] = {
+            "background_color": UNSET
+            if background is None
+            else self.decode_optional_color(background, f"{path}/g:background-color"),
+            "content_alignment": self.optional_allowed(
+                element,
+                "content-alignment",
+                {
+                    "CONTENT_ALIGNMENT_UNSPECIFIED",
+                    "CONTENT_ALIGNMENT_UNSUPPORTED",
+                    "TOP",
+                    "MIDDLE",
+                    "BOTTOM",
+                },
+                path,
+            ),
+        }
+        for name in ("padding-left", "padding-right", "padding-top", "padding-bottom"):
+            result[name.replace("-", "_")] = self.optional_point(element, name, path)
+        for name in ("border-left", "border-right", "border-top", "border-bottom"):
+            border = extract_one_child(children, gdocs_name(name), path)
+            result[name.replace("-", "_")] = (
+                UNSET
+                if border is None
+                else self.decode_table_cell_border(border, f"{path}/g:{name}")
+            )
+        known = {gdocs_name("background-color")} | {
+            gdocs_name(name)
+            for name in ("border-left", "border-right", "border-top", "border-bottom")
+        }
+        for child in children:
+            if child.tag not in known:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        return result
+
+    def decode_table_cell_border(
+        self, element: ElementTree.Element, path: str
+    ) -> TableCellBorder:
+        validate_attributes(
+            element, {gdocs_name("dash-style"), gdocs_name("width")}, path
+        )
+        validate_whitespace(element, path)
+        children = list(element)
+        color = extract_one_child(children, gdocs_name("color"), path, required=True)
+        assert color is not None
+        for child in children:
+            if child is not color:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        return TableCellBorder(
+            color=self.decode_optional_color(color, f"{path}/g:color"),
+            width=self.required_point(element, "width", path),
+            dash_style=parse_allowed(
+                required_string(element, gdocs_name("dash-style"), path),
+                _DASH_STYLES,
+                f"{path}/@g:dash-style",
+            ),  # type: ignore[arg-type]
+        )
 
     def decode_paragraph(self, element: ElementTree.Element, path: str) -> Paragraph:
         validate_attributes(element, set(), path)

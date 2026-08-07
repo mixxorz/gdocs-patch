@@ -27,7 +27,13 @@ from gdocs_patch.models import (
     Segment,
     StructuralElement,
     Tab,
+    Table,
+    TableCell,
+    TableCellBorder,
+    TableCellStyle,
+    TableColumn,
     TableOfContents,
+    TableRow,
     TabStop,
     TextRun,
     UnsetType,
@@ -218,6 +224,8 @@ class _Encoder:
                 raise ValueError("SectionBreak is only valid in a body")
             if isinstance(element, Paragraph):
                 encoded.append(self.encode_paragraph(element))
+            elif isinstance(element, Table):
+                encoded.append(self.encode_table(element))
             elif isinstance(element, TableOfContents):
                 table_of_contents = ElementTree.Element(gdocs_name("table-of-contents"))
                 table_of_contents.extend(
@@ -229,6 +237,87 @@ class _Encoder:
                     f"unsupported structural element {type(element).__name__}"
                 )
         return encoded
+
+    def encode_table(self, table: Table) -> ElementTree.Element:
+        element = ElementTree.Element(xhtml_name("table"))
+        if table.table_key is not None:
+            element.set(gdocs_name("table-key"), table.table_key)
+        if table.column_styles is not UNSET:
+            colgroup = ElementTree.SubElement(element, xhtml_name("colgroup"))
+            for column in cast(list[TableColumn], table.column_styles):
+                child = ElementTree.SubElement(colgroup, xhtml_name("col"))
+                child.set(gdocs_name("width-type"), column.width_type)
+                self.encode_point_attribute(child, "width", column.width)
+        tbody = ElementTree.SubElement(element, xhtml_name("tbody"))
+        for row in table.rows:
+            tbody.append(self.encode_table_row(row))
+        return element
+
+    def encode_table_row(self, row: TableRow) -> ElementTree.Element:
+        element = ElementTree.Element(xhtml_name("tr"))
+        if row.row_key is not None:
+            element.set(gdocs_name("row-key"), row.row_key)
+        self.encode_point_attribute(element, "min-height", row.min_height)
+        self.encode_boolean_attribute(element, "prevent-overflow", row.prevent_overflow)
+        self.encode_boolean_attribute(element, "is-header", row.is_header)
+        for cell in row.cells:
+            element.append(self.encode_table_cell(cell))
+        return element
+
+    def encode_table_cell(self, cell: TableCell) -> ElementTree.Element:
+        element = ElementTree.Element(xhtml_name("td"))
+        if cell.cell_key is not None:
+            element.set(gdocs_name("cell-key"), cell.cell_key)
+        if cell.style is not UNSET:
+            style = cast(TableCellStyle, cell.style)
+            if style.row_span != 1:
+                element.set("rowspan", str(style.row_span))
+            if style.column_span != 1:
+                element.set("colspan", str(style.column_span))
+            metadata = self.encode_table_cell_style(style)
+            if metadata is not None:
+                element.append(metadata)
+        element.extend(self.encode_structural_sequence(cell.content, body=False))
+        return element
+
+    def encode_table_cell_style(
+        self, style: TableCellStyle
+    ) -> ElementTree.Element | None:
+        element = ElementTree.Element(gdocs_name("cell-style"))
+        if style.content_alignment is not UNSET:
+            element.set(
+                gdocs_name("content-alignment"), cast(str, style.content_alignment)
+            )
+        for value, name in (
+            (style.padding_left, "padding-left"),
+            (style.padding_right, "padding-right"),
+            (style.padding_top, "padding-top"),
+            (style.padding_bottom, "padding-bottom"),
+        ):
+            self.encode_point_attribute(element, name, value)
+        if style.background_color is not UNSET:
+            self.encode_optional_color(
+                element, "background-color", cast(Color | None, style.background_color)
+            )
+        for value, name in (
+            (style.border_left, "border-left"),
+            (style.border_right, "border-right"),
+            (style.border_top, "border-top"),
+            (style.border_bottom, "border-bottom"),
+        ):
+            if value is not UNSET:
+                self.encode_table_cell_border(
+                    element, name, cast(TableCellBorder, value)
+                )
+        return element if element.attrib or list(element) else None
+
+    def encode_table_cell_border(
+        self, parent: ElementTree.Element, name: str, border: TableCellBorder
+    ) -> None:
+        element = ElementTree.SubElement(parent, gdocs_name(name))
+        element.set(gdocs_name("dash-style"), border.dash_style)
+        self.encode_point_attribute(element, "width", border.width)
+        self.encode_optional_color(element, "color", border.color)
 
     def encode_paragraph(self, paragraph: Paragraph) -> ElementTree.Element:
         if paragraph.bullet is not UNSET:
