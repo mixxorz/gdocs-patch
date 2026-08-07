@@ -395,6 +395,15 @@ def test_round_trips_text_style_link_colors_and_newlines() -> None:
     )
 
 
+def test_round_trips_carriage_returns_with_canonical_character_references() -> None:
+    run = TextRun(content="before\rmiddle\r\nafter")
+
+    xhtml = serialize_document(document_with_runs(run))
+
+    assert "<span>before&#13;middle&#13;<br />after</span>" in xhtml
+    assert paragraph_from(deserialize_document(xhtml)).elements == [run]
+
+
 def test_round_trips_precision_sensitive_text_style_number() -> None:
     magnitude = 0.12345678901234567
     document = document_with_runs(

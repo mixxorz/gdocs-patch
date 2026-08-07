@@ -1017,7 +1017,9 @@ def serialize_document(document: Document) -> str:
     _validate_generated_tree(root)
     _validate_encoded_tree(root)
     _indent_xml(root)
-    xml = ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
+    xml = ElementTree.tostring(
+        root, encoding="unicode", short_empty_elements=True
+    ).replace("\r", "&#13;")
     output = f"{XML_DECLARATION}\n{xml}\n"
     if len(output) > MAX_XHTML_CHARACTERS:
         raise ValueError(f"XHTML output exceeds {MAX_XHTML_CHARACTERS} characters")

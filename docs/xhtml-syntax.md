@@ -388,15 +388,15 @@ Every `TextRun` is represented by exactly one `<span>`, including an unstyled ru
 
 Empty text runs use an empty span. A linked run wraps its single span in `<a>`; no other text-style wrappers are used.
 
-Every newline character in `TextRun.content` is canonically serialized as `<br />` inside that run's span:
+Every line-feed character (`"\n"`) in `TextRun.content` is canonically serialized as `<br />` inside that run's span. Carriage-return characters (`"\r"`) are canonically serialized as `&#13;`, including the carriage-return portion of `"\r\n"`, so XML parsing does not normalize representable model content:
 
 **XML fragment:**
 
 ```xml
-<span>First<br />Second<br /></span>
+<span>First<br />Second<br />Third&#13;Fourth&#13;<br />Fifth</span>
 ```
 
-Deserialization converts each `<br />` back to `"\n"` and also accepts literal line-feed text inside the span as `"\n"`. A span may contain only text and empty `<br />` elements. The serializer neither adds nor removes paragraph-terminal newlines and does not require a paragraph to end with one.
+Deserialization converts each `<br />` back to `"\n"`, decodes `&#13;` as `"\r"`, and also accepts literal line-feed text inside the span as `"\n"`. A span may contain only text and empty `<br />` elements. The serializer neither adds nor removes paragraph-terminal line endings and does not require a paragraph to end with one.
 ### Text styles and links
 
 `TextStyle` fields are represented as `g:*` attributes on the corresponding style-bearing element. Dimension values are point magnitudes without unit attributes; colors use separate red, green, and blue component attributes.

@@ -71,6 +71,13 @@ def text_run(document: Document) -> TextRun:
     return run
 
 
+def test_wraps_invalid_unicode_input_as_xhtml_parse_error() -> None:
+    with pytest.raises(XHTMLParseError, match="malformed XML") as error:
+        deserialize_document(DECLARATION + "<html>\ud800</html>")
+
+    assert isinstance(error.value.__cause__, UnicodeEncodeError)
+
+
 @pytest.mark.parametrize(
     "declaration",
     [

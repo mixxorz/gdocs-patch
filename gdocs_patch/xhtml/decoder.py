@@ -1785,7 +1785,7 @@ def _preflight_xml(payload: str) -> None:
         parser.Parse(payload, True)
     except XHTMLParseError:
         raise
-    except (expat.ExpatError, RecursionError) as error:
+    except (expat.ExpatError, RecursionError, UnicodeEncodeError) as error:
         raise XHTMLParseError(f"/document: malformed XML: {error}") from error
 
 

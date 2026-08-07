@@ -35,7 +35,7 @@ The format is XML 1.0 with the XHTML namespace as the default and `urn:gdocs-pat
 
 The serializer emits one canonical representation. The deserializer is deliberately more permissive about attribute order and metadata-child placement, while remaining strict about unknown syntax, duplicates, required values, and invalid combinations. Actual content order and repeated collection order remain significant.
 
-The codec converts the model directly. It does not add or remove paragraph-terminal newlines, repair references, infer missing content, consult a source document, or enforce compiler feasibility. Each `TextRun` remains one `<span>`; each newline character becomes `<br />` canonically and is reconstructed on input.
+The codec converts the model directly. It does not add or remove paragraph-terminal newlines, repair references, infer missing content, consult a source document, or enforce compiler feasibility. Each `TextRun` remains one `<span>`; each line feed becomes `<br />` and each carriage return becomes `&#13;` canonically, preserving `\n`, `\r`, and `\r\n` exactly through round trips.
 
 Intentional normalizations are limited to:
 
@@ -43,7 +43,7 @@ Intentional normalizations are limited to:
 - empty `TextStyle()` and `ParagraphStyle()` values normalize to `UNSET`;
 - a default-span `TableCellStyle()` with no other values normalizes to `UNSET`;
 - metadata and attributes serialize in canonical order;
-- literal line feeds accepted inside spans serialize back as `<br />`;
+- literal line feeds accepted inside spans serialize back as `<br />`, while carriage returns serialize as `&#13;` to prevent XML normalization;
 - synthetic XHTML section and list containers flatten back into existing model nodes and fields.
 
 `DocumentStyle()` remains distinct from `UNSET`, and the required `SectionStyle` is always represented.
@@ -196,7 +196,7 @@ Serialization groups contiguous compatible bullet paragraphs. New adjacent lists
 
 ### Text
 
-Each `TextRun` is exactly one `<span>`, preserving adjacent and empty run boundaries. The encoder replaces each newline character with an empty `<br />`; the decoder accepts `<br />` and literal line feeds as newline characters. It adds or removes no terminal newline.
+Each `TextRun` is exactly one `<span>`, preserving adjacent and empty run boundaries. The encoder replaces each line feed with an empty `<br />` and each carriage return with `&#13;`; the decoder reconstructs those characters and accepts literal line feeds. It adds, removes, or normalizes no model line ending.
 
 All non-link `TextStyle` fields are explicit `gdocs` attributes. A linked content element is wrapped in `<a>`. Metadata-only links, such as a bullet glyph link, use one empty `<a>` child inside the metadata style element.
 

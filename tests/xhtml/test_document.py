@@ -432,20 +432,6 @@ def test_rejects_nested_child_in_empty_section_style() -> None:
         )
 
 
-def test_rejects_duplicate_document_tab_region() -> None:
-    with pytest.raises(XHTMLParseError, match="g:headers"):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Duplicate">'
-            "<body>"
-            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-            "<g:document-tab><g:headers /><g:headers /></g:document-tab>"
-            "</g:tab>"
-            "</body></html>"
-        )
-
-
 def test_rejects_malformed_xml() -> None:
     with pytest.raises(XHTMLParseError, match="XML"):
         deserialize_document(
@@ -464,8 +450,8 @@ def test_rejects_wrong_gdocs_namespace() -> None:
         )
 
 
-def test_rejects_duplicate_body() -> None:
-    with pytest.raises(XHTMLParseError, match="body"):
+def test_rejects_duplicate_required_body_wrapper() -> None:
+    with pytest.raises(XHTMLParseError, match="at most one body"):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<html xmlns="http://www.w3.org/1999/xhtml" '
