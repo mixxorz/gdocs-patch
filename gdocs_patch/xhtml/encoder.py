@@ -50,12 +50,14 @@ from .base import (
     GDOCS_NAMESPACE,
     XHTML_NAMESPACE,
     XML_DECLARATION,
+    XHTMLParseError,
     _indent_xml,  # pyright: ignore[reportPrivateUsage]
     encode_text_style,
     format_number,
     gdocs_name,
     xhtml_name,
 )
+from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
 
 _PARAGRAPH_TAGS = {
     "NAMED_STYLE_TYPE_UNSPECIFIED": gdocs_name("named-style-unspecified"),
@@ -640,10 +642,47 @@ class _Encoder:
         return encode_text_style(span, run.text_style)
 
 
+def _is_xml_10_character(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        codepoint in (0x9, 0xA, 0xD)
+        or 0x20 <= codepoint <= 0xD7FF
+        or 0xE000 <= codepoint <= 0xFFFD
+        or 0x10000 <= codepoint <= 0x10FFFF
+    )
+
+
+def _validate_xml_characters(root: ElementTree.Element) -> None:
+    pending = [root]
+    while pending:
+        element = pending.pop()
+        values = [element.text, element.tail, *element.attrib.values()]
+        for value in values:
+            if value is not None and any(
+                not _is_xml_10_character(character) for character in value
+            ):
+                raise ValueError("document contains a character forbidden by XML 1.0")
+        pending.extend(element)
+
+
+def _validate_encoded_tree(root: ElementTree.Element) -> None:
+    try:
+        _Decoder().decode_document(root)
+    except XHTMLParseError as error:
+        raise ValueError(
+            f"document model cannot be encoded as valid XHTML: {error}"
+        ) from error
+
+
 def serialize_document(document: Document) -> str:
     ElementTree.register_namespace("", XHTML_NAMESPACE)
     ElementTree.register_namespace("g", GDOCS_NAMESPACE)
-    root = _Encoder().encode_document(document)
+    try:
+        root = _Encoder().encode_document(document)
+    except (AttributeError, KeyError, TypeError) as error:
+        raise ValueError(f"invalid mutated document model: {error}") from error
+    _validate_xml_characters(root)
+    _validate_encoded_tree(root)
     _indent_xml(root)
     xml = ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
     return f"{XML_DECLARATION}\n{xml}\n"

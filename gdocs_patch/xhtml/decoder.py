@@ -1,6 +1,8 @@
+import re
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, Never, cast
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from gdocs_patch.models import (
     UNSET,
@@ -139,6 +141,10 @@ _TIME_FORMATS = {
     "TIME_FORMAT_HOUR_MINUTE",
     "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
 }
+
+MAX_XHTML_INPUT_CHARACTERS = 10_000_000
+MAX_XML_ELEMENT_DEPTH = 256
+_FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 _SUGGESTIONS_VIEW_MODES = {
     "DEFAULT_FOR_CURRENT_ACCESS",
@@ -1740,14 +1746,64 @@ class _Decoder:
         return TextRun(content=content, text_style=construct_text_style(link))
 
 
+def _preflight_xml(payload: str) -> None:
+    if _FORBIDDEN_XML_DECLARATION.search(payload) is not None:
+        raise XHTMLParseError("/document: DTD and entity declarations are forbidden")
+    parser = expat.ParserCreate()
+    depth = 0
+
+    def reject_declaration(*_args: object) -> Never:
+        raise XHTMLParseError("/document: DTD and entity declarations are forbidden")
+
+    def reject_external_entity(
+        _context: str,
+        _base: str | None,
+        _system_id: str | None,
+        _public_id: str | None,
+    ) -> int:
+        reject_declaration()
+
+    def start_element(_name: str, _attributes: dict[str, str]) -> None:
+        nonlocal depth
+        depth += 1
+        if depth > MAX_XML_ELEMENT_DEPTH:
+            raise XHTMLParseError(
+                f"/document: XML element depth exceeds {MAX_XML_ELEMENT_DEPTH}"
+            )
+
+    def end_element(_name: str) -> None:
+        nonlocal depth
+        depth -= 1
+
+    parser.StartDoctypeDeclHandler = reject_declaration
+    parser.EntityDeclHandler = reject_declaration
+    parser.UnparsedEntityDeclHandler = reject_declaration
+    parser.ExternalEntityRefHandler = reject_external_entity
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    try:
+        parser.Parse(payload, True)
+    except XHTMLParseError:
+        raise
+    except (expat.ExpatError, RecursionError) as error:
+        raise XHTMLParseError(f"/document: malformed XML: {error}") from error
+
+
 def deserialize_document(xhtml: str) -> Document:
+    if len(xhtml) > MAX_XHTML_INPUT_CHARACTERS:
+        raise XHTMLParseError(
+            f"/document: input exceeds {MAX_XHTML_INPUT_CHARACTERS} characters"
+        )
     if not xhtml.startswith(XML_DECLARATION):
         raise XHTMLParseError(
             "/document: required XML declaration is missing or invalid"
         )
     payload = xhtml[len(XML_DECLARATION) :].lstrip()
+    _preflight_xml(payload)
     try:
         root = ElementTree.fromstring(payload)
-    except ElementTree.ParseError as error:
+        return _Decoder().decode_document(root)
+    except XHTMLParseError:
+        raise
+    except (ElementTree.ParseError, RecursionError) as error:
         raise XHTMLParseError(f"/document: malformed XML: {error}") from error
-    return _Decoder().decode_document(root)

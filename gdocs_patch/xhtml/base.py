@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable, Collection, Iterable
 from typing import Never, cast
 from xml.etree import ElementTree
@@ -66,20 +67,22 @@ def parse_boolean(value: str, path: str) -> bool:
     parse_error(path, f"expected 'true' or 'false', got {value!r}")
 
 
+_CANONICAL_INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
+_CANONICAL_FLOAT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?\Z")
+
+
 def parse_integer(value: str, path: str) -> int:
-    try:
-        return int(value)
-    except ValueError:
-        parse_error(path, f"expected an integer, got {value!r}")
+    if _CANONICAL_INTEGER.fullmatch(value) is None:
+        parse_error(path, f"expected a canonical integer, got {value!r}")
+    return int(value)
 
 
 def parse_float(value: str, path: str) -> float:
-    try:
-        result = float(value)
-    except ValueError:
-        parse_error(path, f"expected a float, got {value!r}")
+    if _CANONICAL_FLOAT.fullmatch(value) is None:
+        parse_error(path, f"expected a float in canonical finite form, got {value!r}")
+    result = float(value)
     if result != result or result in (float("inf"), float("-inf")):
-        parse_error(path, f"expected a finite float, got {value!r}")
+        parse_error(path, f"expected a float in canonical finite form, got {value!r}")
     return result
 
 
@@ -231,6 +234,10 @@ def encode_text_color(
 
 
 def format_number(value: float) -> str:
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError("number must be finite")
+    if value == 0:
+        return "0"
     text = repr(value)
     return text[:-2] if text.endswith(".0") else text
 
