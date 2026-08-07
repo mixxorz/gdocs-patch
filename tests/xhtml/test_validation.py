@@ -23,6 +23,7 @@ from gdocs_patch.models import (
     UrlLink,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
+from gdocs_patch.xhtml import base as base_module
 from gdocs_patch.xhtml import decoder as decoder_module
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -202,6 +203,13 @@ def test_parent_scalar_error_precedes_invalid_descendant(
     with pytest.raises(XHTMLParseError) as error:
         deserialize_document(xhtml)
 
+    expected_path = {
+        "@g:index": "/g:tab[1]/@g:index",
+        "@g:keep-with-next": "/g:paragraph-style/@g:keep-with-next",
+        "@g:page-number-start": "/g:document-style/@g:page-number-start",
+        "@g:type": "/g:named-style[1]/@g:type",
+    }[expected_attribute]
+    assert expected_path in str(error.value)
     assert expected_attribute in str(error.value)
 
 
@@ -271,7 +279,93 @@ def test_local_attribute_error_precedes_text_or_child_error(
     with pytest.raises(XHTMLParseError) as error:
         deserialize_document(xhtml)
 
+    if expected_attribute == "@g:nesting-level":
+        expected_path = "/li[1]/@g:nesting-level"
+    elif expected_attribute == "@g:width-type":
+        expected_path = "/colgroup/col[1]/@g:width-type"
+    elif expected_attribute == "g:id":
+        expected_path = "/g:positioned-object[1]"
+    elif expected_attribute == "@g:alignment":
+        expected_path = "/g:tab-stop[1]/@g:alignment"
+    elif expected_attribute == "g:type":
+        expected_path = "/section[1]/*[1]/*[1]"
+    elif "g:list-definitions" in xhtml:
+        expected_path = "/g:list-level[1]/a"
+    else:
+        expected_path = "/section[1]/*[1]/*[1]"
+    assert expected_path in str(error.value)
     assert expected_attribute in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("xhtml", "path", "message"),
+    [
+        (
+            document(
+                '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
+                "<g:unknown /></g:list>"
+            ),
+            "/section[1]/*[1]",
+            "unknown child element g:unknown",
+        ),
+        (
+            document(
+                '<table><colgroup><col g:width-type="FIXED_WIDTH">'
+                "<g:unknown /></col></colgroup><tbody /></table>"
+            ),
+            "/colgroup/col[1]",
+            "unknown child element g:unknown",
+        ),
+    ],
+    ids=["list-identity", "table-column-width"],
+)
+def test_child_validation_precedes_cross_field_check(
+    xhtml: str, path: str, message: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert path in str(error.value)
+    assert message in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("xhtml", "path"),
+    [
+        (
+            document(
+                "",
+                metadata='<g:list-definitions><g:list-definition g:list-id="id">'
+                '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" g:bold="true">'
+                '<a href="https://example.test"><g:unknown /></a></g:list-level>'
+                "</g:list-definition></g:list-definitions>",
+            ),
+            "/g:list-level[1]/a",
+        ),
+        (
+            document(
+                '<p><g:auto-text g:type="PAGE_NUMBER" g:bold="true">'
+                "<g:unknown /></g:auto-text></p>"
+            ),
+            "/section[1]/*[1]/*[1]",
+        ),
+    ],
+    ids=["metadata-text-style", "non-text-owning-model"],
+)
+def test_child_validation_precedes_text_style_construction(
+    monkeypatch: pytest.MonkeyPatch, xhtml: str, path: str
+) -> None:
+    class RejectingTextStyle:
+        def __init__(self, **_kwargs: object) -> None:
+            raise ValueError("TextStyle constructed too early")
+
+    monkeypatch.setattr(base_module, "TextStyle", RejectingTextStyle)
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert path in str(error.value)
+    assert "unknown child element g:unknown" in str(error.value)
 
 
 def test_malformed_xml_preserves_element_tree_cause() -> None:

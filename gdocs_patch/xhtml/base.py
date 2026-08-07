@@ -257,9 +257,9 @@ def decode_link(element: ElementTree.Element, path: str) -> Link:
     parse_error(path, "invalid link target attribute combination")
 
 
-def decode_text_style(
-    element: ElementTree.Element, link: Link | UnsetType, path: str
-) -> TextStyle | UnsetType:
+def parse_text_style(
+    element: ElementTree.Element, path: str
+) -> Callable[[Link | UnsetType], TextStyle | UnsetType]:
     def optional_boolean(name: str) -> bool | UnsetType:
         raw = element.get(gdocs_name(name))
         if raw is None:
@@ -310,24 +310,36 @@ def decode_text_style(
         font_weight,
         foreground_color,
         background_color,
-        link,
     )
-    if all(value is UNSET for value in fields):
-        return UNSET
-    return TextStyle(
-        bold=bold,
-        italic=italic,
-        underline=underline,
-        strikethrough=strikethrough,
-        small_caps=small_caps,
-        baseline_offset=baseline_offset,  # type: ignore[arg-type]
-        font_size=font_size,
-        font_family=font_family,
-        font_weight=font_weight,
-        foreground_color=foreground_color,
-        background_color=background_color,
-        link=link,
-    )
+
+    def construct(link: Link | UnsetType) -> TextStyle | UnsetType:
+        if all(value is UNSET for value in (*fields, link)):
+            return UNSET
+        return construct_model(
+            path,
+            lambda: TextStyle(
+                bold=bold,
+                italic=italic,
+                underline=underline,
+                strikethrough=strikethrough,
+                small_caps=small_caps,
+                baseline_offset=baseline_offset,  # type: ignore[arg-type]
+                font_size=font_size,
+                font_family=font_family,
+                font_weight=font_weight,
+                foreground_color=foreground_color,
+                background_color=background_color,
+                link=link,
+            ),
+        )
+
+    return construct
+
+
+def decode_text_style(
+    element: ElementTree.Element, link: Link | UnsetType, path: str
+) -> TextStyle | UnsetType:
+    return parse_text_style(element, path)(link)
 
 
 def decode_text_color(

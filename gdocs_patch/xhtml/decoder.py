@@ -53,7 +53,6 @@ from .base import (
     XHTMLParseError,
     construct_model,
     decode_link,
-    decode_text_style,
     display_name,
     extract_one_child,
     gdocs_name,
@@ -63,6 +62,7 @@ from .base import (
     parse_error,
     parse_float,
     parse_integer,
+    parse_text_style,
     required_string,
     text_style_attributes,
     validate_attributes,
@@ -378,50 +378,47 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name(name) for name in attribute_names}, path
         )
-        scalar_values: dict[str, object] = {
-            "document_mode": self.optional_allowed(
-                element,
-                "document-mode",
-                {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"},
-                path,
-            ),
-            **{
-                name.replace("-", "_"): self.optional_point(element, name, path)
-                for name in (
-                    "page-width",
-                    "page-height",
-                    "margin-top",
-                    "margin-bottom",
-                    "margin-left",
-                    "margin-right",
-                    "margin-header",
-                    "margin-footer",
-                )
-            },
-            **{
-                name.replace("-", "_"): optional_string(element, gdocs_name(name))
-                for name in (
-                    "default-header-id",
-                    "default-footer-id",
-                    "even-page-header-id",
-                    "even-page-footer-id",
-                    "first-page-header-id",
-                    "first-page-footer-id",
-                )
-            },
-            **{
-                name.replace("-", "_"): self.optional_boolean(element, name, path)
-                for name in (
-                    "use-even-page-header-footer",
-                    "use-first-page-header-footer",
-                    "use-custom-header-footer-margins",
-                    "flip-page-orientation",
-                )
-            },
-            "page_number_start": self.optional_integer(
-                element, "page-number-start", path
-            ),
-        }
+        document_mode = self.optional_allowed(
+            element,
+            "document-mode",
+            {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"},
+            path,
+        )
+        page_width = self.optional_point(element, "page-width", path)
+        page_height = self.optional_point(element, "page-height", path)
+        margin_top = self.optional_point(element, "margin-top", path)
+        margin_bottom = self.optional_point(element, "margin-bottom", path)
+        margin_left = self.optional_point(element, "margin-left", path)
+        margin_right = self.optional_point(element, "margin-right", path)
+        margin_header = self.optional_point(element, "margin-header", path)
+        margin_footer = self.optional_point(element, "margin-footer", path)
+        default_header_id = optional_string(element, gdocs_name("default-header-id"))
+        default_footer_id = optional_string(element, gdocs_name("default-footer-id"))
+        even_page_header_id = optional_string(
+            element, gdocs_name("even-page-header-id")
+        )
+        even_page_footer_id = optional_string(
+            element, gdocs_name("even-page-footer-id")
+        )
+        first_page_header_id = optional_string(
+            element, gdocs_name("first-page-header-id")
+        )
+        first_page_footer_id = optional_string(
+            element, gdocs_name("first-page-footer-id")
+        )
+        use_even_page_header_footer = self.optional_boolean(
+            element, "use-even-page-header-footer", path
+        )
+        use_first_page_header_footer = self.optional_boolean(
+            element, "use-first-page-header-footer", path
+        )
+        use_custom_header_footer_margins = self.optional_boolean(
+            element, "use-custom-header-footer-margins", path
+        )
+        flip_page_orientation = self.optional_boolean(
+            element, "flip-page-orientation", path
+        )
+        page_number_start = self.optional_integer(element, "page-number-start", path)
 
         validate_whitespace(element, path)
         children = list(element)
@@ -434,9 +431,28 @@ class _Decoder:
             if background is None
             else self.decode_optional_color(background, f"{path}/g:background-color")
         )
-        return DocumentStyle(  # type: ignore[arg-type]
+        return DocumentStyle(
             background_color=background_color,
-            **scalar_values,  # pyright: ignore[reportArgumentType]
+            document_mode=document_mode,  # type: ignore[arg-type]
+            page_width=page_width,
+            page_height=page_height,
+            margin_top=margin_top,
+            margin_bottom=margin_bottom,
+            margin_left=margin_left,
+            margin_right=margin_right,
+            margin_header=margin_header,
+            margin_footer=margin_footer,
+            default_header_id=default_header_id,
+            default_footer_id=default_footer_id,
+            even_page_header_id=even_page_header_id,
+            even_page_footer_id=even_page_footer_id,
+            first_page_header_id=first_page_header_id,
+            first_page_footer_id=first_page_footer_id,
+            use_even_page_header_footer=use_even_page_header_footer,
+            use_first_page_header_footer=use_first_page_header_footer,
+            use_custom_header_footer_margins=use_custom_header_footer_margins,
+            flip_page_orientation=flip_page_orientation,
+            page_number_start=page_number_start,
         )
 
     def decode_named_styles(
@@ -459,7 +475,7 @@ class _Decoder:
                 _NAMED_STYLE_TYPES,
                 f"{child_path}/@g:type",
             )
-            text_style = decode_text_style(child, UNSET, child_path)
+            construct_text_style = parse_text_style(child, child_path)
 
             validate_whitespace(child, child_path)
             children = list(child)
@@ -479,11 +495,7 @@ class _Decoder:
                 link = decode_link(anchor, anchor_path)
                 validate_whitespace(anchor, anchor_path)
                 _validate_no_children(anchor, anchor_path)
-            if link is not UNSET:
-                if text_style is UNSET:
-                    text_style = TextStyle(link=link)
-                else:
-                    cast(TextStyle, text_style).link = link
+            text_style = construct_text_style(link)
             result.append(
                 NamedStyle(
                     named_style_type=named_style_type,  # type: ignore[arg-type]
@@ -598,7 +610,7 @@ class _Decoder:
     def decode_metadata_text_style(
         self, element: ElementTree.Element, path: str
     ) -> TextStyle | UnsetType:
-        text_style = decode_text_style(element, UNSET, path)
+        construct_text_style = parse_text_style(element, path)
         validate_whitespace(element, path)
         children = list(element)
         anchor = extract_one_child(children, xhtml_name("a"), path)
@@ -611,11 +623,7 @@ class _Decoder:
             link = decode_link(anchor, anchor_path)
             validate_whitespace(anchor, anchor_path)
             _validate_no_children(anchor, anchor_path)
-        if link is not UNSET:
-            if text_style is UNSET:
-                return TextStyle(link=link)
-            cast(TextStyle, text_style).link = link
-        return text_style
+        return construct_text_style(link)
 
     def decode_body(self, element: ElementTree.Element, path: str) -> Body:
         validate_attributes(element, set(), path)
@@ -671,55 +679,48 @@ class _Decoder:
             "margin-footer",
         }
         validate_attributes(element, {gdocs_name(name) for name in scalar_names}, path)
-        scalar_values: dict[str, object] = {
-            "column_separator_style": self.optional_allowed(
-                element,
-                "column-separator-style",
-                {"COLUMN_SEPARATOR_STYLE_UNSPECIFIED", "NONE", "BETWEEN_EACH_COLUMN"},
-                path,
-            ),
-            "content_direction": self.optional_allowed(
-                element, "content-direction", _DIRECTIONS, path
-            ),
-            "section_type": self.optional_allowed(
-                element,
-                "section-type",
-                {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"},
-                path,
-            ),
-            **{
-                name.replace("-", "_"): optional_string(element, gdocs_name(name))
-                for name in (
-                    "default-header-id",
-                    "default-footer-id",
-                    "even-page-header-id",
-                    "even-page-footer-id",
-                    "first-page-header-id",
-                    "first-page-footer-id",
-                )
-            },
-            **{
-                name.replace("-", "_"): self.optional_boolean(element, name, path)
-                for name in (
-                    "use-first-page-header-footer",
-                    "flip-page-orientation",
-                )
-            },
-            "page_number_start": self.optional_integer(
-                element, "page-number-start", path
-            ),
-            **{
-                name.replace("-", "_"): self.optional_point(element, name, path)
-                for name in (
-                    "margin-top",
-                    "margin-bottom",
-                    "margin-left",
-                    "margin-right",
-                    "margin-header",
-                    "margin-footer",
-                )
-            },
-        }
+        column_separator_style = self.optional_allowed(
+            element,
+            "column-separator-style",
+            {"COLUMN_SEPARATOR_STYLE_UNSPECIFIED", "NONE", "BETWEEN_EACH_COLUMN"},
+            path,
+        )
+        content_direction = self.optional_allowed(
+            element, "content-direction", _DIRECTIONS, path
+        )
+        section_type = self.optional_allowed(
+            element,
+            "section-type",
+            {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"},
+            path,
+        )
+        default_header_id = optional_string(element, gdocs_name("default-header-id"))
+        default_footer_id = optional_string(element, gdocs_name("default-footer-id"))
+        even_page_header_id = optional_string(
+            element, gdocs_name("even-page-header-id")
+        )
+        even_page_footer_id = optional_string(
+            element, gdocs_name("even-page-footer-id")
+        )
+        first_page_header_id = optional_string(
+            element, gdocs_name("first-page-header-id")
+        )
+        first_page_footer_id = optional_string(
+            element, gdocs_name("first-page-footer-id")
+        )
+        use_first_page_header_footer = self.optional_boolean(
+            element, "use-first-page-header-footer", path
+        )
+        flip_page_orientation = self.optional_boolean(
+            element, "flip-page-orientation", path
+        )
+        page_number_start = self.optional_integer(element, "page-number-start", path)
+        margin_top = self.optional_point(element, "margin-top", path)
+        margin_bottom = self.optional_point(element, "margin-bottom", path)
+        margin_left = self.optional_point(element, "margin-left", path)
+        margin_right = self.optional_point(element, "margin-right", path)
+        margin_header = self.optional_point(element, "margin-header", path)
+        margin_footer = self.optional_point(element, "margin-footer", path)
 
         validate_whitespace(element, path)
         children = list(element)
@@ -747,7 +748,27 @@ class _Decoder:
                 validate_whitespace(child, child_path)
                 _validate_no_children(child, child_path)
                 columns.append(SectionColumn(width=width, padding_end=padding_end))
-        return SectionStyle(columns=columns, **scalar_values)  # type: ignore[arg-type]
+        return SectionStyle(
+            columns=columns,
+            column_separator_style=column_separator_style,  # type: ignore[arg-type]
+            content_direction=content_direction,  # type: ignore[arg-type]
+            section_type=section_type,  # type: ignore[arg-type]
+            default_header_id=default_header_id,
+            default_footer_id=default_footer_id,
+            even_page_header_id=even_page_header_id,
+            even_page_footer_id=even_page_footer_id,
+            first_page_header_id=first_page_header_id,
+            first_page_footer_id=first_page_footer_id,
+            use_first_page_header_footer=use_first_page_header_footer,
+            flip_page_orientation=flip_page_orientation,
+            page_number_start=page_number_start,
+            margin_top=margin_top,
+            margin_bottom=margin_bottom,
+            margin_left=margin_left,
+            margin_right=margin_right,
+            margin_header=margin_header,
+            margin_footer=margin_footer,
+        )
 
     def optional_allowed(
         self, element: ElementTree.Element, name: str, allowed: set[str], path: str
@@ -849,23 +870,25 @@ class _Decoder:
         )
         list_id = element.get(gdocs_name("list-id"))
         raw_preset = element.get(gdocs_name("bullet-preset"))
-        if (list_id is None) == (raw_preset is None):
-            parse_error(
-                path, "exactly one of g:list-id and g:bullet-preset is required"
-            )
         preset = (
             None
             if raw_preset is None
             else parse_allowed(raw_preset, _BULLET_PRESETS, f"{path}/@g:bullet-preset")
         )
         validate_whitespace(element, path)
-        if not list(element):
-            parse_error(path, "list must contain at least one item")
-        result: list[Paragraph] = []
-        for index, item in enumerate(element):
-            item_path = f"{path}/li[{index + 1}]"
+        items = list(element)
+        for item in items:
             if item.tag != xhtml_name("li"):
                 parse_error(path, f"unknown child element {display_name(item.tag)}")
+        if (list_id is None) == (raw_preset is None):
+            parse_error(
+                path, "exactly one of g:list-id and g:bullet-preset is required"
+            )
+        if not items:
+            parse_error(path, "list must contain at least one item")
+        result: list[Paragraph] = []
+        for index, item in enumerate(items):
+            item_path = f"{path}/li[{index + 1}]"
             validate_attributes(item, {gdocs_name("nesting-level")}, item_path)
             raw_level = item.get(gdocs_name("nesting-level"))
             level = (
@@ -974,12 +997,6 @@ class _Decoder:
                 f"{child_path}/@g:width-type",
             )
             raw_width = child.get(gdocs_name("width"))
-            if width_type == "FIXED_WIDTH" and raw_width is None:
-                parse_error(child_path, "FIXED_WIDTH column requires width")
-            if width_type != "FIXED_WIDTH" and raw_width is not None:
-                parse_error(
-                    child_path, "width is forbidden unless width type is FIXED_WIDTH"
-                )
             width = (
                 UNSET
                 if raw_width is None
@@ -990,6 +1007,12 @@ class _Decoder:
             )
             validate_whitespace(child, child_path)
             _validate_no_children(child, child_path)
+            if width_type == "FIXED_WIDTH" and raw_width is None:
+                parse_error(child_path, "FIXED_WIDTH column requires width")
+            if width_type != "FIXED_WIDTH" and raw_width is not None:
+                parse_error(
+                    child_path, "width is forbidden unless width type is FIXED_WIDTH"
+                )
             result.append(
                 construct_model(
                     child_path,
@@ -1268,84 +1291,101 @@ class _Decoder:
             allowed.add("datetime")
         validate_attributes(element, allowed, path)
 
-        scalar_values: dict[str, object] = {}
+        construct_text_style = parse_text_style(element, path)
+
+        def finish_text_style() -> TextStyle | UnsetType:
+            validate_whitespace(element, path)
+            _validate_no_children(element, path)
+            return construct_text_style(link)
+
         if element.tag == gdocs_name("auto-text"):
-            scalar_values["auto_text_type"] = parse_allowed(
+            auto_text_type = parse_allowed(
                 required_string(element, gdocs_name("type"), path),
                 {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"},
                 f"{path}/@g:type",
             )
-        elif element.tag == xhtml_name("time"):
+            return AutoText(
+                auto_text_type=auto_text_type,  # type: ignore[arg-type]
+                text_style=finish_text_style(),
+            )
+        if element.tag == gdocs_name("column-break"):
+            return ColumnBreak(text_style=finish_text_style())
+        if element.tag == xhtml_name("time"):
+            date_id = required_string(element, gdocs_name("date-id"), path)
             raw_date_format = element.get(gdocs_name("date-format"))
-            raw_time_format = element.get(gdocs_name("time-format"))
-            scalar_values = {
-                "date_id": required_string(element, gdocs_name("date-id"), path),
-                "date_format": UNSET
+            date_format = (
+                UNSET
                 if raw_date_format is None
                 else parse_allowed(
                     raw_date_format, _DATE_FORMATS, f"{path}/@g:date-format"
-                ),
-                "display_text": optional_string(element, gdocs_name("display-text")),
-                "locale": optional_string(element, gdocs_name("locale")),
-                "time_format": UNSET
+                )
+            )
+            display_text = optional_string(element, gdocs_name("display-text"))
+            locale = optional_string(element, gdocs_name("locale"))
+            raw_time_format = element.get(gdocs_name("time-format"))
+            time_format = (
+                UNSET
                 if raw_time_format is None
                 else parse_allowed(
                     raw_time_format, _TIME_FORMATS, f"{path}/@g:time-format"
-                ),
-                "time_zone_id": optional_string(element, gdocs_name("time-zone-id")),
-                "timestamp": optional_string(element, "datetime"),
-            }
-        elif element.tag == gdocs_name("footnote-reference"):
-            scalar_values = {
-                "footnote_id": required_string(
-                    element, gdocs_name("footnote-id"), path
-                ),
-                "footnote_number": required_string(
-                    element, gdocs_name("footnote-number"), path
-                ),
-            }
-        elif element.tag == gdocs_name("inline-object"):
-            scalar_values["inline_object_id"] = required_string(
+                )
+            )
+            time_zone_id = optional_string(element, gdocs_name("time-zone-id"))
+            timestamp = optional_string(element, "datetime")
+            return DateElement(
+                date_id=date_id,
+                date_format=date_format,  # type: ignore[arg-type]
+                display_text=display_text,
+                locale=locale,
+                time_format=time_format,  # type: ignore[arg-type]
+                time_zone_id=time_zone_id,
+                timestamp=timestamp,
+                text_style=finish_text_style(),
+            )
+        if element.tag == gdocs_name("footnote-reference"):
+            footnote_id = required_string(element, gdocs_name("footnote-id"), path)
+            footnote_number = required_string(
+                element, gdocs_name("footnote-number"), path
+            )
+            return FootnoteReference(
+                footnote_id=footnote_id,
+                footnote_number=footnote_number,
+                text_style=finish_text_style(),
+            )
+        if element.tag == xhtml_name("hr"):
+            return HorizontalRule(text_style=finish_text_style())
+        if element.tag == gdocs_name("inline-object"):
+            inline_object_id = required_string(
                 element, gdocs_name("inline-object-id"), path
             )
-        elif element.tag == gdocs_name("person"):
-            scalar_values = {
-                "person_id": required_string(element, gdocs_name("person-id"), path),
-                "email": optional_string(element, gdocs_name("email")),
-                "name": optional_string(element, gdocs_name("name")),
-            }
-        elif element.tag == gdocs_name("rich-link"):
-            scalar_values = {
-                "rich_link_id": required_string(
-                    element, gdocs_name("rich-link-id"), path
-                ),
-                "uri": required_string(element, gdocs_name("uri"), path),
-                "title": optional_string(element, gdocs_name("title")),
-                "mime_type": optional_string(element, gdocs_name("mime-type")),
-            }
-
-        style = decode_text_style(element, link, path)
-        validate_whitespace(element, path)
-        _validate_no_children(element, path)
-
-        if element.tag == gdocs_name("auto-text"):
-            return AutoText(**scalar_values, text_style=style)  # type: ignore[arg-type]
-        if element.tag == gdocs_name("column-break"):
-            return ColumnBreak(text_style=style)
-        if element.tag == xhtml_name("time"):
-            return DateElement(**scalar_values, text_style=style)  # type: ignore[arg-type]
-        if element.tag == gdocs_name("footnote-reference"):
-            return FootnoteReference(**scalar_values, text_style=style)  # type: ignore[arg-type]
-        if element.tag == xhtml_name("hr"):
-            return HorizontalRule(text_style=style)
-        if element.tag == gdocs_name("inline-object"):
-            return InlineObjectReference(**scalar_values, text_style=style)  # type: ignore[arg-type]
+            return InlineObjectReference(
+                inline_object_id=inline_object_id,
+                text_style=finish_text_style(),
+            )
         if element.tag == gdocs_name("page-break"):
-            return PageBreak(text_style=style)
+            return PageBreak(text_style=finish_text_style())
         if element.tag == gdocs_name("person"):
-            return PersonReference(**scalar_values, text_style=style)  # type: ignore[arg-type]
+            person_id = required_string(element, gdocs_name("person-id"), path)
+            email = optional_string(element, gdocs_name("email"))
+            name = optional_string(element, gdocs_name("name"))
+            return PersonReference(
+                person_id=person_id,
+                email=email,
+                name=name,
+                text_style=finish_text_style(),
+            )
         assert element.tag == gdocs_name("rich-link")
-        return RichLink(**scalar_values, text_style=style)  # type: ignore[arg-type]
+        rich_link_id = required_string(element, gdocs_name("rich-link-id"), path)
+        uri = required_string(element, gdocs_name("uri"), path)
+        title = optional_string(element, gdocs_name("title"))
+        mime_type = optional_string(element, gdocs_name("mime-type"))
+        return RichLink(
+            rich_link_id=rich_link_id,
+            uri=uri,
+            title=title,
+            mime_type=mime_type,
+            text_style=finish_text_style(),
+        )
 
     def decode_positioned_objects(
         self, element: ElementTree.Element, path: str
@@ -1398,38 +1438,31 @@ class _Decoder:
             named_style = parse_allowed(
                 raw_named_style, _NAMED_STYLE_TYPES, f"{path}/@g:named-style-type"
             )
+        alignment = self.optional_allowed(element, "alignment", _ALIGNMENTS, path)
+        direction = self.optional_allowed(element, "direction", _DIRECTIONS, path)
         line_spacing_raw = element.get(gdocs_name("line-spacing"))
-        scalar_values: dict[str, object] = {
-            "named_style_type": named_style,
-            "alignment": self.optional_allowed(element, "alignment", _ALIGNMENTS, path),
-            "direction": self.optional_allowed(element, "direction", _DIRECTIONS, path),
-            "line_spacing": UNSET
+        line_spacing = (
+            UNSET
             if line_spacing_raw is None
-            else parse_float(line_spacing_raw, f"{path}/@g:line-spacing"),
-            "spacing_mode": self.optional_allowed(
-                element, "spacing-mode", _SPACING_MODES, path
-            ),
-            **{
-                name.replace("-", "_"): self.optional_point(element, name, path)
-                for name in (
-                    "space-above",
-                    "space-below",
-                    "indent-first-line",
-                    "indent-start",
-                    "indent-end",
-                )
-            },
-            **{
-                name.replace("-", "_"): self.optional_boolean(element, name, path)
-                for name in (
-                    "keep-lines-together",
-                    "keep-with-next",
-                    "avoid-widow-and-orphan",
-                    "page-break-before",
-                )
-            },
-            "heading_id": optional_string(element, gdocs_name("heading-id")),
-        }
+            else parse_float(line_spacing_raw, f"{path}/@g:line-spacing")
+        )
+        spacing_mode = self.optional_allowed(
+            element, "spacing-mode", _SPACING_MODES, path
+        )
+        space_above = self.optional_point(element, "space-above", path)
+        space_below = self.optional_point(element, "space-below", path)
+        indent_first_line = self.optional_point(element, "indent-first-line", path)
+        indent_start = self.optional_point(element, "indent-start", path)
+        indent_end = self.optional_point(element, "indent-end", path)
+        keep_lines_together = self.optional_boolean(
+            element, "keep-lines-together", path
+        )
+        keep_with_next = self.optional_boolean(element, "keep-with-next", path)
+        avoid_widow_and_orphan = self.optional_boolean(
+            element, "avoid-widow-and-orphan", path
+        )
+        page_break_before = self.optional_boolean(element, "page-break-before", path)
+        heading_id = optional_string(element, gdocs_name("heading-id"))
 
         validate_whitespace(element, path)
         border_names = (
@@ -1462,20 +1495,34 @@ class _Decoder:
             tab_stops = self.decode_tab_stops(tab_stops_element, f"{path}/g:tab-stops")
         if paragraph_owns_named_style and raw_named_style is not None:
             parse_error(path, "named style type is owned by the paragraph element")
-        metadata_values = {
-            "border_between": borders["border-between"],
-            "border_top": borders["border-top"],
-            "border_bottom": borders["border-bottom"],
-            "border_left": borders["border-left"],
-            "border_right": borders["border-right"],
-            "shading_color": UNSET
+        shading_color = (
+            UNSET
             if shading is None
-            else self.decode_optional_color(shading, f"{path}/g:shading-color"),
-            "tab_stops": tab_stops,
-        }
-        return ParagraphStyle(  # type: ignore[arg-type]
-            **scalar_values,  # pyright: ignore[reportArgumentType]
-            **metadata_values,  # pyright: ignore[reportArgumentType]
+            else self.decode_optional_color(shading, f"{path}/g:shading-color")
+        )
+        return ParagraphStyle(
+            named_style_type=named_style,  # type: ignore[arg-type]
+            alignment=alignment,  # type: ignore[arg-type]
+            direction=direction,  # type: ignore[arg-type]
+            line_spacing=line_spacing,
+            spacing_mode=spacing_mode,  # type: ignore[arg-type]
+            space_above=space_above,
+            space_below=space_below,
+            indent_first_line=indent_first_line,
+            indent_start=indent_start,
+            indent_end=indent_end,
+            keep_lines_together=keep_lines_together,
+            keep_with_next=keep_with_next,
+            avoid_widow_and_orphan=avoid_widow_and_orphan,
+            page_break_before=page_break_before,
+            heading_id=heading_id,
+            border_between=borders["border-between"],
+            border_top=borders["border-top"],
+            border_bottom=borders["border-bottom"],
+            border_left=borders["border-left"],
+            border_right=borders["border-right"],
+            shading_color=shading_color,
+            tab_stops=tab_stops,
         )
 
     def decode_paragraph_border(
@@ -1583,7 +1630,7 @@ class _Decoder:
         self, span: ElementTree.Element, link: Link | UnsetType, path: str
     ) -> TextRun:
         validate_attributes(span, text_style_attributes(), path)
-        text_style = decode_text_style(span, link, path)
+        construct_text_style = parse_text_style(span, path)
         content = span.text or ""
         for child in span:
             if child.tag != xhtml_name("br"):
@@ -1594,7 +1641,7 @@ class _Decoder:
                 parse_error(child_path, "br must be empty")
             _validate_no_children(child, child_path)
             content += "\n" + (child.tail or "")
-        return TextRun(content=content, text_style=text_style)
+        return TextRun(content=content, text_style=construct_text_style(link))
 
 
 def deserialize_document(xhtml: str) -> Document:
