@@ -103,6 +103,11 @@ Use a representative document rather than testing internal delegation.
 
 Existing list IDs should be preserved when source and target retain the same list membership.
 
+Future list-planning improvements, outside the XHTML serializer/deserializer scope:
+
+- Coalesce adjacent target paragraphs with the same `BulletPreset.preset` into one `createParagraphBullets` operation while preserving each paragraph's nesting level. The current compiler may emit redundant per-paragraph requests, which is acceptable for the XHTML work.
+- Verify and document Google Docs inheritance behavior when newly inserted paragraphs target an existing `Bullet.list_id`; reject placements that cannot inherit the intended existing-list membership reliably.
+
 ### Tables
 
 - Insert tables containing merged cells.
@@ -179,6 +184,17 @@ Treat a table of contents as an opaque, non-creatable structure unless API behav
 - Preserve positioned and inline objects that remain referenced.
 - Add revision/write-control data to mutation execution.
 - Treat document-title changes separately because Docs `batchUpdate` cannot rename the Drive file.
+
+## Source-backed target materialization
+
+The initial XHTML representation intentionally omits `DocumentTab.lists` definitions because Google list definitions cannot be mutated directly; paragraph list mutations are expressed through retained list IDs and target bullet presets. Named styles and document style remain represented even before their compiler reconciliation is complete. Define a broader strategy for reducing XHTML in areas that Google Docs cannot mutate directly:
+
+- combine omitted target data with the parsed source `Document` before compilation when later compiler stages require it;
+- identify which additional provider-owned or immutable definitions and resources are safe to omit and inherit from the source;
+- distinguish omission meaning “inherit from source” from intentional deletion, reset, or replacement;
+- ensure source-backed materialization occurs before feasibility checks and mutation planning.
+
+Do not implement this optimization until the full XHTML syntax and source/target compilation behavior make the safe inheritance boundaries clear.
 
 ## Feasibility and preservation
 
