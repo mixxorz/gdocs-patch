@@ -192,8 +192,9 @@ def compile_document(
                 "segment creation and deletion are not supported"
             )
 
-        # Temporary until ContentStream supports SectionBreak: a Docs body
-        # starts with one at index 0, so supported body content begins at 1.
+        # Use start_index=1 while ContentStream has no SectionBreak unit.
+        # Once it does, the leading SectionBreak's width of 1 will account for
+        # this offset and start_index should return to 0.
         body_script = generate_edit_script(
             source=source_tab.body,
             target=target_tab.body,
