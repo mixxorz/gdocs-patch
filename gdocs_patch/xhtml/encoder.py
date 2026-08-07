@@ -12,6 +12,7 @@ from gdocs_patch.models import (
     DateElement,
     Dimension,
     Document,
+    DocumentStyle,
     DocumentTab,
     Equation,
     FootnoteReference,
@@ -19,6 +20,7 @@ from gdocs_patch.models import (
     InlineObjectReference,
     ListDefinition,
     ListLevel,
+    NamedStyle,
     PageBreak,
     Paragraph,
     ParagraphBorder,
@@ -103,11 +105,19 @@ class _Encoder:
         return element
 
     def encode_document_tab(self, document_tab: DocumentTab) -> ElementTree.Element:
-        if document_tab.document_style is not UNSET:
-            raise ValueError("DocumentStyle is not supported yet")
-        if document_tab.named_styles is not UNSET:
-            raise ValueError("named styles are not supported yet")
         element = ElementTree.Element(gdocs_name("document-tab"))
+        if document_tab.document_style is not UNSET:
+            element.append(
+                self.encode_document_style(
+                    cast(DocumentStyle, document_tab.document_style)
+                )
+            )
+        if document_tab.named_styles is not UNSET:
+            element.append(
+                self.encode_named_styles(
+                    cast(list[NamedStyle], document_tab.named_styles)
+                )
+            )
         if document_tab.lists is not UNSET:
             self.encode_list_definitions(
                 element, cast(dict[str, ListDefinition], document_tab.lists)
@@ -118,6 +128,62 @@ class _Encoder:
         self.encode_segments(element, "footers", "footer", document_tab.footers)
         self.encode_segments(element, "footnotes", "footnote", document_tab.footnotes)
         return element
+
+    def encode_document_style(self, style: DocumentStyle) -> ElementTree.Element:
+        element = ElementTree.Element(gdocs_name("document-style"))
+        for value, name in (
+            (style.document_mode, "document-mode"),
+            (style.default_header_id, "default-header-id"),
+            (style.default_footer_id, "default-footer-id"),
+            (style.even_page_header_id, "even-page-header-id"),
+            (style.even_page_footer_id, "even-page-footer-id"),
+            (style.first_page_header_id, "first-page-header-id"),
+            (style.first_page_footer_id, "first-page-footer-id"),
+            (style.page_number_start, "page-number-start"),
+        ):
+            if value is not UNSET:
+                element.set(gdocs_name(name), str(value))
+        for value, name in (
+            (style.use_even_page_header_footer, "use-even-page-header-footer"),
+            (style.use_first_page_header_footer, "use-first-page-header-footer"),
+            (
+                style.use_custom_header_footer_margins,
+                "use-custom-header-footer-margins",
+            ),
+            (style.flip_page_orientation, "flip-page-orientation"),
+        ):
+            self.encode_boolean_attribute(element, name, value)
+        for value, name in (
+            (style.page_width, "page-width"),
+            (style.page_height, "page-height"),
+            (style.margin_top, "margin-top"),
+            (style.margin_bottom, "margin-bottom"),
+            (style.margin_left, "margin-left"),
+            (style.margin_right, "margin-right"),
+            (style.margin_header, "margin-header"),
+            (style.margin_footer, "margin-footer"),
+        ):
+            self.encode_point_attribute(element, name, value)
+        if style.background_color is not UNSET:
+            self.encode_optional_color(
+                element, "background-color", cast(Color | None, style.background_color)
+            )
+        return element
+
+    def encode_named_styles(self, styles: list[NamedStyle]) -> ElementTree.Element:
+        wrapper = ElementTree.Element(gdocs_name("named-styles"))
+        for style in styles:
+            element = ElementTree.SubElement(wrapper, gdocs_name("named-style"))
+            element.set(gdocs_name("named-style-type"), style.named_style_type)
+            self.encode_metadata_text_style(element, style.text_style)
+            if style.paragraph_style is not UNSET:
+                paragraph = self.encode_paragraph_style(
+                    cast(ParagraphStyle, style.paragraph_style),
+                    include_named_style=True,
+                )
+                if paragraph is not None:
+                    element.append(paragraph)
+        return wrapper
 
     def encode_body(self, body: Body) -> ElementTree.Element:
         element = ElementTree.Element(gdocs_name("body"))

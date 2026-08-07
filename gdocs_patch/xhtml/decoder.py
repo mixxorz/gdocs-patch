@@ -12,6 +12,7 @@ from gdocs_patch.models import (
     DateElement,
     Dimension,
     Document,
+    DocumentStyle,
     DocumentTab,
     Equation,
     FootnoteReference,
@@ -20,6 +21,7 @@ from gdocs_patch.models import (
     Link,
     ListDefinition,
     ListLevel,
+    NamedStyle,
     PageBreak,
     Paragraph,
     ParagraphBorder,
@@ -283,6 +285,8 @@ class _Decoder:
             gdocs_name("footers"),
             gdocs_name("footnotes"),
             gdocs_name("list-definitions"),
+            gdocs_name("document-style"),
+            gdocs_name("named-styles"),
         }
         for child in children:
             if child.tag not in supported:
@@ -292,6 +296,8 @@ class _Decoder:
         footers = extract_one_child(children, gdocs_name("footers"), path)
         footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
         lists = extract_one_child(children, gdocs_name("list-definitions"), path)
+        document_style = extract_one_child(children, gdocs_name("document-style"), path)
+        named_styles = extract_one_child(children, gdocs_name("named-styles"), path)
         return DocumentTab(
             body=UNSET if body is None else self.decode_body(body, f"{path}/g:body"),
             headers=(
@@ -314,7 +320,157 @@ class _Decoder:
                 if lists is None
                 else self.decode_list_definitions(lists, f"{path}/g:list-definitions")
             ),
+            document_style=(
+                UNSET
+                if document_style is None
+                else self.decode_document_style(
+                    document_style, f"{path}/g:document-style"
+                )
+            ),
+            named_styles=(
+                UNSET
+                if named_styles is None
+                else self.decode_named_styles(named_styles, f"{path}/g:named-styles")
+            ),
         )
+
+    def decode_document_style(
+        self, element: ElementTree.Element, path: str
+    ) -> DocumentStyle:
+        attribute_names = {
+            "document-mode",
+            "page-width",
+            "page-height",
+            "margin-top",
+            "margin-bottom",
+            "margin-left",
+            "margin-right",
+            "margin-header",
+            "margin-footer",
+            "default-header-id",
+            "default-footer-id",
+            "even-page-header-id",
+            "even-page-footer-id",
+            "first-page-header-id",
+            "first-page-footer-id",
+            "use-even-page-header-footer",
+            "use-first-page-header-footer",
+            "use-custom-header-footer-margins",
+            "flip-page-orientation",
+            "page-number-start",
+        }
+        validate_attributes(
+            element, {gdocs_name(name) for name in attribute_names}, path
+        )
+        validate_whitespace(element, path)
+        children = list(element)
+        background = extract_one_child(children, gdocs_name("background-color"), path)
+        for child in children:
+            if child is not background:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        return DocumentStyle(
+            background_color=(
+                UNSET
+                if background is None
+                else self.decode_optional_color(
+                    background, f"{path}/g:background-color"
+                )
+            ),
+            document_mode=self.optional_allowed(
+                element,
+                "document-mode",
+                {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"},
+                path,
+            ),  # type: ignore[arg-type]
+            page_width=self.optional_point(element, "page-width", path),
+            page_height=self.optional_point(element, "page-height", path),
+            margin_top=self.optional_point(element, "margin-top", path),
+            margin_bottom=self.optional_point(element, "margin-bottom", path),
+            margin_left=self.optional_point(element, "margin-left", path),
+            margin_right=self.optional_point(element, "margin-right", path),
+            margin_header=self.optional_point(element, "margin-header", path),
+            margin_footer=self.optional_point(element, "margin-footer", path),
+            default_header_id=optional_string(element, gdocs_name("default-header-id")),
+            default_footer_id=optional_string(element, gdocs_name("default-footer-id")),
+            even_page_header_id=optional_string(
+                element, gdocs_name("even-page-header-id")
+            ),
+            even_page_footer_id=optional_string(
+                element, gdocs_name("even-page-footer-id")
+            ),
+            first_page_header_id=optional_string(
+                element, gdocs_name("first-page-header-id")
+            ),
+            first_page_footer_id=optional_string(
+                element, gdocs_name("first-page-footer-id")
+            ),
+            use_even_page_header_footer=self.optional_boolean(
+                element, "use-even-page-header-footer", path
+            ),
+            use_first_page_header_footer=self.optional_boolean(
+                element, "use-first-page-header-footer", path
+            ),
+            use_custom_header_footer_margins=self.optional_boolean(
+                element, "use-custom-header-footer-margins", path
+            ),
+            flip_page_orientation=self.optional_boolean(
+                element, "flip-page-orientation", path
+            ),
+            page_number_start=self.optional_integer(element, "page-number-start", path),
+        )
+
+    def decode_named_styles(
+        self, element: ElementTree.Element, path: str
+    ) -> list[NamedStyle]:
+        validate_attributes(element, set(), path)
+        validate_whitespace(element, path)
+        result: list[NamedStyle] = []
+        for index, child in enumerate(element):
+            child_path = f"{path}/g:named-style[{index + 1}]"
+            if child.tag != gdocs_name("named-style"):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+            validate_attributes(
+                child,
+                {gdocs_name("named-style-type")} | text_style_attributes(),
+                child_path,
+            )
+            validate_whitespace(child, child_path)
+            children = list(child)
+            anchor = extract_one_child(children, xhtml_name("a"), child_path)
+            paragraph = extract_one_child(
+                children, gdocs_name("paragraph-style"), child_path
+            )
+            for metadata in children:
+                if metadata not in (anchor, paragraph):
+                    parse_error(
+                        child_path,
+                        f"unknown child element {display_name(metadata.tag)}",
+                    )
+            link: Link | UnsetType = UNSET
+            if anchor is not None:
+                anchor_path = f"{child_path}/a"
+                validate_whitespace(anchor, anchor_path)
+                _validate_no_children(anchor, anchor_path)
+                link = decode_link(anchor, anchor_path)
+            named_style_type = parse_allowed(
+                required_string(child, gdocs_name("named-style-type"), child_path),
+                _NAMED_STYLE_TYPES,
+                f"{child_path}/@g:named-style-type",
+            )
+            result.append(
+                NamedStyle(
+                    named_style_type=named_style_type,  # type: ignore[arg-type]
+                    text_style=decode_text_style(child, link, child_path),
+                    paragraph_style=(
+                        UNSET
+                        if paragraph is None
+                        else self.decode_paragraph_style(
+                            paragraph, f"{child_path}/g:paragraph-style"
+                        )
+                    ),
+                )
+            )
+        return result
 
     def decode_list_definitions(
         self, element: ElementTree.Element, path: str
