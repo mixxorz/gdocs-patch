@@ -468,6 +468,7 @@ class _Decoder:
                 metadata,
                 f"{path}/g:paragraph-style",
                 owning_named_style=named_style_type,
+                paragraph_owns_named_style=True,
             )
         elif named_style_type is not UNSET:
             decoded_style = ParagraphStyle(named_style_type=named_style_type)  # type: ignore[arg-type]
@@ -519,6 +520,7 @@ class _Decoder:
         path: str,
         *,
         owning_named_style: str | UnsetType = UNSET,
+        paragraph_owns_named_style: bool = False,
     ) -> ParagraphStyle:
         attribute_names = {
             "named-style-type",
@@ -542,7 +544,7 @@ class _Decoder:
         )
         validate_whitespace(element, path)
         raw_named_style = element.get(gdocs_name("named-style-type"))
-        if owning_named_style is not UNSET and raw_named_style is not None:
+        if paragraph_owns_named_style and raw_named_style is not None:
             parse_error(path, "named style type is owned by the paragraph element")
         named_style = owning_named_style
         if raw_named_style is not None:
@@ -658,11 +660,14 @@ class _Decoder:
             return None
         if not all(value is not None for value in components):
             parse_error(path, "opaque color requires red, green, and blue")
-        return Color(
-            red=parse_float(cast(str, components[0]), f"{path}/@g:red"),
-            green=parse_float(cast(str, components[1]), f"{path}/@g:green"),
-            blue=parse_float(cast(str, components[2]), f"{path}/@g:blue"),
-        )
+        try:
+            return Color(
+                red=parse_float(cast(str, components[0]), f"{path}/@g:red"),
+                green=parse_float(cast(str, components[1]), f"{path}/@g:green"),
+                blue=parse_float(cast(str, components[2]), f"{path}/@g:blue"),
+            )
+        except ValueError as error:
+            parse_error(path, str(error))
 
     def decode_tab_stops(
         self, element: ElementTree.Element, path: str

@@ -102,6 +102,15 @@ def test_round_trips_complete_section_style() -> None:
     assert decoded.column_separator_style == "BETWEEN_EACH_COLUMN"
     assert decoded.content_direction == "LEFT_TO_RIGHT"
     assert decoded.section_type == "NEXT_PAGE"
+    assert decoded.default_header_id == "header-default"
+    assert decoded.default_footer_id == "footer-default"
+    assert decoded.even_page_header_id == "header-even"
+    assert decoded.even_page_footer_id == "footer-even"
+    assert decoded.first_page_header_id == "header-first"
+    assert decoded.first_page_footer_id == "footer-first"
+    assert decoded.use_first_page_header_footer is True
+    assert decoded.flip_page_orientation is False
+    assert decoded.page_number_start == 3
     assert isinstance(decoded.columns, list)
     assert decoded.columns == [
         SectionColumn(
