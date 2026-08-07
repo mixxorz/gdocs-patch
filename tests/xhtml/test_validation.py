@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import pytest
 
 from gdocs_patch.models import (
@@ -21,6 +23,7 @@ from gdocs_patch.models import (
     UrlLink,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
+from gdocs_patch.xhtml import decoder as decoder_module
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
 
@@ -146,6 +149,62 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
+@pytest.mark.parametrize("nesting_level", [-1, -99])
+def test_rejects_negative_tab_nesting_level(nesting_level: int) -> None:
+    xhtml = document().replace(
+        'g:index="0"', f'g:index="0" g:nesting-level="{nesting_level}"'
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/g:tab[1]/@g:nesting-level" in str(error.value)
+    assert "non-negative" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("xhtml", "expected_attribute"),
+    [
+        (
+            document()
+            .replace('g:index="0"', 'g:index="invalid"')
+            .replace("<g:document-tab>", "<g:document-tab><g:unknown />"),
+            "@g:index",
+        ),
+        (
+            document(
+                '<p><g:paragraph-style g:keep-with-next="invalid">'
+                "<g:unknown /></g:paragraph-style></p>"
+            ),
+            "@g:keep-with-next",
+        ),
+        (
+            document(
+                "",
+                metadata='<g:document-style g:page-number-start="invalid">'
+                "<g:unknown /></g:document-style>",
+            ),
+            "@g:page-number-start",
+        ),
+        (
+            document(
+                "",
+                metadata='<g:named-styles><g:named-style g:type="INVALID">'
+                "<g:unknown /></g:named-style></g:named-styles>",
+            ),
+            "@g:type",
+        ),
+    ],
+)
+def test_parent_scalar_error_precedes_invalid_descendant(
+    xhtml: str, expected_attribute: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert expected_attribute in str(error.value)
+
+
 def test_malformed_xml_preserves_element_tree_cause() -> None:
     with pytest.raises(XHTMLParseError) as error:
         deserialize_document(DECLARATION + "<html>")
@@ -176,6 +235,54 @@ def test_structured_color_constructor_error_preserves_cause() -> None:
         deserialize_document(xhtml)
 
     assert "/g:shading-color" in str(error.value)
+    assert isinstance(error.value.__cause__, ValueError)
+
+
+@pytest.mark.parametrize(
+    ("model_name", "xhtml", "path"),
+    [
+        (
+            "ListLevel",
+            document(
+                "",
+                metadata='<g:list-definitions><g:list-definition g:list-id="id">'
+                '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" />'
+                "</g:list-definition></g:list-definitions>",
+            ),
+            "/g:list-level[1]",
+        ),
+        (
+            "TableColumn",
+            document(
+                '<table><colgroup><col g:width-type="EVENLY_DISTRIBUTED" />'
+                "</colgroup><tbody /></table>"
+            ),
+            "/col[1]",
+        ),
+        (
+            "TableCellStyle",
+            document(
+                '<table><tbody><tr><td rowspan="2"><g:cell-style />'
+                "</td></tr></tbody></table>"
+            ),
+            "/td[1]",
+        ),
+    ],
+)
+def test_invariant_model_constructor_error_is_contextual_and_preserves_cause(
+    monkeypatch: pytest.MonkeyPatch, model_name: str, xhtml: str, path: str
+) -> None:
+    def reject_construction(**_kwargs: object) -> object:
+        raise ValueError("model invariant failed")
+
+    replacement: Callable[..., object] = reject_construction
+    monkeypatch.setattr(decoder_module, model_name, replacement)
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert path in str(error.value)
+    assert "model invariant failed" in str(error.value)
     assert isinstance(error.value.__cause__, ValueError)
 
 

@@ -1,4 +1,4 @@
-from collections.abc import Collection, Iterable
+from collections.abc import Callable, Collection, Iterable
 from typing import Never, cast
 from xml.etree import ElementTree
 
@@ -22,6 +22,13 @@ XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>'
 
 class XHTMLParseError(ValueError):
     pass
+
+
+def construct_model[ModelT](path: str, factory: Callable[[], ModelT]) -> ModelT:
+    try:
+        return factory()
+    except ValueError as error:
+        parse_error(path, str(error), cause=error)
 
 
 def xhtml_name(local_name: str) -> str:

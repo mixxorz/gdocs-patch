@@ -51,6 +51,7 @@ from gdocs_patch.models import (
 from .base import (
     XML_DECLARATION,
     XHTMLParseError,
+    construct_model,
     decode_link,
     decode_text_style,
     display_name,
@@ -177,14 +178,9 @@ class _Decoder:
             },
             path,
         )
-        validate_whitespace(root, path)
-        children = list(root)
-        body = extract_one_child(children, xhtml_name("body"), path, required=True)
-        assert body is not None
-        for child in children:
-            if child is not body:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-
+        document_id = required_string(root, gdocs_name("document-id"), path)
+        title = required_string(root, gdocs_name("title"), path)
+        revision_id = optional_string(root, gdocs_name("revision-id"))
         raw_mode = root.get(gdocs_name("suggestions-view-mode"))
         mode: SuggestionsViewMode | UnsetType
         if raw_mode is None:
@@ -198,10 +194,19 @@ class _Decoder:
                     f"{path}/@g:suggestions-view-mode",
                 ),
             )
+
+        validate_whitespace(root, path)
+        children = list(root)
+        body = extract_one_child(children, xhtml_name("body"), path, required=True)
+        assert body is not None
+        for child in children:
+            if child is not body:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+
         return Document(
-            document_id=required_string(root, gdocs_name("document-id"), path),
-            title=required_string(root, gdocs_name("title"), path),
-            revision_id=optional_string(root, gdocs_name("revision-id")),
+            document_id=document_id,
+            title=title,
+            revision_id=revision_id,
             suggestions_view_mode=mode,
             tabs=self.decode_tabs(body, f"{path}/body"),
         )
@@ -229,6 +234,25 @@ class _Decoder:
             },
             path,
         )
+        tab_id = required_string(element, gdocs_name("tab-id"), path)
+        title = required_string(element, gdocs_name("title"), path)
+        index = parse_integer(
+            required_string(element, gdocs_name("index"), path),
+            f"{path}/@g:index",
+        )
+        raw_level = element.get(gdocs_name("nesting-level"))
+        nesting_level = (
+            0
+            if raw_level is None
+            else parse_integer(raw_level, f"{path}/@g:nesting-level")
+        )
+        if nesting_level < 0:
+            parse_error(
+                f"{path}/@g:nesting-level", "nesting level must be non-negative"
+            )
+        parent_tab_id = optional_string(element, gdocs_name("parent-tab-id"))
+        icon_emoji = optional_string(element, gdocs_name("icon-emoji"))
+
         validate_whitespace(element, path)
         children = list(element)
         document_tab = extract_one_child(children, gdocs_name("document-tab"), path)
@@ -250,21 +274,13 @@ class _Decoder:
                 decoded_children.append(
                     self.decode_tab(child, f"{child_path}/g:tab[{index + 1}]")
                 )
-        raw_level = element.get(gdocs_name("nesting-level"))
         return Tab(
-            tab_id=required_string(element, gdocs_name("tab-id"), path),
-            title=required_string(element, gdocs_name("title"), path),
-            index=parse_integer(
-                required_string(element, gdocs_name("index"), path),
-                f"{path}/@g:index",
-            ),
-            nesting_level=(
-                0
-                if raw_level is None
-                else parse_integer(raw_level, f"{path}/@g:nesting-level")
-            ),
-            parent_tab_id=optional_string(element, gdocs_name("parent-tab-id")),
-            icon_emoji=optional_string(element, gdocs_name("icon-emoji")),
+            tab_id=tab_id,
+            title=title,
+            index=index,
+            nesting_level=nesting_level,
+            parent_tab_id=parent_tab_id,
+            icon_emoji=icon_emoji,
             content=(
                 UNSET
                 if document_tab is None
@@ -362,6 +378,42 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name(name) for name in attribute_names}, path
         )
+        # Parse every scalar before inspecting metadata descendants.
+        self.optional_allowed(
+            element,
+            "document-mode",
+            {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"},
+            path,
+        )
+        for name in (
+            "page-width",
+            "page-height",
+            "margin-top",
+            "margin-bottom",
+            "margin-left",
+            "margin-right",
+            "margin-header",
+            "margin-footer",
+        ):
+            self.optional_point(element, name, path)
+        for name in (
+            "default-header-id",
+            "default-footer-id",
+            "even-page-header-id",
+            "even-page-footer-id",
+            "first-page-header-id",
+            "first-page-footer-id",
+        ):
+            optional_string(element, gdocs_name(name))
+        for name in (
+            "use-even-page-header-footer",
+            "use-first-page-header-footer",
+            "use-custom-header-footer-margins",
+            "flip-page-orientation",
+        ):
+            self.optional_boolean(element, name, path)
+        self.optional_integer(element, "page-number-start", path)
+
         validate_whitespace(element, path)
         children = list(element)
         background = extract_one_child(children, gdocs_name("background-color"), path)
@@ -434,6 +486,13 @@ class _Decoder:
                 {gdocs_name("type")} | text_style_attributes(),
                 child_path,
             )
+            named_style_type = parse_allowed(
+                required_string(child, gdocs_name("type"), child_path),
+                _NAMED_STYLE_TYPES,
+                f"{child_path}/@g:type",
+            )
+            text_style = decode_text_style(child, UNSET, child_path)
+
             validate_whitespace(child, child_path)
             children = list(child)
             anchor = extract_one_child(children, xhtml_name("a"), child_path)
@@ -452,15 +511,15 @@ class _Decoder:
                 validate_whitespace(anchor, anchor_path)
                 _validate_no_children(anchor, anchor_path)
                 link = decode_link(anchor, anchor_path)
-            named_style_type = parse_allowed(
-                required_string(child, gdocs_name("type"), child_path),
-                _NAMED_STYLE_TYPES,
-                f"{child_path}/@g:type",
-            )
+            if link is not UNSET:
+                if text_style is UNSET:
+                    text_style = TextStyle(link=link)
+                else:
+                    cast(TextStyle, text_style).link = link
             result.append(
                 NamedStyle(
                     named_style_type=named_style_type,  # type: ignore[arg-type]
-                    text_style=decode_text_style(child, link, child_path),
+                    text_style=text_style,
                     paragraph_style=(
                         UNSET
                         if paragraph is None
@@ -523,21 +582,30 @@ class _Decoder:
             glyph_type = parse_allowed(
                 glyph_type, _GLYPH_TYPES, f"{path}/@g:glyph-type"
             )
-        return ListLevel(
-            glyph_format=required_string(element, gdocs_name("glyph-format"), path),
-            glyph_type=UNSET if glyph_type is None else glyph_type,  # type: ignore[arg-type]
-            glyph_symbol=UNSET if glyph_symbol is None else glyph_symbol,
-            alignment=self.decode_default_allowed(
-                element,
-                "alignment",
-                _BULLET_ALIGNMENTS,
-                "BULLET_ALIGNMENT_UNSPECIFIED",
-                path,
-            ),  # type: ignore[arg-type]
-            indent_first_line=self.optional_point(element, "indent-first-line", path),
-            indent_start=self.optional_point(element, "indent-start", path),
-            start_number=self.decode_default_integer(element, "start-number", 0, path),
-            text_style=self.decode_metadata_text_style(element, path),
+        glyph_format = required_string(element, gdocs_name("glyph-format"), path)
+        alignment = self.decode_default_allowed(
+            element,
+            "alignment",
+            _BULLET_ALIGNMENTS,
+            "BULLET_ALIGNMENT_UNSPECIFIED",
+            path,
+        )
+        indent_first_line = self.optional_point(element, "indent-first-line", path)
+        indent_start = self.optional_point(element, "indent-start", path)
+        start_number = self.decode_default_integer(element, "start-number", 0, path)
+        text_style = self.decode_metadata_text_style(element, path)
+        return construct_model(
+            path,
+            lambda: ListLevel(
+                glyph_format=glyph_format,
+                glyph_type=UNSET if glyph_type is None else glyph_type,  # type: ignore[arg-type]
+                glyph_symbol=UNSET if glyph_symbol is None else glyph_symbol,
+                alignment=alignment,  # type: ignore[arg-type]
+                indent_first_line=indent_first_line,
+                indent_start=indent_start,
+                start_number=start_number,
+                text_style=text_style,
+            ),
         )
 
     def decode_default_allowed(
@@ -562,6 +630,7 @@ class _Decoder:
     def decode_metadata_text_style(
         self, element: ElementTree.Element, path: str
     ) -> TextStyle | UnsetType:
+        text_style = decode_text_style(element, UNSET, path)
         validate_whitespace(element, path)
         children = list(element)
         anchor = extract_one_child(children, xhtml_name("a"), path)
@@ -574,7 +643,11 @@ class _Decoder:
             validate_whitespace(anchor, anchor_path)
             _validate_no_children(anchor, anchor_path)
             link = decode_link(anchor, anchor_path)
-        return decode_text_style(element, link, path)
+        if link is not UNSET:
+            if text_style is UNSET:
+                return TextStyle(link=link)
+            cast(TextStyle, text_style).link = link
+        return text_style
 
     def decode_body(self, element: ElementTree.Element, path: str) -> Body:
         validate_attributes(element, set(), path)
@@ -630,6 +703,41 @@ class _Decoder:
             "margin-footer",
         }
         validate_attributes(element, {gdocs_name(name) for name in scalar_names}, path)
+        self.optional_allowed(
+            element,
+            "column-separator-style",
+            {"COLUMN_SEPARATOR_STYLE_UNSPECIFIED", "NONE", "BETWEEN_EACH_COLUMN"},
+            path,
+        )
+        self.optional_allowed(element, "content-direction", _DIRECTIONS, path)
+        self.optional_allowed(
+            element,
+            "section-type",
+            {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"},
+            path,
+        )
+        for name in (
+            "default-header-id",
+            "default-footer-id",
+            "even-page-header-id",
+            "even-page-footer-id",
+            "first-page-header-id",
+            "first-page-footer-id",
+        ):
+            optional_string(element, gdocs_name(name))
+        for name in ("use-first-page-header-footer", "flip-page-orientation"):
+            self.optional_boolean(element, name, path)
+        self.optional_integer(element, "page-number-start", path)
+        for name in (
+            "margin-top",
+            "margin-bottom",
+            "margin-left",
+            "margin-right",
+            "margin-header",
+            "margin-footer",
+        ):
+            self.optional_point(element, name, path)
+
         validate_whitespace(element, path)
         children = list(element)
         columns_element = extract_one_child(children, gdocs_name("columns"), path)
@@ -651,16 +759,11 @@ class _Decoder:
                 validate_attributes(
                     child, {gdocs_name("width"), gdocs_name("padding-end")}, child_path
                 )
+                width = self.required_point(child, "width", child_path)
+                padding_end = self.required_point(child, "padding-end", child_path)
                 validate_whitespace(child, child_path)
                 _validate_no_children(child, child_path)
-                columns.append(
-                    SectionColumn(
-                        width=self.required_point(child, "width", child_path),
-                        padding_end=self.required_point(
-                            child, "padding-end", child_path
-                        ),
-                    )
-                )
+                columns.append(SectionColumn(width=width, padding_end=padding_end))
         return SectionStyle(
             columns=columns,
             column_separator_style=self.optional_allowed(
@@ -946,7 +1049,12 @@ class _Decoder:
                     unit="PT",
                 )
             )
-            result.append(TableColumn(width_type=width_type, width=width))  # type: ignore[arg-type]
+            result.append(
+                construct_model(
+                    child_path,
+                    lambda: TableColumn(width_type=width_type, width=width),  # type: ignore[arg-type]
+                )
+            )
         return result
 
     def decode_table_row(self, element: ElementTree.Element, path: str) -> TableRow:
@@ -960,6 +1068,10 @@ class _Decoder:
             },
             path,
         )
+        self.optional_point(element, "min-height", path)
+        self.optional_boolean(element, "prevent-overflow", path)
+        self.optional_boolean(element, "is-header", path)
+        optional_string(element, gdocs_name("row-key"))
         validate_whitespace(element, path)
         cells: list[TableCell] = []
         for index, child in enumerate(element):
@@ -997,10 +1109,13 @@ class _Decoder:
         )
         style: TableCellStyle | UnsetType = UNSET
         if has_style:
-            style = TableCellStyle(
-                row_span=row_span,
-                column_span=column_span,
-                **style_fields,  # type: ignore[arg-type]
+            style = construct_model(
+                path,
+                lambda: TableCellStyle(
+                    row_span=row_span,
+                    column_span=column_span,
+                    **style_fields,  # type: ignore[arg-type]
+                ),
             )
         return TableCell(
             content=self.decode_structural_sequence(
@@ -1034,6 +1149,20 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name(name) for name in attribute_names}, path
         )
+        self.optional_allowed(
+            element,
+            "content-alignment",
+            {
+                "CONTENT_ALIGNMENT_UNSPECIFIED",
+                "CONTENT_ALIGNMENT_UNSUPPORTED",
+                "TOP",
+                "MIDDLE",
+                "BOTTOM",
+            },
+            path,
+        )
+        for name in ("padding-left", "padding-right", "padding-top", "padding-bottom"):
+            self.optional_point(element, name, path)
         validate_whitespace(element, path)
         children = list(element)
         background = extract_one_child(children, gdocs_name("background-color"), path)
@@ -1078,6 +1207,12 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name("dash-style"), gdocs_name("width")}, path
         )
+        width = self.required_point(element, "width", path)
+        dash_style = parse_allowed(
+            required_string(element, gdocs_name("dash-style"), path),
+            _DASH_STYLES,
+            f"{path}/@g:dash-style",
+        )
         validate_whitespace(element, path)
         children = list(element)
         color = extract_one_child(children, gdocs_name("color"), path, required=True)
@@ -1087,12 +1222,8 @@ class _Decoder:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
         return TableCellBorder(
             color=self.decode_optional_color(color, f"{path}/g:color"),
-            width=self.required_point(element, "width", path),
-            dash_style=parse_allowed(
-                required_string(element, gdocs_name("dash-style"), path),
-                _DASH_STYLES,
-                f"{path}/@g:dash-style",
-            ),  # type: ignore[arg-type]
+            width=width,
+            dash_style=dash_style,  # type: ignore[arg-type]
         )
 
     def decode_paragraph(self, element: ElementTree.Element, path: str) -> Paragraph:
@@ -1318,7 +1449,6 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name(name) for name in attribute_names}, path
         )
-        validate_whitespace(element, path)
         raw_named_style = element.get(gdocs_name("named-style-type"))
         if paragraph_owns_named_style and raw_named_style is not None:
             parse_error(path, "named style type is owned by the paragraph element")
@@ -1327,6 +1457,30 @@ class _Decoder:
             named_style = parse_allowed(
                 raw_named_style, _NAMED_STYLE_TYPES, f"{path}/@g:named-style-type"
             )
+        self.optional_allowed(element, "alignment", _ALIGNMENTS, path)
+        self.optional_allowed(element, "direction", _DIRECTIONS, path)
+        line_spacing_raw = element.get(gdocs_name("line-spacing"))
+        if line_spacing_raw is not None:
+            parse_float(line_spacing_raw, f"{path}/@g:line-spacing")
+        self.optional_allowed(element, "spacing-mode", _SPACING_MODES, path)
+        for name in (
+            "space-above",
+            "space-below",
+            "indent-first-line",
+            "indent-start",
+            "indent-end",
+        ):
+            self.optional_point(element, name, path)
+        for name in (
+            "keep-lines-together",
+            "keep-with-next",
+            "avoid-widow-and-orphan",
+            "page-break-before",
+        ):
+            self.optional_boolean(element, name, path)
+        optional_string(element, gdocs_name("heading-id"))
+
+        validate_whitespace(element, path)
         border_names = (
             "border-between",
             "border-top",
@@ -1355,7 +1509,6 @@ class _Decoder:
         tab_stops: list[TabStop] | UnsetType = UNSET
         if tab_stops_element is not None:
             tab_stops = self.decode_tab_stops(tab_stops_element, f"{path}/g:tab-stops")
-        line_spacing_raw = element.get(gdocs_name("line-spacing"))
         return ParagraphStyle(
             named_style_type=named_style,  # type: ignore[arg-type]
             alignment=self.optional_allowed(element, "alignment", _ALIGNMENTS, path),  # type: ignore[arg-type]
@@ -1399,6 +1552,13 @@ class _Decoder:
             {gdocs_name("dash-style"), gdocs_name("width"), gdocs_name("padding")},
             path,
         )
+        width = self.required_point(element, "width", path)
+        padding = self.required_point(element, "padding", path)
+        dash_style = parse_allowed(
+            required_string(element, gdocs_name("dash-style"), path),
+            _DASH_STYLES,
+            f"{path}/@g:dash-style",
+        )
         validate_whitespace(element, path)
         children = list(element)
         color = extract_one_child(children, gdocs_name("color"), path, required=True)
@@ -1408,13 +1568,9 @@ class _Decoder:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
         return ParagraphBorder(
             color=self.decode_optional_color(color, f"{path}/g:color"),
-            width=self.required_point(element, "width", path),
-            padding=self.required_point(element, "padding", path),
-            dash_style=parse_allowed(
-                required_string(element, gdocs_name("dash-style"), path),
-                _DASH_STYLES,
-                f"{path}/@g:dash-style",
-            ),  # type: ignore[arg-type]
+            width=width,
+            padding=padding,
+            dash_style=dash_style,  # type: ignore[arg-type]
         )
 
     def decode_optional_color(
