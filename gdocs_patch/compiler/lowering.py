@@ -335,6 +335,8 @@ def lower_edit_script(
                     }
                 )
             case CreateParagraphBullets():
+                # Docs derives nesting from leading tabs, then removes those
+                # tabs when it creates the bullets.
                 nesting_level = edit.bullet_preset.nesting_level
                 if nesting_level > 0:
                     requests.append(
@@ -370,6 +372,8 @@ def lower_edit_script(
                     }
                 )
             case InsertTable():
+                # Docs inserts a newline before a new table, so its request
+                # location is one code unit before the table's final index.
                 requests.append(
                     {
                         "insertTable": {

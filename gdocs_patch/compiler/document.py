@@ -192,6 +192,8 @@ def compile_document(
                 "segment creation and deletion are not supported"
             )
 
+        # A Docs body starts with a section break at index 0. Normalization
+        # omits that fixed marker, so body content starts at provider index 1.
         body_script = generate_edit_script(
             source=source_tab.body,
             target=target_tab.body,
