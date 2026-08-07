@@ -1,6 +1,7 @@
 import pytest
 
 from gdocs_patch.models import (
+    UNSET,
     Body,
     BookmarkLink,
     Color,
@@ -8,10 +9,12 @@ from gdocs_patch.models import (
     Document,
     DocumentTab,
     Paragraph,
+    ParagraphBorder,
     ParagraphStyle,
     SectionBreak,
     SectionStyle,
     Tab,
+    TabStop,
     TextRun,
     TextStyle,
 )
@@ -42,6 +45,178 @@ def document_with_runs(*runs: TextRun) -> Document:
             )
         ],
     )
+
+
+def paragraph_from(document: Document) -> Paragraph:
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    paragraph = content.body.content[1]
+    assert isinstance(paragraph, Paragraph)
+    return paragraph
+
+
+def test_round_trips_complete_paragraph_metadata() -> None:
+    opaque_border = ParagraphBorder(
+        color=Color(red=0.1, green=0.2, blue=0.3),
+        width=Dimension(magnitude=1),
+        padding=Dimension(magnitude=2),
+        dash_style="SOLID",
+    )
+    transparent_border = ParagraphBorder(
+        color=None,
+        width=Dimension(magnitude=3),
+        padding=Dimension(magnitude=4),
+        dash_style="DASH",
+    )
+    style = ParagraphStyle(
+        named_style_type="HEADING_2",
+        alignment="CENTER",
+        direction="RIGHT_TO_LEFT",
+        line_spacing=120,
+        spacing_mode="NEVER_COLLAPSE",
+        space_above=Dimension(magnitude=6),
+        space_below=Dimension(magnitude=8),
+        indent_first_line=Dimension(magnitude=18),
+        indent_start=Dimension(magnitude=36),
+        indent_end=Dimension(magnitude=12),
+        keep_lines_together=True,
+        keep_with_next=False,
+        avoid_widow_and_orphan=True,
+        page_break_before=False,
+        heading_id="heading-2",
+        border_between=opaque_border,
+        border_top=transparent_border,
+        border_bottom=opaque_border,
+        border_left=transparent_border,
+        border_right=opaque_border,
+        shading_color=None,
+        tab_stops=[
+            TabStop(offset=Dimension(magnitude=36), alignment="START"),
+            TabStop(offset=Dimension(magnitude=72), alignment="END"),
+        ],
+    )
+    document = document_with_runs(TextRun(content="First"), TextRun(content="Second"))
+    paragraph = paragraph_from(document)
+    paragraph.style = style
+    paragraph.positioned_object_ids = ["object-1", "object-2"]
+
+    xhtml = serialize_document(document)
+
+    assert "<h2>" in xhtml
+    assert "g:named-style-type=" not in xhtml
+    for fragment in (
+        'g:space-above="6"',
+        'g:space-below="8"',
+        'g:indent-first-line="18"',
+        'g:indent-start="36"',
+        'g:indent-end="12"',
+        '<g:border-between g:dash-style="SOLID" g:width="1" g:padding="2">',
+        '<g:color g:red="0.1" g:green="0.2" g:blue="0.3" />',
+        '<g:border-top g:dash-style="DASH" g:width="3" g:padding="4">',
+        '<g:color g:transparent="true" />',
+        '<g:shading-color g:transparent="true" />',
+        '<g:tab-stop g:alignment="START" g:offset="36" />',
+        '<g:tab-stop g:alignment="END" g:offset="72" />',
+        '<g:positioned-object g:id="object-1" />',
+        '<g:positioned-object g:id="object-2" />',
+    ):
+        assert fragment in xhtml
+
+    expected = style
+    expected.space_above = Dimension(magnitude=6, unit="PT")
+    expected.space_below = Dimension(magnitude=8, unit="PT")
+    expected.indent_first_line = Dimension(magnitude=18, unit="PT")
+    expected.indent_start = Dimension(magnitude=36, unit="PT")
+    expected.indent_end = Dimension(magnitude=12, unit="PT")
+    for border in (
+        expected.border_between,
+        expected.border_top,
+        expected.border_bottom,
+        expected.border_left,
+        expected.border_right,
+    ):
+        assert isinstance(border, ParagraphBorder)
+        border.width = Dimension(magnitude=border.width.magnitude, unit="PT")
+        border.padding = Dimension(magnitude=border.padding.magnitude, unit="PT")
+    assert isinstance(expected.tab_stops, list)
+    for tab_stop in expected.tab_stops:
+        tab_stop.offset = Dimension(magnitude=tab_stop.offset.magnitude, unit="PT")
+    decoded_paragraph = paragraph_from(deserialize_document(xhtml))
+    assert decoded_paragraph.style == expected
+    assert decoded_paragraph.positioned_object_ids == ["object-1", "object-2"]
+    assert decoded_paragraph.elements == [
+        TextRun(content="First"),
+        TextRun(content="Second"),
+    ]
+
+    moved = xhtml
+    # Move both metadata blocks between the two spans; metadata position is permissive.
+    start = moved.index("<g:paragraph-style")
+    style_end = moved.index("</g:paragraph-style>", start) + len("</g:paragraph-style>")
+    style_xml = moved[start:style_end]
+    moved = moved[:start] + moved[style_end:]
+    start = moved.index("<g:positioned-objects")
+    objects_end = moved.index("</g:positioned-objects>", start) + len(
+        "</g:positioned-objects>"
+    )
+    objects_xml = moved[start:objects_end]
+    moved = moved[:start] + moved[objects_end:]
+    insertion = moved.index("</span>", moved.index("<h2>")) + len("</span>")
+    moved = moved[:insertion] + style_xml + objects_xml + moved[insertion:]
+    assert paragraph_from(deserialize_document(moved)).elements == [
+        TextRun(content="First"),
+        TextRun(content="Second"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("named_style_type", "tag"),
+    [
+        (UNSET, "g:paragraph"),
+        ("NAMED_STYLE_TYPE_UNSPECIFIED", "g:named-style-unspecified"),
+        ("NORMAL_TEXT", "p"),
+        ("TITLE", "g:title"),
+        ("SUBTITLE", "g:subtitle"),
+        ("HEADING_1", "h1"),
+        ("HEADING_2", "h2"),
+        ("HEADING_3", "h3"),
+        ("HEADING_4", "h4"),
+        ("HEADING_5", "h5"),
+        ("HEADING_6", "h6"),
+    ],
+)
+def test_paragraph_named_style_uses_canonical_tag(
+    named_style_type: object, tag: str
+) -> None:
+    document = document_with_runs(TextRun(content="Tagged"))
+    paragraph = paragraph_from(document)
+    paragraph.style = (
+        UNSET
+        if named_style_type is UNSET
+        else ParagraphStyle(named_style_type=named_style_type)  # type: ignore[arg-type]
+    )
+
+    xhtml = serialize_document(document)
+
+    assert f"<{tag}>" in xhtml
+    assert paragraph_from(deserialize_document(xhtml)).style == paragraph.style
+
+
+def test_preserves_empty_paragraph_metadata_collections() -> None:
+    document = document_with_runs(TextRun(content="Empty"))
+    paragraph = paragraph_from(document)
+    paragraph.style = ParagraphStyle(tab_stops=[])
+    paragraph.positioned_object_ids = []
+
+    xhtml = serialize_document(document)
+
+    assert "<g:tab-stops />" in xhtml
+    assert "<g:positioned-objects />" in xhtml
+    decoded = paragraph_from(deserialize_document(xhtml))
+    assert isinstance(decoded.style, ParagraphStyle)
+    assert decoded.style.tab_stops == []
+    assert decoded.positioned_object_ids == []
 
 
 def test_round_trips_text_style_link_colors_and_newlines() -> None:

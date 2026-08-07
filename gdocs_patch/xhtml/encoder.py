@@ -4,15 +4,19 @@ from xml.etree import ElementTree
 from gdocs_patch.models import (
     UNSET,
     Body,
+    Color,
+    Dimension,
     Document,
     DocumentTab,
     Paragraph,
+    ParagraphBorder,
     ParagraphStyle,
     SectionBreak,
-    SectionStyle,
+    SectionColumn,
     Segment,
     StructuralElement,
     Tab,
+    TabStop,
     TextRun,
     UnsetType,
 )
@@ -23,9 +27,18 @@ from .base import (
     XML_DECLARATION,
     _indent_xml,  # pyright: ignore[reportPrivateUsage]
     encode_text_style,
+    format_number,
     gdocs_name,
     xhtml_name,
 )
+
+_PARAGRAPH_TAGS = {
+    "NAMED_STYLE_TYPE_UNSPECIFIED": gdocs_name("named-style-unspecified"),
+    "NORMAL_TEXT": xhtml_name("p"),
+    "TITLE": gdocs_name("title"),
+    "SUBTITLE": gdocs_name("subtitle"),
+    **{f"HEADING_{level}": xhtml_name(f"h{level}") for level in range(1, 7)},
+}
 
 
 class _Encoder:
@@ -98,9 +111,72 @@ class _Encoder:
     def encode_section_style(
         self, section: ElementTree.Element, section_break: SectionBreak
     ) -> None:
-        if section_break.style != SectionStyle():
-            raise ValueError("SectionStyle fields are not supported yet")
-        ElementTree.SubElement(section, gdocs_name("section-style"))
+        style = section_break.style
+        element = ElementTree.SubElement(section, gdocs_name("section-style"))
+        scalar_fields = (
+            (style.column_separator_style, "column-separator-style"),
+            (style.content_direction, "content-direction"),
+            (style.section_type, "section-type"),
+            (style.default_header_id, "default-header-id"),
+            (style.default_footer_id, "default-footer-id"),
+            (style.even_page_header_id, "even-page-header-id"),
+            (style.even_page_footer_id, "even-page-footer-id"),
+            (style.first_page_header_id, "first-page-header-id"),
+            (style.first_page_footer_id, "first-page-footer-id"),
+            (style.page_number_start, "page-number-start"),
+        )
+        for value, name in scalar_fields:
+            if value is not UNSET:
+                element.set(gdocs_name(name), str(value))
+        self.encode_boolean_attribute(
+            element, "use-first-page-header-footer", style.use_first_page_header_footer
+        )
+        self.encode_boolean_attribute(
+            element, "flip-page-orientation", style.flip_page_orientation
+        )
+        for value, name in (
+            (style.margin_top, "margin-top"),
+            (style.margin_bottom, "margin-bottom"),
+            (style.margin_left, "margin-left"),
+            (style.margin_right, "margin-right"),
+            (style.margin_header, "margin-header"),
+            (style.margin_footer, "margin-footer"),
+        ):
+            self.encode_point_attribute(element, name, value)
+        if style.columns is not UNSET:
+            columns = ElementTree.SubElement(element, gdocs_name("columns"))
+            for column in cast(list[SectionColumn], style.columns):
+                child = ElementTree.SubElement(columns, gdocs_name("column"))
+                self.encode_point_attribute(child, "width", column.width)
+                self.encode_point_attribute(child, "padding-end", column.padding_end)
+
+    def encode_boolean_attribute(
+        self, element: ElementTree.Element, name: str, value: bool | UnsetType
+    ) -> None:
+        if value is not UNSET:
+            element.set(gdocs_name(name), "true" if value else "false")
+
+    def encode_point_attribute(
+        self,
+        element: ElementTree.Element,
+        name: str,
+        value: Dimension | UnsetType,
+    ) -> None:
+        if value is not UNSET:
+            element.set(
+                gdocs_name(name), format_number(cast(Dimension, value).magnitude)
+            )
+
+    def encode_optional_color(
+        self, parent: ElementTree.Element, name: str, color: Color | None
+    ) -> None:
+        element = ElementTree.SubElement(parent, gdocs_name(name))
+        if color is None:
+            element.set(gdocs_name("transparent"), "true")
+        else:
+            element.set(gdocs_name("red"), format_number(color.red))
+            element.set(gdocs_name("green"), format_number(color.green))
+            element.set(gdocs_name("blue"), format_number(color.blue))
 
     def encode_segments(
         self,
@@ -139,21 +215,97 @@ class _Encoder:
     def encode_paragraph(self, paragraph: Paragraph) -> ElementTree.Element:
         if paragraph.bullet is not UNSET:
             raise ValueError("paragraph bullets are not supported yet")
-        if paragraph.positioned_object_ids is not UNSET:
-            raise ValueError("positioned objects are not supported yet")
         tag = gdocs_name("paragraph")
+        style: ParagraphStyle | None = None
         if paragraph.style is not UNSET:
             style = cast(ParagraphStyle, paragraph.style)
-            if style == ParagraphStyle(named_style_type="NORMAL_TEXT"):
-                tag = xhtml_name("p")
-            elif style != ParagraphStyle():
-                raise ValueError("ParagraphStyle fields are not supported yet")
+            if style.named_style_type is not UNSET:
+                tag = _PARAGRAPH_TAGS[cast(str, style.named_style_type)]
         element = ElementTree.Element(tag)
+        if style is not None:
+            metadata = self.encode_paragraph_style(style, include_named_style=False)
+            if metadata is not None:
+                element.append(metadata)
+        if paragraph.positioned_object_ids is not UNSET:
+            wrapper = ElementTree.SubElement(element, gdocs_name("positioned-objects"))
+            for object_id in cast(list[str], paragraph.positioned_object_ids):
+                item = ElementTree.SubElement(wrapper, gdocs_name("positioned-object"))
+                item.set(gdocs_name("id"), object_id)
         for item in paragraph.elements:
             if not isinstance(item, TextRun):
                 raise ValueError(f"unsupported paragraph element {type(item).__name__}")
             element.append(self.encode_text_run(item))
         return element
+
+    def encode_paragraph_style(
+        self, style: ParagraphStyle, *, include_named_style: bool = True
+    ) -> ElementTree.Element | None:
+        element = ElementTree.Element(gdocs_name("paragraph-style"))
+        scalar_fields = (
+            (style.alignment, "alignment"),
+            (style.direction, "direction"),
+            (style.line_spacing, "line-spacing"),
+            (style.spacing_mode, "spacing-mode"),
+            (style.heading_id, "heading-id"),
+        )
+        if include_named_style and style.named_style_type is not UNSET:
+            element.set(
+                gdocs_name("named-style-type"), cast(str, style.named_style_type)
+            )
+        for value, name in scalar_fields:
+            if value is not UNSET:
+                element.set(
+                    gdocs_name(name),
+                    format_number(value) if isinstance(value, float) else str(value),
+                )
+        for value, name in (
+            (style.space_above, "space-above"),
+            (style.space_below, "space-below"),
+            (style.indent_first_line, "indent-first-line"),
+            (style.indent_start, "indent-start"),
+            (style.indent_end, "indent-end"),
+        ):
+            self.encode_point_attribute(element, name, value)
+        for value, name in (
+            (style.keep_lines_together, "keep-lines-together"),
+            (style.keep_with_next, "keep-with-next"),
+            (style.avoid_widow_and_orphan, "avoid-widow-and-orphan"),
+            (style.page_break_before, "page-break-before"),
+        ):
+            self.encode_boolean_attribute(element, name, value)
+        for value, name in (
+            (style.border_between, "border-between"),
+            (style.border_top, "border-top"),
+            (style.border_bottom, "border-bottom"),
+            (style.border_left, "border-left"),
+            (style.border_right, "border-right"),
+        ):
+            if value is not UNSET:
+                self.encode_paragraph_border(
+                    element, name, cast(ParagraphBorder, value)
+                )
+        if style.shading_color is not UNSET:
+            self.encode_optional_color(
+                element,
+                "shading-color",
+                cast(Color | None, style.shading_color),
+            )
+        if style.tab_stops is not UNSET:
+            wrapper = ElementTree.SubElement(element, gdocs_name("tab-stops"))
+            for stop in cast(list[TabStop], style.tab_stops):
+                child = ElementTree.SubElement(wrapper, gdocs_name("tab-stop"))
+                child.set(gdocs_name("alignment"), stop.alignment)
+                self.encode_point_attribute(child, "offset", stop.offset)
+        return element if element.attrib or list(element) else None
+
+    def encode_paragraph_border(
+        self, parent: ElementTree.Element, name: str, border: ParagraphBorder
+    ) -> None:
+        element = ElementTree.SubElement(parent, gdocs_name(name))
+        element.set(gdocs_name("dash-style"), border.dash_style)
+        self.encode_point_attribute(element, "width", border.width)
+        self.encode_point_attribute(element, "padding", border.padding)
+        self.encode_optional_color(element, "color", border.color)
 
     def encode_text_run(self, run: TextRun) -> ElementTree.Element:
         span = ElementTree.Element(xhtml_name("span"))
