@@ -1436,14 +1436,13 @@ class _Decoder:
             return None
         if not all(value is not None for value in components):
             parse_error(path, "opaque color requires red, green, and blue")
+        red = parse_float(cast(str, components[0]), f"{path}/@g:red")
+        green = parse_float(cast(str, components[1]), f"{path}/@g:green")
+        blue = parse_float(cast(str, components[2]), f"{path}/@g:blue")
         try:
-            return Color(
-                red=parse_float(cast(str, components[0]), f"{path}/@g:red"),
-                green=parse_float(cast(str, components[1]), f"{path}/@g:green"),
-                blue=parse_float(cast(str, components[2]), f"{path}/@g:blue"),
-            )
+            return Color(red=red, green=green, blue=blue)
         except ValueError as error:
-            parse_error(path, str(error))
+            parse_error(path, str(error), cause=error)
 
     def decode_tab_stops(
         self, element: ElementTree.Element, path: str

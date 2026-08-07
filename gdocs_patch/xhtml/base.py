@@ -32,8 +32,11 @@ def gdocs_name(local_name: str) -> str:
     return f"{{{GDOCS_NAMESPACE}}}{local_name}"
 
 
-def parse_error(path: str, message: str) -> Never:
-    raise XHTMLParseError(f"{path}: {message}")
+def parse_error(path: str, message: str, *, cause: ValueError | None = None) -> Never:
+    error = XHTMLParseError(f"{path}: {message}")
+    if cause is None:
+        raise error
+    raise error from cause
 
 
 def required_string(element: ElementTree.Element, name: str, path: str) -> str:
@@ -337,14 +340,13 @@ def decode_text_color(
         return UNSET
     if not all(value is not None for value in components):
         parse_error(path, f"opaque {prefix} color requires red, green, and blue")
+    red = parse_float(components[0], f"{path}/@{display_name(names[0])}")  # type: ignore[arg-type]
+    green = parse_float(components[1], f"{path}/@{display_name(names[1])}")  # type: ignore[arg-type]
+    blue = parse_float(components[2], f"{path}/@{display_name(names[2])}")  # type: ignore[arg-type]
     try:
-        return Color(
-            red=parse_float(components[0], f"{path}/@{display_name(names[0])}"),  # type: ignore[arg-type]
-            green=parse_float(components[1], f"{path}/@{display_name(names[1])}"),  # type: ignore[arg-type]
-            blue=parse_float(components[2], f"{path}/@{display_name(names[2])}"),  # type: ignore[arg-type]
-        )
+        return Color(red=red, green=green, blue=blue)
     except ValueError as error:
-        parse_error(path, str(error))
+        parse_error(path, str(error), cause=error)
 
 
 def display_name(name: str) -> str:
