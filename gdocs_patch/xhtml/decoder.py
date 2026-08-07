@@ -3,16 +3,28 @@ from xml.etree import ElementTree
 
 from gdocs_patch.models import (
     UNSET,
+    Body,
     Document,
     DocumentTab,
+    Link,
+    Paragraph,
+    ParagraphElement,
+    ParagraphStyle,
+    SectionBreak,
+    SectionStyle,
+    Segment,
     StructuralElement,
     Tab,
+    TextRun,
     UnsetType,
 )
 
 from .base import (
     XML_DECLARATION,
     XHTMLParseError,
+    decode_link,
+    decode_text_style,
+    display_name,
     extract_one_child,
     gdocs_name,
     optional_string,
@@ -20,6 +32,7 @@ from .base import (
     parse_error,
     parse_integer,
     required_string,
+    text_style_attributes,
     validate_attributes,
     validate_whitespace,
     xhtml_name,
@@ -46,32 +59,30 @@ class _Decoder:
             if root.tag.endswith("}html") or root.tag == "html":
                 parse_error(path, "unsupported XHTML namespace")
             parse_error(path, "expected XHTML html root element")
-
-        allowed_attributes = {
-            gdocs_name("document-id"),
-            gdocs_name("title"),
-            gdocs_name("revision-id"),
-            gdocs_name("suggestions-view-mode"),
-        }
-        validate_attributes(root, allowed_attributes, path)
+        validate_attributes(
+            root,
+            {
+                gdocs_name("document-id"),
+                gdocs_name("title"),
+                gdocs_name("revision-id"),
+                gdocs_name("suggestions-view-mode"),
+            },
+            path,
+        )
         validate_whitespace(root, path)
-
         children = list(root)
         body = extract_one_child(children, xhtml_name("body"), path, required=True)
         assert body is not None
         for child in children:
             if child is not body:
-                parse_error(path, f"unknown child element {child.tag}")
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
 
-        document_id = required_string(root, gdocs_name("document-id"), path)
-        title = required_string(root, gdocs_name("title"), path)
-        revision_id = optional_string(root, gdocs_name("revision-id"))
         raw_mode = root.get(gdocs_name("suggestions-view-mode"))
-        suggestions_view_mode: SuggestionsViewMode | UnsetType
+        mode: SuggestionsViewMode | UnsetType
         if raw_mode is None:
-            suggestions_view_mode = UNSET
+            mode = UNSET
         else:
-            suggestions_view_mode = cast(
+            mode = cast(
                 "SuggestionsViewMode",
                 parse_allowed(
                     raw_mode,
@@ -79,12 +90,11 @@ class _Decoder:
                     f"{path}/@g:suggestions-view-mode",
                 ),
             )
-
         return Document(
-            document_id=document_id,
-            title=title,
-            revision_id=revision_id,
-            suggestions_view_mode=suggestions_view_mode,
+            document_id=required_string(root, gdocs_name("document-id"), path),
+            title=required_string(root, gdocs_name("title"), path),
+            revision_id=optional_string(root, gdocs_name("revision-id")),
+            suggestions_view_mode=mode,
             tabs=self.decode_tabs(body, f"{path}/body"),
         )
 
@@ -94,27 +104,30 @@ class _Decoder:
         tabs: list[Tab] = []
         for index, child in enumerate(body):
             if child.tag != gdocs_name("tab"):
-                parse_error(path, f"unknown child element {child.tag}")
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
             tabs.append(self.decode_tab(child, f"{path}/g:tab[{index + 1}]"))
         return tabs
 
     def decode_tab(self, element: ElementTree.Element, path: str) -> Tab:
-        allowed_attributes = {
-            gdocs_name("tab-id"),
-            gdocs_name("title"),
-            gdocs_name("index"),
-            gdocs_name("nesting-level"),
-            gdocs_name("parent-tab-id"),
-            gdocs_name("icon-emoji"),
-        }
-        validate_attributes(element, allowed_attributes, path)
+        validate_attributes(
+            element,
+            {
+                gdocs_name("tab-id"),
+                gdocs_name("title"),
+                gdocs_name("index"),
+                gdocs_name("nesting-level"),
+                gdocs_name("parent-tab-id"),
+                gdocs_name("icon-emoji"),
+            },
+            path,
+        )
         validate_whitespace(element, path)
-
         children = list(element)
+        document_tab = extract_one_child(children, gdocs_name("document-tab"), path)
         child_tabs = extract_one_child(children, gdocs_name("child-tabs"), path)
         for child in children:
-            if child is not child_tabs:
-                parse_error(path, f"unknown child element {child.tag}")
+            if child not in (document_tab, child_tabs):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
 
         decoded_children: list[Tab] = []
         if child_tabs is not None:
@@ -123,17 +136,13 @@ class _Decoder:
             validate_whitespace(child_tabs, child_path)
             for index, child in enumerate(child_tabs):
                 if child.tag != gdocs_name("tab"):
-                    parse_error(child_path, f"unknown child element {child.tag}")
+                    parse_error(
+                        child_path, f"unknown child element {display_name(child.tag)}"
+                    )
                 decoded_children.append(
                     self.decode_tab(child, f"{child_path}/g:tab[{index + 1}]")
                 )
-
-        raw_nesting_level = element.get(gdocs_name("nesting-level"))
-        nesting_level = (
-            0
-            if raw_nesting_level is None
-            else parse_integer(raw_nesting_level, f"{path}/@g:nesting-level")
-        )
+        raw_level = element.get(gdocs_name("nesting-level"))
         return Tab(
             tab_id=required_string(element, gdocs_name("tab-id"), path),
             title=required_string(element, gdocs_name("title"), path),
@@ -141,21 +150,193 @@ class _Decoder:
                 required_string(element, gdocs_name("index"), path),
                 f"{path}/@g:index",
             ),
-            nesting_level=nesting_level,
+            nesting_level=(
+                0
+                if raw_level is None
+                else parse_integer(raw_level, f"{path}/@g:nesting-level")
+            ),
             parent_tab_id=optional_string(element, gdocs_name("parent-tab-id")),
             icon_emoji=optional_string(element, gdocs_name("icon-emoji")),
+            content=(
+                UNSET
+                if document_tab is None
+                else self.decode_document_tab(document_tab, f"{path}/g:document-tab")
+            ),
             children=decoded_children,
         )
 
     def decode_document_tab(
         self, element: ElementTree.Element, path: str
     ) -> DocumentTab:
-        parse_error(path, "DocumentTab content is not supported yet")
+        validate_attributes(element, set(), path)
+        validate_whitespace(element, path)
+        children = list(element)
+        supported = {
+            gdocs_name("body"),
+            gdocs_name("headers"),
+            gdocs_name("footers"),
+            gdocs_name("footnotes"),
+        }
+        for child in children:
+            if child.tag not in supported:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        body = extract_one_child(children, gdocs_name("body"), path)
+        headers = extract_one_child(children, gdocs_name("headers"), path)
+        footers = extract_one_child(children, gdocs_name("footers"), path)
+        footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
+        return DocumentTab(
+            body=UNSET if body is None else self.decode_body(body, f"{path}/g:body"),
+            headers=(
+                UNSET
+                if headers is None
+                else self.decode_segments(headers, "header", f"{path}/g:headers")
+            ),
+            footers=(
+                UNSET
+                if footers is None
+                else self.decode_segments(footers, "footer", f"{path}/g:footers")
+            ),
+            footnotes=(
+                UNSET
+                if footnotes is None
+                else self.decode_segments(footnotes, "footnote", f"{path}/g:footnotes")
+            ),
+        )
+
+    def decode_body(self, element: ElementTree.Element, path: str) -> Body:
+        validate_attributes(element, set(), path)
+        validate_whitespace(element, path)
+        if not list(element):
+            parse_error(path, "body must contain at least one section")
+        content: list[StructuralElement] = []
+        for index, section in enumerate(element):
+            section_path = f"{path}/section[{index + 1}]"
+            if section.tag != xhtml_name("section"):
+                parse_error(path, "body content must be section elements")
+            validate_attributes(section, set(), section_path)
+            validate_whitespace(section, section_path)
+            children = list(section)
+            style = extract_one_child(
+                children, gdocs_name("section-style"), section_path, required=True
+            )
+            assert style is not None
+            style_path = f"{section_path}/g:section-style"
+            validate_attributes(style, set(), style_path)
+            validate_whitespace(style, style_path)
+            content.append(SectionBreak(style=SectionStyle()))
+            content.extend(
+                self.decode_structural_sequence(
+                    [child for child in children if child is not style],
+                    section_path,
+                    body=True,
+                )
+            )
+        return Body(content=content)
+
+    def decode_segments(
+        self, wrapper: ElementTree.Element, item_name: str, path: str
+    ) -> dict[str, Segment]:
+        validate_attributes(wrapper, set(), path)
+        validate_whitespace(wrapper, path)
+        result: dict[str, Segment] = {}
+        for index, item in enumerate(wrapper):
+            item_path = f"{path}/g:{item_name}[{index + 1}]"
+            if item.tag != gdocs_name(item_name):
+                parse_error(path, f"unknown child element {display_name(item.tag)}")
+            validate_attributes(
+                item, {gdocs_name("key"), gdocs_name("segment-id")}, item_path
+            )
+            validate_whitespace(item, item_path)
+            key = required_string(item, gdocs_name("key"), item_path)
+            if key in result:
+                parse_error(item_path, f"duplicate segment key {key!r}")
+            result[key] = Segment(
+                segment_id=required_string(item, gdocs_name("segment-id"), item_path),
+                content=self.decode_structural_sequence(list(item), item_path),
+            )
+        return result
 
     def decode_structural_sequence(
-        self, elements: list[ElementTree.Element], path: str
+        self,
+        elements: list[ElementTree.Element],
+        path: str,
+        body: bool = False,
     ) -> list[StructuralElement]:
-        parse_error(path, "structural content is not supported yet")
+        decoded: list[StructuralElement] = []
+        for index, element in enumerate(elements):
+            child_path = f"{path}/*[{index + 1}]"
+            if element.tag == xhtml_name("section"):
+                parse_error(child_path, "section elements are only valid in a body")
+            if element.tag in (gdocs_name("paragraph"), xhtml_name("p")):
+                decoded.append(self.decode_paragraph(element, child_path))
+            else:
+                parse_error(
+                    child_path,
+                    f"unknown structural element {display_name(element.tag)}",
+                )
+        return decoded
+
+    def decode_paragraph(self, element: ElementTree.Element, path: str) -> Paragraph:
+        validate_attributes(element, set(), path)
+        if element.text is not None and element.text.strip():
+            parse_error(path, "unexpected text content")
+        children = list(element)
+        metadata = extract_one_child(children, gdocs_name("paragraph-style"), path)
+        if metadata is not None:
+            metadata_path = f"{path}/g:paragraph-style"
+            validate_attributes(metadata, set(), metadata_path)
+            validate_whitespace(metadata, metadata_path)
+        runs: list[ParagraphElement] = []
+        for index, child in enumerate(children):
+            if child is metadata:
+                continue
+            child_path = f"{path}/*[{index + 1}]"
+            if child.tag == xhtml_name("span"):
+                runs.append(self.decode_text_run(child, UNSET, child_path))
+            elif child.tag == xhtml_name("a"):
+                runs.append(self.decode_linked_text_run(child, child_path))
+            else:
+                parse_error(
+                    child_path, f"unknown paragraph element {display_name(child.tag)}"
+                )
+            if child.tail is not None and child.tail.strip():
+                parse_error(path, "unexpected text between paragraph elements")
+        style = (
+            ParagraphStyle(named_style_type="NORMAL_TEXT")
+            if element.tag == xhtml_name("p")
+            else UNSET
+        )
+        return Paragraph(elements=runs, style=style)
+
+    def decode_linked_text_run(self, anchor: ElementTree.Element, path: str) -> TextRun:
+        if anchor.text is not None and anchor.text.strip():
+            parse_error(path, "unexpected text in link")
+        link = decode_link(anchor, path)
+        children = list(anchor)
+        if len(children) != 1 or children[0].tag != xhtml_name("span"):
+            parse_error(path, "link target must contain exactly one span")
+        span = children[0]
+        if span.tail is not None and span.tail.strip():
+            parse_error(path, "unexpected text after linked span")
+        return self.decode_text_run(span, link, f"{path}/span")
+
+    def decode_text_run(
+        self, span: ElementTree.Element, link: Link | UnsetType, path: str
+    ) -> TextRun:
+        validate_attributes(span, text_style_attributes(), path)
+        content = span.text or ""
+        for child in span:
+            if child.tag != xhtml_name("br"):
+                parse_error(path, f"unknown span child {display_name(child.tag)}")
+            child_path = f"{path}/br"
+            validate_attributes(child, set(), child_path)
+            if child.text:
+                parse_error(child_path, "br must be empty")
+            content += "\n" + (child.tail or "")
+        return TextRun(
+            content=content,
+            text_style=decode_text_style(span, link, path),
+        )
 
 
 def deserialize_document(xhtml: str) -> Document:
