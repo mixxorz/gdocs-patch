@@ -1,5 +1,6 @@
 import os
 import queue
+import tempfile
 import threading
 import webbrowser
 import wsgiref.simple_server
@@ -7,6 +8,7 @@ import wsgiref.util
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs, urlsplit
 
 from google.auth.credentials import Credentials as GoogleCredentials
 from google.auth.transport.requests import Request
@@ -34,11 +36,29 @@ class QuietRequestHandler(wsgiref.simple_server.WSGIRequestHandler):
 
 
 def save_credentials(credentials: Credentials) -> None:
-    DEFAULT_CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    DEFAULT_CREDENTIALS_PATH.touch(mode=0o600, exist_ok=True)
-    DEFAULT_CREDENTIALS_PATH.chmod(0o600)
+    credentials_directory = DEFAULT_CREDENTIALS_PATH.parent
+    credentials_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     to_json = cast(Callable[[], str], cast(Any, credentials).to_json)
-    DEFAULT_CREDENTIALS_PATH.write_text(to_json(), encoding="utf-8")
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=credentials_directory,
+            prefix=f".{DEFAULT_CREDENTIALS_PATH.name}.",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_path.chmod(0o600)
+            temporary_file.write(to_json())
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, DEFAULT_CREDENTIALS_PATH)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def login(*, client_secrets: Path | None = None) -> Path:
@@ -49,21 +69,40 @@ def login(*, client_secrets: Path | None = None) -> Path:
         )
 
     callbacks: queue.Queue[str] = queue.Queue(maxsize=1)
+    redirect_uri = ""
+    oauth_state = ""
 
-    def submit_callback(callback_url: str) -> None:
+    def submit_callback(callback_url: str) -> bool:
+        candidate = urlsplit(callback_url)
+        expected = urlsplit(redirect_uri)
+        query = parse_qs(candidate.query, keep_blank_values=True)
+        has_oauth_result = any(query.get(name, []) for name in ("code", "error"))
+        if (
+            candidate.scheme != expected.scheme
+            or candidate.netloc != expected.netloc
+            or candidate.path != expected.path
+            or candidate.fragment
+            or query.get("state") != [oauth_state]
+            or not has_oauth_result
+        ):
+            return False
+
         try:
             callbacks.put_nowait(callback_url)
         except queue.Full:
             pass
+        return True
 
     def receive_callback(
         environment: dict[str, Any],
         start_response: Callable[..., Any],
     ) -> list[bytes]:
         callback_url = wsgiref.util.request_uri(environment)
-        submit_callback(callback_url)
+        accepted = submit_callback(callback_url)
         start_response("200 OK", [("Content-Type", "text/plain; charset=utf-8")])
-        return [b"Authorization received. You may close this window."]
+        if accepted:
+            return [b"Authorization received. You may close this window."]
+        return [b"Invalid authorization callback. Waiting for authorization."]
 
     callback_server = wsgiref.simple_server.make_server(
         "localhost",
@@ -72,60 +111,69 @@ def login(*, client_secrets: Path | None = None) -> Path:
         handler_class=QuietRequestHandler,
     )
 
-    from_client_secrets_file = cast(
-        Callable[..., InstalledAppFlow],
-        cast(Any, InstalledAppFlow).from_client_secrets_file,
-    )
-    flow = from_client_secrets_file(
-        str(client_secrets_path),
-        scopes=[DOCS_SCOPE],
-        autogenerate_code_verifier=True,
-    )
-    flow.redirect_uri = f"http://localhost:{callback_server.server_port}/"
-    get_authorization_url = cast(
-        Callable[..., tuple[str, str]],
-        cast(Any, flow).authorization_url,
-    )
-    authorization_url, _ = get_authorization_url(prompt="consent")
-
-    print("Open this URL in a browser to authorize gdocs-patch:\n")
-    print(authorization_url)
-    print(
-        "\nIf login does not complete automatically, paste the complete "
-        "localhost callback URL below."
-    )
-
-    callback_server_thread = threading.Thread(
-        target=callback_server.serve_forever,
-        daemon=True,
-    )
-    callback_server_thread.start()
-
-    def read_pasted_callback() -> None:
-        try:
-            callback_url = input("Callback URL: ").strip()
-        except EOFError:
-            return
-        if callback_url:
-            submit_callback(callback_url)
-
-    threading.Thread(target=read_pasted_callback, daemon=True).start()
-    webbrowser.open(authorization_url, new=2)
-
+    callback_server_thread: threading.Thread | None = None
+    callback_server_started = False
     try:
-        authorization_response = callbacks.get()
-    finally:
-        callback_server.shutdown()
-        callback_server.server_close()
+        from_client_secrets_file = cast(
+            Callable[..., InstalledAppFlow],
+            cast(Any, InstalledAppFlow).from_client_secrets_file,
+        )
+        flow = from_client_secrets_file(
+            str(client_secrets_path),
+            scopes=[DOCS_SCOPE],
+            autogenerate_code_verifier=True,
+        )
+        redirect_uri = f"http://localhost:{callback_server.server_port}/"
+        flow.redirect_uri = redirect_uri
+        get_authorization_url = cast(
+            Callable[..., tuple[str, str]],
+            cast(Any, flow).authorization_url,
+        )
+        authorization_url, oauth_state = get_authorization_url(prompt="consent")
 
-    # OAuthlib rejects an HTTP authorization-response URL even though Google
-    # explicitly permits loopback HTTP redirects for installed applications.
-    authorization_response = authorization_response.replace("http://", "https://", 1)
-    fetch_token = cast(Callable[..., Any], cast(Any, flow).fetch_token)
-    fetch_token(authorization_response=authorization_response)
-    credentials = cast(Credentials, flow.credentials)
-    save_credentials(credentials)
-    return DEFAULT_CREDENTIALS_PATH
+        print("Open this URL in a browser to authorize gdocs-patch:\n")
+        print(authorization_url)
+        print(
+            "\nIf login does not complete automatically, paste the complete "
+            "localhost callback URL below."
+        )
+
+        callback_server_thread = threading.Thread(
+            target=callback_server.serve_forever,
+            daemon=True,
+        )
+        callback_server_thread.start()
+        callback_server_started = True
+
+        def read_pasted_callback() -> None:
+            while True:
+                try:
+                    callback_url = input("Callback URL: ").strip()
+                except EOFError:
+                    return
+                if callback_url and submit_callback(callback_url):
+                    return
+
+        threading.Thread(target=read_pasted_callback, daemon=True).start()
+        webbrowser.open(authorization_url, new=2)
+        authorization_response = callbacks.get()
+
+        # OAuthlib rejects an HTTP authorization-response URL even though Google
+        # explicitly permits loopback HTTP redirects for installed applications.
+        authorization_response = authorization_response.replace(
+            "http://", "https://", 1
+        )
+        fetch_token = cast(Callable[..., Any], cast(Any, flow).fetch_token)
+        fetch_token(authorization_response=authorization_response)
+        credentials = cast(Credentials, flow.credentials)
+        save_credentials(credentials)
+        return DEFAULT_CREDENTIALS_PATH
+    finally:
+        if callback_server_started:
+            callback_server.shutdown()
+            if callback_server_thread is not None:
+                callback_server_thread.join()
+        callback_server.server_close()
 
 
 def load_credentials() -> GoogleCredentials:
