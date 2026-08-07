@@ -71,7 +71,7 @@ except XHTMLParseError as error:
 
 ### Document root
 
-The XHTML `<html>` element represents the `Document` itself. It declares the XHTML and `gdocs` namespaces and carries document-level metadata as `g:*` attributes. The document's top-level tabs are represented directly in `<body>`. There is no `<head>`; the current model has no other head metadata, so `Document.title` is folded into the root attributes.
+The XHTML `<html>` element represents the `Document` itself. It declares the XHTML and `gdocs` namespaces and carries document-level metadata as `g:*` attributes. The document's top-level tabs are represented directly in `<body>`. `<head>` is forbidden, and `Document.title` is carried by the root `g:title` attribute.
 
 **XML fragment:**
 
@@ -90,7 +90,7 @@ The XHTML `<html>` element represents the `Document` itself. It declares the XHT
 The XML declaration is required. The deserializer requires the XHTML namespace and exact `urn:gdocs-patch:xhtml:1` namespace, rejecting unsupported format versions. Exactly one `<body>` is required; `<head>` and XHTML `<title>` are forbidden. `g:document-id` and `g:title` are required. `g:revision-id` is omitted for `UNSET`. `g:suggestions-view-mode` is omitted for `UNSET` and otherwise accepts `DEFAULT_FOR_CURRENT_ACCESS`, `SUGGESTIONS_INLINE`, `PREVIEW_SUGGESTIONS_ACCEPTED`, or `PREVIEW_WITHOUT_SUGGESTIONS`.
 ### Tabs
 
-Tabs are Google Docs concepts rather than XHTML sections, so each tab uses a namespaced `<g:tab>` element. Tab metadata is carried through `g:*` attributes.
+Each tab uses a namespaced `<g:tab>` element with tab metadata in `g:*` attributes.
 
 A tab separates its `Tab.content` and `Tab.children` fields explicitly:
 
@@ -186,7 +186,7 @@ A body contains one or more XHTML `<section>` elements and no direct structural 
 </g:body>
 ```
 
-`SectionBreak.style` is required, so every section begins with `<g:section-style>`, including an empty style object. Deserialization emits that `SectionBreak` followed by the section's structural children. Empty sections represent consecutive section breaks.
+`SectionBreak.style` is required. The serializer canonically writes exactly one `<g:section-style>` as the first child of every section, including for an empty style object. The decoder accepts that unique required metadata element anywhere among the section's children, filters it from ordered content, and emits the `SectionBreak` before the section's structural children. Empty sections represent consecutive section breaks.
 
 A present body must contain at least one section; `<g:body />` and direct body content outside a section are rejected. Section breaks are body-only, so headers, footers, footnotes, and table cells contain structural elements directly and reject `<section>`.
 
@@ -226,7 +226,7 @@ Allowed constants:
 Header/footer ID attributes accept any string and are omitted for `UNSET`. Boolean attributes accept `true` or `false`; `g:page-number-start` is an integer. An absent `<g:columns>` means `UNSET`; an empty wrapper means an empty list. Each `<g:column>` requires point-magnitude `g:width` and `g:padding-end` attributes.
 ### Table of contents
 
-`TableOfContents` uses the explicit Google Docs element `<g:table-of-contents>` rather than XHTML `<nav>`, because a bare navigation element would not make the model type sufficiently obvious:
+`TableOfContents` uses the explicit `<g:table-of-contents>` element:
 
 **XML fragment:**
 
@@ -360,7 +360,7 @@ An absent `<g:tab-stops>` means `UNSET`; `<g:tab-stops />` is an empty list. Eac
 </g:positioned-objects>
 ```
 
-An absent wrapper means `UNSET`; an empty wrapper means an empty list. Each `g:id` accepts any string. The current compiler ignores this field, and the syntax preserves it even though the current compiler ignores it.
+An absent wrapper means `UNSET`; an empty wrapper means an empty list. Each `g:id` accepts any string, and collection order is preserved.
 
 The serializer writes optional `<g:paragraph-style>` and `<g:positioned-objects>` metadata before the ordered paragraph elements. The deserializer accepts either unique metadata child anywhere and filters it out while preserving the relative order of paragraph elements. Bullet metadata is outside the paragraph under its containing `<li>`.
 
@@ -488,7 +488,7 @@ A content-level `<a>` contains exactly one style-bearing paragraph element: a ru
 
 `g:date-format` accepts `DATE_FORMAT_UNSPECIFIED`, `DATE_FORMAT_CUSTOM`, `DATE_FORMAT_MONTH_DAY_ABBREVIATED`, `DATE_FORMAT_MONTH_DAY_FULL`, `DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED`, or `DATE_FORMAT_ISO8601`. `g:time-format` accepts `TIME_FORMAT_UNSPECIFIED`, `TIME_FORMAT_DISABLED`, `TIME_FORMAT_HOUR_MINUTE`, or `TIME_FORMAT_HOUR_MINUTE_TIMEZONE`.
 
-`Equation` is an opaque marker with no modeled expression or style fields and uses `<g:equation />`.
+`Equation` is an opaque marker with no modeled expression and no `TextStyle`. It uses `<g:equation />` and cannot be wrapped in `<a>`.
 
 `FootnoteReference` uses:
 
@@ -521,7 +521,7 @@ A content-level `<a>` contains exactly one style-bearing paragraph element: a ru
 
 `g:person-id` is required. `g:email` and `g:name` are omitted for `UNSET` and may be empty strings when explicitly present. Text style follows the shared inline rules.
 
-`RichLink` uses a custom element because its URI is smart-chip metadata, distinct from its optional `TextStyle.link`:
+`RichLink` uses `<g:rich-link>`. Its `g:uri` is smart-chip metadata and is distinct from its optional `TextStyle.link`:
 
 **XML fragment:**
 
@@ -620,7 +620,7 @@ The serializer places the element before structural cell content; the deserializ
 
 A list container canonically groups contiguous bullet paragraphs that share either an existing Google list ID or a target bullet preset. Each `<li>` contains exactly one paragraph element using the paragraph syntax defined above. The `<li>` is synthetic grouping syntax; its paragraph child is the actual `Paragraph` model object.
 
-All Google lists use `<g:list>` rather than `<ul>` or `<ol>`, because Google list identity, presets, definitions, and nesting do not map cleanly onto XHTML list semantics.
+All lists use `<g:list>`. Its attributes preserve Google list identity or a bullet preset, and each item's `g:nesting-level` preserves nesting.
 
 An existing list uses `g:list-id`:
 
@@ -701,7 +701,8 @@ An absent `<g:bullet-style>` means `UNSET`; an empty style normalizes to absence
 
 The empty anchor's target attributes use the same syntax as a linked run. `<g:bullet-style>` is forbidden in a preset list because `BulletPreset` has no `text_style` field.
 
-Changing an existing list to a preset is represented by replacing `g:list-id` with `g:bullet-preset`. The compiler recreates the bullets and Google assigns a new list ID; it does not modify the existing `ListDefinition` in place.
+A target bullet preset is represented by `g:bullet-preset`; an existing list identity is represented by `g:list-id`. These attributes are mutually exclusive.
+
 ### List definitions
 
 `DocumentTab.lists` uses a dictionary wrapper alongside the other document-tab metadata:
@@ -733,12 +734,13 @@ For each level, `g:glyph-format` is required and accepts any string. Exactly one
 
 ## Metadata, normalization, canonical output, and validation
 
-### Semantic XHTML/XML rather than generic object serialization
+### XML vocabulary
 
-The format uses XML 1.0 and XHTML-style semantic elements for document content, with the versioned `urn:gdocs-patch:xhtml:1` XML namespace for Google Docs-specific metadata and fields that XHTML cannot express. It does not mechanically encode Python classes as `<object>`, `<field>`, and `<value>` nodes.
-### No CSS
+The format uses XML 1.0 and XHTML-style semantic elements for document content, with the versioned `urn:gdocs-patch:xhtml:1` XML namespace for Google Docs-specific metadata and fields that XHTML cannot express.
 
-Formatting is not represented with `style` attributes or stylesheets. `TextStyle` fields use explicit canonical `gdocs` attributes. Semantic XHTML remains in use for document structure, paragraph named styles where applicable, and links.
+### Formatting attributes
+
+Formatting is represented by explicit canonical `gdocs` attributes, not `style` attributes or stylesheets. Semantic XHTML represents document structure, paragraph named styles where applicable, and links.
 ### Lossless metadata
 
 Google-specific fields, IDs, non-semantic style values, and values such as explicit `false`, `None`, and `UNSET` use the `gdocs` namespace when XHTML has no unambiguous representation.
@@ -821,12 +823,12 @@ An absent `<g:named-styles>` means `UNSET`; an empty wrapper means an empty list
 Both `g:type` and the nested paragraph style's `g:named-style-type` accept `NAMED_STYLE_TYPE_UNSPECIFIED`, `NORMAL_TEXT`, `TITLE`, `SUBTITLE`, `HEADING_1`, `HEADING_2`, `HEADING_3`, `HEADING_4`, `HEADING_5`, or `HEADING_6`. A nested `g:named-style-type` attribute is necessary here because no owning paragraph element exists to encode that `ParagraphStyle` field.
 ### Normalization and omission
 
-The format preserves explicit values but canonicalizes representational states that the compiler treats equivalently:
+The format preserves explicit values while applying these canonical normalization rules:
 
 - An `UNSET` field has no corresponding attribute or child element.
 - An empty style object whose fields are all `UNSET` is serialized identically to top-level `UNSET`. This applies to `TextStyle()`, `ParagraphStyle()`, and a default-span `TableCellStyle()` with no other fields set. It does not apply to `DocumentStyle()` or the required `SectionStyle`.
 - Deserialization returns the canonical `UNSET` form for such an omitted style.
-- A collection field that permits `UNSET` uses an absent wrapper for `UNSET` and an empty wrapper for an empty collection unless a field-specific compiler-equivalence rule is defined later.
+- A collection field that permits `UNSET` uses an absent wrapper for `UNSET` and an empty wrapper for an empty collection.
 - A required collection may define omission as its one canonical empty representation when no `UNSET` distinction exists.
 - Boolean fields use explicit `g:*="true"` or `g:*="false"` attributes when present; omission means `UNSET`.
 - Explicit `None` for Google's `OptionalColor` uses a `transparent` marker; omission continues to mean `UNSET`.
@@ -865,8 +867,6 @@ The serializer emits one deterministic canonical order for attributes, metadata,
 For example, a `<g:paragraph-style>` appearing between two run spans still applies to the containing paragraph and does not interrupt the two runs' relative order.
 
 Whitespace-only text nodes outside `<span>` are formatting and are ignored. All text inside `<span>`, including spaces and literal line feeds, is content and is preserved. Non-whitespace raw text outside a span is rejected; modeled text stored in attributes, including the document title, uses normal XML attribute escaping and decoding.
-
-For target-document styles, omission does not mean “leave the source unchanged.” When the compiler applies that style group, an omitted/`UNSET` style field is reset to its inherited or provider-default value through the update field mask. An explicit value such as `g:bold="false"` forces that value instead.
 
 ## Complete enum-value reference
 
