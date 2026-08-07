@@ -15,11 +15,13 @@ from gdocs_patch.models import (
     ParagraphStyle,
     SectionBreak,
     SectionStyle,
+    StructuralElement,
     Tab,
     Table,
     TableCell,
     TableCellStyle,
     TableColumn,
+    TableOfContents,
     TableRow,
     TextRun,
     TextStyle,
@@ -27,6 +29,7 @@ from gdocs_patch.models import (
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 from gdocs_patch.xhtml import base as base_module
 from gdocs_patch.xhtml import decoder as decoder_module
+from gdocs_patch.xhtml import encoder as encoder_module
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
 
@@ -83,7 +86,7 @@ def test_rejects_dtd_and_entity_declarations_before_expansion(declaration: str) 
 def test_rejects_input_over_named_character_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(decoder_module, "MAX_XHTML_INPUT_CHARACTERS", 100)
+    monkeypatch.setattr(decoder_module, "MAX_XHTML_CHARACTERS", 100)
 
     with pytest.raises(XHTMLParseError, match="100 characters"):
         deserialize_document(xhtml())
@@ -95,14 +98,61 @@ def nested_xml(depth: int) -> str:
 
 def test_element_depth_limit_accepts_boundary_before_grammar_validation() -> None:
     with pytest.raises(XHTMLParseError, match="expected XHTML"):
-        deserialize_document(nested_xml(decoder_module.MAX_XML_ELEMENT_DEPTH))
+        deserialize_document(nested_xml(decoder_module.MAX_ELEMENT_DEPTH))
 
 
 def test_element_depth_limit_rejects_excess_without_recursion_error() -> None:
     with pytest.raises(XHTMLParseError, match="element depth") as error:
-        deserialize_document(nested_xml(decoder_module.MAX_XML_ELEMENT_DEPTH + 1))
+        deserialize_document(nested_xml(decoder_module.MAX_ELEMENT_DEPTH + 1))
 
     assert not isinstance(error.value.__cause__, RecursionError)
+
+
+def document_with_table_of_contents_depth(depth: int) -> Document:
+    document = model_document()
+    content: list[StructuralElement] = []
+    for _ in range(depth):
+        content = [TableOfContents(content=content)]
+    document_tab = document.tabs[0].content
+    assert isinstance(document_tab, DocumentTab)
+    body = document_tab.body
+    assert isinstance(body, Body)
+    body.content[:] = [SectionBreak(style=SectionStyle()), *content]
+    return document
+
+
+def test_serializer_element_depth_boundary_round_trips() -> None:
+    document = document_with_table_of_contents_depth(
+        encoder_module.MAX_ELEMENT_DEPTH - 6
+    )
+
+    output = serialize_document(document)
+
+    assert deserialize_document(output) == document
+
+
+def test_serializer_rejects_excess_depth_without_recursion_error() -> None:
+    document = document_with_table_of_contents_depth(
+        encoder_module.MAX_ELEMENT_DEPTH - 5
+    )
+
+    with pytest.raises(ValueError, match="element depth") as error:
+        serialize_document(document)
+
+    assert not isinstance(error.value.__cause__, RecursionError)
+
+
+def test_serializer_enforces_final_character_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = model_document()
+    output = serialize_document(document)
+    monkeypatch.setattr(encoder_module, "MAX_XHTML_CHARACTERS", len(output))
+    assert deserialize_document(serialize_document(document)) == document
+
+    monkeypatch.setattr(encoder_module, "MAX_XHTML_CHARACTERS", len(output) - 1)
+    with pytest.raises(ValueError, match="characters"):
+        serialize_document(document)
 
 
 @pytest.mark.parametrize("location", ["title", "attribute", "text", "tail"])
@@ -181,6 +231,43 @@ def mutate_bad_list_level(document: Document) -> None:
     document.tabs[0].content.lists = {"id": ListDefinition(levels=[level])}  # type: ignore[union-attr]
 
 
+def mutate_document_title_type(document: Document) -> None:
+    document.title = 1  # type: ignore[assignment]
+
+
+def mutate_text_style_boolean_type(document: Document) -> None:
+    paragraph = document.tabs[0].content.body.content[1]  # type: ignore[union-attr]
+    assert isinstance(paragraph, Paragraph)
+    run = paragraph.elements[0]
+    assert isinstance(run, TextRun)
+    run.text_style = TextStyle(bold=True)
+    run.text_style.bold = 1  # type: ignore[assignment,union-attr]
+
+
+def mutate_identifier_type(document: Document) -> None:
+    document.tabs[0].tab_id = 1  # type: ignore[assignment]
+
+
+def mutate_enum_type(document: Document) -> None:
+    document.suggestions_view_mode = 1  # type: ignore[assignment]
+
+
+def mutate_number_type(document: Document) -> None:
+    document.tabs[0].index = True
+
+
+def mutate_collection_type(document: Document) -> None:
+    document.tabs = "not-a-list"  # type: ignore[assignment]
+
+
+def mutate_nested_type(document: Document) -> None:
+    paragraph = document.tabs[0].content.body.content[1]  # type: ignore[union-attr]
+    assert isinstance(paragraph, Paragraph)
+    run = paragraph.elements[0]
+    assert isinstance(run, TextRun)
+    run.content = 1  # type: ignore[assignment]
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -192,6 +279,13 @@ def mutate_bad_list_level(document: Document) -> None:
         mutate_bad_span,
         mutate_bad_column,
         mutate_bad_list_level,
+        mutate_document_title_type,
+        mutate_text_style_boolean_type,
+        mutate_identifier_type,
+        mutate_enum_type,
+        mutate_number_type,
+        mutate_collection_type,
+        mutate_nested_type,
     ],
 )
 def test_encoder_rejects_mutated_state_that_decoder_would_reject(
@@ -229,6 +323,10 @@ def test_rejects_noncanonical_integer_lexemes(value: str) -> None:
         "1.",
         "1E2",
         "0x1p0",
+        "-0.0",
+        "1.0",
+        "1.00",
+        "1e0",
     ],
 )
 def test_rejects_noncanonical_float_lexemes(value: str) -> None:

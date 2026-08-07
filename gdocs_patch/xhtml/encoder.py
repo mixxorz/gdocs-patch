@@ -48,6 +48,8 @@ from gdocs_patch.models import (
 
 from .base import (
     GDOCS_NAMESPACE,
+    MAX_ELEMENT_DEPTH,
+    MAX_XHTML_CHARACTERS,
     XHTML_NAMESPACE,
     XML_DECLARATION,
     XHTMLParseError,
@@ -55,9 +57,21 @@ from .base import (
     encode_text_style,
     format_number,
     gdocs_name,
+    require_boolean,
+    require_enum,
+    require_integer,
+    require_number,
+    require_string,
     xhtml_name,
 )
 from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
+
+_SUGGESTIONS_VIEW_MODES = {
+    "DEFAULT_FOR_CURRENT_ACCESS",
+    "SUGGESTIONS_INLINE",
+    "PREVIEW_SUGGESTIONS_ACCEPTED",
+    "PREVIEW_WITHOUT_SUGGESTIONS",
+}
 
 _PARAGRAPH_TAGS = {
     "NAMED_STYLE_TYPE_UNSPECIFIED": gdocs_name("named-style-unspecified"),
@@ -70,36 +84,63 @@ _PARAGRAPH_TAGS = {
 
 class _Encoder:
     def encode_document(self, document: Document) -> ElementTree.Element:
+        if not isinstance(document, Document):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError("document must be a Document")
         root = ElementTree.Element(xhtml_name("html"))
-        root.set(gdocs_name("document-id"), document.document_id)
-        root.set(gdocs_name("title"), document.title)
+        root.set(
+            gdocs_name("document-id"),
+            require_string(document.document_id, "Document.document_id"),
+        )
+        root.set(gdocs_name("title"), require_string(document.title, "Document.title"))
         if document.revision_id is not UNSET:
-            root.set(gdocs_name("revision-id"), cast(str, document.revision_id))
+            root.set(
+                gdocs_name("revision-id"),
+                require_string(document.revision_id, "Document.revision_id"),
+            )
         if document.suggestions_view_mode is not UNSET:
             root.set(
                 gdocs_name("suggestions-view-mode"),
-                cast(str, document.suggestions_view_mode),
+                require_enum(
+                    document.suggestions_view_mode,
+                    _SUGGESTIONS_VIEW_MODES,
+                    "Document.suggestions_view_mode",
+                ),
             )
 
+        if not isinstance(document.tabs, list):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError("Document.tabs must be a list")
         body = ElementTree.SubElement(root, xhtml_name("body"))
         for tab in document.tabs:
             body.append(self.encode_tab(tab))
         return root
 
     def encode_tab(self, tab: Tab) -> ElementTree.Element:
+        if not isinstance(tab, Tab):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError("Document.tabs entries must be Tab objects")
         element = ElementTree.Element(gdocs_name("tab"))
-        element.set(gdocs_name("tab-id"), tab.tab_id)
-        element.set(gdocs_name("title"), tab.title)
-        element.set(gdocs_name("index"), str(tab.index))
-        if tab.nesting_level != 0:
-            element.set(gdocs_name("nesting-level"), str(tab.nesting_level))
+        element.set(gdocs_name("tab-id"), require_string(tab.tab_id, "Tab.tab_id"))
+        element.set(gdocs_name("title"), require_string(tab.title, "Tab.title"))
+        element.set(gdocs_name("index"), str(require_integer(tab.index, "Tab.index")))
+        nesting_level = require_integer(tab.nesting_level, "Tab.nesting_level")
+        if nesting_level != 0:
+            element.set(gdocs_name("nesting-level"), str(nesting_level))
         if tab.parent_tab_id is not UNSET:
-            element.set(gdocs_name("parent-tab-id"), cast(str, tab.parent_tab_id))
+            element.set(
+                gdocs_name("parent-tab-id"),
+                require_string(tab.parent_tab_id, "Tab.parent_tab_id"),
+            )
         if tab.icon_emoji is not UNSET:
-            element.set(gdocs_name("icon-emoji"), cast(str, tab.icon_emoji))
+            element.set(
+                gdocs_name("icon-emoji"),
+                require_string(tab.icon_emoji, "Tab.icon_emoji"),
+            )
 
         if tab.content is not UNSET:
-            element.append(self.encode_document_tab(cast(DocumentTab, tab.content)))
+            if not isinstance(tab.content, DocumentTab):
+                raise ValueError("Tab.content must be a DocumentTab or UNSET")
+            element.append(self.encode_document_tab(tab.content))
+        if not isinstance(tab.children, list):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError("Tab.children must be a list")
         if tab.children:
             child_tabs = ElementTree.SubElement(element, gdocs_name("child-tabs"))
             for child in tab.children:
@@ -292,7 +333,8 @@ class _Encoder:
         self, element: ElementTree.Element, name: str, value: bool | UnsetType
     ) -> None:
         if value is not UNSET:
-            element.set(gdocs_name(name), "true" if value else "false")
+            boolean = require_boolean(value, name)
+            element.set(gdocs_name(name), "true" if boolean else "false")
 
     def encode_point_attribute(
         self,
@@ -301,8 +343,11 @@ class _Encoder:
         value: Dimension | UnsetType,
     ) -> None:
         if value is not UNSET:
+            if not isinstance(value, Dimension):
+                raise ValueError(f"{name} must be a Dimension")
             element.set(
-                gdocs_name(name), format_number(cast(Dimension, value).magnitude)
+                gdocs_name(name),
+                format_number(require_number(value.magnitude, f"{name}.magnitude")),
             )
 
     def encode_optional_color(
@@ -312,9 +357,20 @@ class _Encoder:
         if color is None:
             element.set(gdocs_name("transparent"), "true")
         else:
-            element.set(gdocs_name("red"), format_number(color.red))
-            element.set(gdocs_name("green"), format_number(color.green))
-            element.set(gdocs_name("blue"), format_number(color.blue))
+            if not isinstance(color, Color):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise ValueError(f"{name} must be a Color or None")
+            element.set(
+                gdocs_name("red"),
+                format_number(require_number(color.red, f"{name}.red")),
+            )
+            element.set(
+                gdocs_name("green"),
+                format_number(require_number(color.green, f"{name}.green")),
+            )
+            element.set(
+                gdocs_name("blue"),
+                format_number(require_number(color.blue, f"{name}.blue")),
+            )
 
     def encode_segments(
         self,
@@ -634,7 +690,7 @@ class _Encoder:
 
     def encode_text_run(self, run: TextRun) -> ElementTree.Element:
         span = ElementTree.Element(xhtml_name("span"))
-        parts = run.content.split("\n")
+        parts = require_string(run.content, "TextRun.content").split("\n")
         span.text = parts[0]
         for part in parts[1:]:
             br = ElementTree.SubElement(span, xhtml_name("br"))
@@ -652,17 +708,21 @@ def _is_xml_10_character(character: str) -> bool:
     )
 
 
-def _validate_xml_characters(root: ElementTree.Element) -> None:
-    pending = [root]
+def _validate_generated_tree(root: ElementTree.Element) -> None:
+    pending = [(root, 1)]
     while pending:
-        element = pending.pop()
+        element, depth = pending.pop()
+        if depth > MAX_ELEMENT_DEPTH:
+            raise ValueError(f"XML element depth exceeds {MAX_ELEMENT_DEPTH}")
         values = [element.text, element.tail, *element.attrib.values()]
         for value in values:
+            if value is not None and not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise ValueError("XML text and attribute values must be strings")
             if value is not None and any(
                 not _is_xml_10_character(character) for character in value
             ):
                 raise ValueError("document contains a character forbidden by XML 1.0")
-        pending.extend(element)
+        pending.extend((child, depth + 1) for child in element)
 
 
 def _validate_encoded_tree(root: ElementTree.Element) -> None:
@@ -679,10 +739,13 @@ def serialize_document(document: Document) -> str:
     ElementTree.register_namespace("g", GDOCS_NAMESPACE)
     try:
         root = _Encoder().encode_document(document)
-    except (AttributeError, KeyError, TypeError) as error:
+    except (AttributeError, KeyError, RecursionError, TypeError) as error:
         raise ValueError(f"invalid mutated document model: {error}") from error
-    _validate_xml_characters(root)
+    _validate_generated_tree(root)
     _validate_encoded_tree(root)
     _indent_xml(root)
     xml = ElementTree.tostring(root, encoding="unicode", short_empty_elements=True)
-    return f"{XML_DECLARATION}\n{xml}\n"
+    output = f"{XML_DECLARATION}\n{xml}\n"
+    if len(output) > MAX_XHTML_CHARACTERS:
+        raise ValueError(f"XHTML output exceeds {MAX_XHTML_CHARACTERS} characters")
+    return output

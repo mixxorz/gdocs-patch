@@ -19,6 +19,8 @@ from gdocs_patch.models import (
 XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
 GDOCS_NAMESPACE = "urn:gdocs-patch:xhtml:1"
 XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>'
+MAX_XHTML_CHARACTERS = 10_000_000
+MAX_ELEMENT_DEPTH = 256
 
 
 class XHTMLParseError(ValueError):
@@ -83,6 +85,8 @@ def parse_float(value: str, path: str) -> float:
     result = float(value)
     if result != result or result in (float("inf"), float("-inf")):
         parse_error(path, f"expected a float in canonical finite form, got {value!r}")
+    if format_number(result) != value:
+        parse_error(path, f"expected a float in canonical finite form, got {value!r}")
     return result
 
 
@@ -91,6 +95,40 @@ def parse_allowed(value: str, allowed: Collection[str], path: str) -> str:
         choices = ", ".join(sorted(allowed))
         parse_error(path, f"expected one of {choices}, got {value!r}")
     return value
+
+
+def require_string(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    return value
+
+
+def require_boolean(value: object, field: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{field} must be a boolean")
+    return value
+
+
+def require_integer(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{field} must be an integer")
+    return value
+
+
+def require_number(value: object, field: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be an integer or float")
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError(f"{field} must be finite")
+    return value
+
+
+def require_enum(value: object, allowed: Collection[str], field: str) -> str:
+    result = require_string(value, field)
+    if result not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise ValueError(f"{field} must be one of {choices}")
+    return result
 
 
 def validate_attributes(
@@ -170,17 +208,29 @@ def text_style_attributes() -> set[str]:
 def encode_link(element: ElementTree.Element, link: Link) -> ElementTree.Element:
     anchor = ElementTree.Element(xhtml_name("a"))
     if isinstance(link, UrlLink):
-        anchor.set("href", link.url)
+        anchor.set("href", require_string(link.url, "UrlLink.url"))
     elif isinstance(link, TabLink):
-        anchor.set(gdocs_name("tab-id"), link.tab_id)
+        anchor.set(gdocs_name("tab-id"), require_string(link.tab_id, "TabLink.tab_id"))
     elif isinstance(link, BookmarkLink):
-        anchor.set(gdocs_name("bookmark-id"), link.bookmark_id)
+        anchor.set(
+            gdocs_name("bookmark-id"),
+            require_string(link.bookmark_id, "BookmarkLink.bookmark_id"),
+        )
         if link.tab_id is not UNSET:
-            anchor.set(gdocs_name("tab-id"), cast(str, link.tab_id))
+            anchor.set(
+                gdocs_name("tab-id"),
+                require_string(link.tab_id, "BookmarkLink.tab_id"),
+            )
     elif isinstance(link, HeadingLink):
-        anchor.set(gdocs_name("heading-id"), link.heading_id)
+        anchor.set(
+            gdocs_name("heading-id"),
+            require_string(link.heading_id, "HeadingLink.heading_id"),
+        )
         if link.tab_id is not UNSET:
-            anchor.set(gdocs_name("tab-id"), cast(str, link.tab_id))
+            anchor.set(
+                gdocs_name("tab-id"),
+                require_string(link.tab_id, "HeadingLink.tab_id"),
+            )
     else:
         raise ValueError(f"unsupported link type {type(link).__name__}")
     anchor.append(element)
@@ -202,16 +252,36 @@ def encode_text_style(
     )
     for value, attribute in boolean_values:
         if value is not UNSET:
-            element.set(attribute, "true" if value else "false")
+            boolean = require_boolean(value, f"TextStyle.{display_name(attribute)}")
+            element.set(attribute, "true" if boolean else "false")
     if style.baseline_offset is not UNSET:
-        element.set(gdocs_name("baseline-offset"), cast(str, style.baseline_offset))
+        element.set(
+            gdocs_name("baseline-offset"),
+            require_enum(
+                style.baseline_offset,
+                {"BASELINE_OFFSET_UNSPECIFIED", "NONE", "SUPERSCRIPT", "SUBSCRIPT"},
+                "TextStyle.baseline_offset",
+            ),
+        )
     if style.font_size is not UNSET:
-        font_size = cast(Dimension, style.font_size)
-        element.set(gdocs_name("font-size"), format_number(font_size.magnitude))
+        if not isinstance(style.font_size, Dimension):
+            raise ValueError("TextStyle.font_size must be a Dimension")
+        element.set(
+            gdocs_name("font-size"),
+            format_number(
+                require_number(style.font_size.magnitude, "Dimension.magnitude")
+            ),
+        )
     if style.font_family is not UNSET:
-        element.set(gdocs_name("font-family"), cast(str, style.font_family))
+        element.set(
+            gdocs_name("font-family"),
+            require_string(style.font_family, "TextStyle.font_family"),
+        )
     if style.font_weight is not UNSET:
-        element.set(gdocs_name("font-weight"), str(style.font_weight))
+        element.set(
+            gdocs_name("font-weight"),
+            str(require_integer(style.font_weight, "TextStyle.font_weight")),
+        )
     encode_text_color(element, "foreground", style.foreground_color)
     encode_text_color(element, "background", style.background_color)
     if style.link is not UNSET:
@@ -227,15 +297,24 @@ def encode_text_color(
     if color is None:
         element.set(gdocs_name(f"{prefix}-color"), "transparent")
         return
-    color = cast(Color, color)
-    element.set(gdocs_name(f"{prefix}-red"), format_number(color.red))
-    element.set(gdocs_name(f"{prefix}-green"), format_number(color.green))
-    element.set(gdocs_name(f"{prefix}-blue"), format_number(color.blue))
+    if not isinstance(color, Color):
+        raise ValueError(f"TextStyle.{prefix}_color must be a Color or None")
+    element.set(
+        gdocs_name(f"{prefix}-red"),
+        format_number(require_number(color.red, f"Color.{prefix}.red")),
+    )
+    element.set(
+        gdocs_name(f"{prefix}-green"),
+        format_number(require_number(color.green, f"Color.{prefix}.green")),
+    )
+    element.set(
+        gdocs_name(f"{prefix}-blue"),
+        format_number(require_number(color.blue, f"Color.{prefix}.blue")),
+    )
 
 
-def format_number(value: float) -> str:
-    if value != value or value in (float("inf"), float("-inf")):
-        raise ValueError("number must be finite")
+def format_number(value: int | float) -> str:
+    value = require_number(value, "number")
     if value == 0:
         return "0"
     text = repr(value)

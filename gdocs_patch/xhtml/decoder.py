@@ -52,6 +52,8 @@ from gdocs_patch.models import (
 )
 
 from .base import (
+    MAX_ELEMENT_DEPTH,
+    MAX_XHTML_CHARACTERS,
     XML_DECLARATION,
     XHTMLParseError,
     construct_model,
@@ -142,8 +144,6 @@ _TIME_FORMATS = {
     "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
 }
 
-MAX_XHTML_INPUT_CHARACTERS = 10_000_000
-MAX_XML_ELEMENT_DEPTH = 256
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 _SUGGESTIONS_VIEW_MODES = {
@@ -1766,9 +1766,9 @@ def _preflight_xml(payload: str) -> None:
     def start_element(_name: str, _attributes: dict[str, str]) -> None:
         nonlocal depth
         depth += 1
-        if depth > MAX_XML_ELEMENT_DEPTH:
+        if depth > MAX_ELEMENT_DEPTH:
             raise XHTMLParseError(
-                f"/document: XML element depth exceeds {MAX_XML_ELEMENT_DEPTH}"
+                f"/document: XML element depth exceeds {MAX_ELEMENT_DEPTH}"
             )
 
     def end_element(_name: str) -> None:
@@ -1790,9 +1790,9 @@ def _preflight_xml(payload: str) -> None:
 
 
 def deserialize_document(xhtml: str) -> Document:
-    if len(xhtml) > MAX_XHTML_INPUT_CHARACTERS:
+    if len(xhtml) > MAX_XHTML_CHARACTERS:
         raise XHTMLParseError(
-            f"/document: input exceeds {MAX_XHTML_INPUT_CHARACTERS} characters"
+            f"/document: input exceeds {MAX_XHTML_CHARACTERS} characters"
         )
     if not xhtml.startswith(XML_DECLARATION):
         raise XHTMLParseError(
