@@ -17,6 +17,62 @@ uv run gdocs-patch --help
 uv run gdocs-patch --version
 ```
 
+## Google authentication
+
+Enable the Google Docs API in a Google Cloud project, configure its OAuth
+consent screen, and create an OAuth client with application type **Desktop
+app**. Download its client JSON.
+
+Pass that file explicitly:
+
+```console
+uv run gdocs-patch auth login --client-secrets ~/Downloads/client_secret.json
+```
+
+Or save it at the default location and omit the option:
+
+```console
+mkdir -p ~/.config/gdocs-patch
+cp ~/Downloads/client_secret.json ~/.config/gdocs-patch/client_secret.json
+uv run gdocs-patch auth login
+```
+
+The command prints and opens Google's authorization URL. On a remote or
+headless host, open the printed URL in another browser. After authorization,
+the browser may fail to connect to localhost; copy its complete callback URL
+from the address bar and paste it into the waiting command.
+
+Refreshable user credentials are saved at
+`~/.config/gdocs-patch/credentials.json`. Treat this file as a secret.
+
+Sandbox environments can instead provide an automatically updated bearer
+token:
+
+```console
+export GDOCS_PATCH_BEARER_TOKEN="..."
+```
+
+The environment token takes precedence over saved user credentials.
+
+## Google Docs client
+
+The client returns decoded Google API responses and accepts batch-update
+request dictionaries without parsing or compiling them:
+
+```python
+from gdocs_patch.client import GoogleDocsClient, load_credentials
+from gdocs_patch.compiler import compile_document
+from gdocs_patch.parsers import document_parser
+
+client = GoogleDocsClient(credentials=load_credentials())
+response = client.get_document(document_id="DOCUMENT_ID")
+source = document_parser.parse(response)
+
+target = source  # Replace with an independently transformed document.
+batch = compile_document(source=source, target=target)
+client.batch_update(document_id=source.document_id, body=batch)
+```
+
 ## Development
 
 Run the test and static-analysis tools:
