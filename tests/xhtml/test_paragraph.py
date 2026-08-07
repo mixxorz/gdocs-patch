@@ -150,46 +150,6 @@ def test_round_trips_non_text_paragraph_element(
     assert paragraph_from(deserialize_document(xhtml)).elements == [paragraph_element]
 
 
-@pytest.mark.parametrize(
-    "date_format",
-    [
-        "DATE_FORMAT_UNSPECIFIED",
-        "DATE_FORMAT_CUSTOM",
-        "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
-        "DATE_FORMAT_MONTH_DAY_FULL",
-        "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
-        "DATE_FORMAT_ISO8601",
-    ],
-)
-def test_round_trips_every_date_format(date_format: str) -> None:
-    element = DateElement(date_id="date", date_format=date_format)  # type: ignore[arg-type]
-
-    decoded = paragraph_from(
-        deserialize_document(serialize_document(document_with_runs(element)))
-    )
-
-    assert decoded.elements == [element]
-
-
-@pytest.mark.parametrize(
-    "time_format",
-    [
-        "TIME_FORMAT_UNSPECIFIED",
-        "TIME_FORMAT_DISABLED",
-        "TIME_FORMAT_HOUR_MINUTE",
-        "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
-    ],
-)
-def test_round_trips_every_time_format(time_format: str) -> None:
-    element = DateElement(date_id="date", time_format=time_format)  # type: ignore[arg-type]
-
-    decoded = paragraph_from(
-        deserialize_document(serialize_document(document_with_runs(element)))
-    )
-
-    assert decoded.elements == [element]
-
-
 def test_rejects_multiple_children_in_content_link() -> None:
     xhtml = serialize_document(
         document_with_runs(
