@@ -106,16 +106,16 @@ def test_serializes_and_deserializes_document_and_tab_envelope() -> None:
         'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
         'g:title="Example &amp; Report" g:revision-id="revision-1" '
         'g:suggestions-view-mode="SUGGESTIONS_INLINE">\n'
-        '  <body>\n'
+        "  <body>\n"
         '    <g:tab g:tab-id="tab-root" g:title="Root" g:index="0" '
         'g:icon-emoji="📄">\n'
-        '      <g:child-tabs>\n'
+        "      <g:child-tabs>\n"
         '        <g:tab g:tab-id="tab-child" g:title="Child" g:index="1" '
         'g:nesting-level="1" g:parent-tab-id="tab-root" />\n'
-        '      </g:child-tabs>\n'
-        '    </g:tab>\n'
-        '  </body>\n'
-        '</html>\n'
+        "      </g:child-tabs>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
     )
     assert deserialize_document(xhtml) == document
 ```
@@ -650,9 +650,7 @@ def _prepend_leading_section(document: Document) -> None:
     assert isinstance(content, DocumentTab)
     body = content.body
     assert isinstance(body, Body)
-    content.body = Body(
-        content=[SectionBreak(style=SectionStyle()), *body.content]
-    )
+    content.body = Body(content=[SectionBreak(style=SectionStyle()), *body.content])
 ```
 
 Normalize only the approved representational differences on the expected instance:

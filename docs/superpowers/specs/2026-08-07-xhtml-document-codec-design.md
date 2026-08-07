@@ -55,7 +55,9 @@ Create `gdocs_patch/xhtml/` and export:
 ```python
 def serialize_document(document: Document) -> str: ...
 
+
 def deserialize_document(xhtml: str) -> Document: ...
+
 
 class XHTMLParseError(ValueError):
     pass
