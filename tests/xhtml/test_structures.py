@@ -3,10 +3,15 @@ import pytest
 from gdocs_patch.models import (
     UNSET,
     Body,
+    BookmarkLink,
+    Bullet,
+    BulletPreset,
     Color,
     Dimension,
     Document,
     DocumentTab,
+    ListDefinition,
+    ListLevel,
     Paragraph,
     SectionBreak,
     SectionColumn,
@@ -20,6 +25,8 @@ from gdocs_patch.models import (
     TableOfContents,
     TableRow,
     TextRun,
+    TextStyle,
+    UrlLink,
 )
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 
@@ -216,6 +223,248 @@ def test_rejects_section_column_missing_required_dimension(missing: str) -> None
 
     with pytest.raises(XHTMLParseError, match="missing required attribute"):
         deserialize_document(xhtml)
+
+
+def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
+    paragraphs = [
+        Paragraph(
+            elements=[TextRun(content="existing zero")],
+            bullet=Bullet(
+                list_id="list-1",
+                text_style=TextStyle(
+                    bold=True, link=UrlLink(url="https://example.com/bullet")
+                ),
+            ),
+        ),
+        Paragraph(
+            elements=[TextRun(content="existing two")],
+            bullet=Bullet(
+                list_id="list-1",
+                nesting_level=2,
+                text_style=TextStyle(italic=True),
+            ),
+        ),
+        Paragraph(elements=[TextRun(content="break")]),
+        Paragraph(
+            elements=[TextRun(content="preset zero")],
+            bullet=BulletPreset(preset="BULLET_DISC_CIRCLE_SQUARE"),
+        ),
+        Paragraph(
+            elements=[TextRun(content="preset one")],
+            bullet=BulletPreset(preset="BULLET_DISC_CIRCLE_SQUARE", nesting_level=1),
+        ),
+        Paragraph(
+            elements=[TextRun(content="numbered")],
+            bullet=BulletPreset(preset="NUMBERED_DECIMAL_ALPHA_ROMAN", nesting_level=1),
+        ),
+    ]
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    for paragraph in paragraphs:
+        content.body.add_child(paragraph)
+
+    xhtml = serialize_document(document)
+
+    assert xhtml.count("<g:list ") == 3
+    assert xhtml.count('<g:list g:list-id="list-1">') == 1
+    assert xhtml.count('<g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">') == 1
+    assert xhtml.count('<g:list g:bullet-preset="NUMBERED_DECIMAL_ALPHA_ROMAN">') == 1
+    assert xhtml.count("<li") == 5
+    assert xhtml.count("<g:bullet-style") == 2
+    assert '<a href="https://example.com/bullet" />' in xhtml
+    decoded = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded, DocumentTab)
+    assert isinstance(decoded.body, Body)
+    assert decoded.body.content[1:] == paragraphs
+
+
+def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
+    paragraph = Paragraph(
+        elements=[TextRun(content="item")],
+        bullet=Bullet(list_id="list-1", text_style=TextStyle()),
+    )
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(paragraph)
+
+    xhtml = serialize_document(document)
+
+    assert "<g:bullet-style" not in xhtml
+    decoded = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded, DocumentTab)
+    assert isinstance(decoded.body, Body)
+    decoded_paragraph = decoded.body.content[1]
+    assert isinstance(decoded_paragraph, Paragraph)
+    assert isinstance(decoded_paragraph.bullet, Bullet)
+    assert decoded_paragraph.bullet.text_style is UNSET
+
+
+def test_round_trips_complete_list_definitions_and_levels() -> None:
+    lists = {
+        "empty": ListDefinition(levels=[]),
+        "list-1": ListDefinition(
+            levels=[
+                ListLevel(
+                    glyph_format="%0.",
+                    glyph_type="DECIMAL",
+                    alignment="START",
+                    indent_first_line=Dimension(magnitude=18, unit="PT"),
+                    indent_start=Dimension(magnitude=36, unit="PT"),
+                    start_number=1,
+                    text_style=TextStyle(
+                        bold=True,
+                        italic=False,
+                        underline=True,
+                        strikethrough=False,
+                        small_caps=True,
+                        baseline_offset="SUPERSCRIPT",
+                        font_size=Dimension(magnitude=12, unit="PT"),
+                        font_family="Arial",
+                        font_weight=700,
+                        foreground_color=Color(red=0.1, green=0.2, blue=0.3),
+                        background_color=None,
+                        link=BookmarkLink(bookmark_id="bookmark-1", tab_id="tab-1"),
+                    ),
+                ),
+                ListLevel(
+                    glyph_format="%1",
+                    glyph_symbol="●",
+                    alignment="CENTER",
+                    indent_first_line=Dimension(magnitude=20, unit="PT"),
+                    indent_start=Dimension(magnitude=40, unit="PT"),
+                    start_number=0,
+                ),
+                ListLevel(
+                    glyph_format="%2",
+                    glyph_type="NONE",
+                    alignment="END",
+                    start_number=3,
+                ),
+                ListLevel(
+                    glyph_format="%3",
+                    glyph_type="GLYPH_TYPE_UNSPECIFIED",
+                ),
+            ]
+        ),
+    }
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    content.lists = lists
+
+    xhtml = serialize_document(document)
+
+    assert xhtml.index('g:list-id="empty"') < xhtml.index('g:list-id="list-1"')
+    assert '<g:list-definition g:list-id="empty" />' in xhtml
+    assert xhtml.count("<g:list-level") == 4
+    assert '<a g:bookmark-id="bookmark-1" g:tab-id="tab-1" />' in xhtml
+    decoded = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded, DocumentTab)
+    assert list(decoded.lists) == ["empty", "list-1"]  # type: ignore[arg-type]
+    assert decoded.lists == lists
+    assert deserialize_document(serialize_document(document)) == document
+
+
+@pytest.mark.parametrize(
+    ("lists", "fragment"), [(UNSET, ""), ({}, "<g:list-definitions />")]
+)
+def test_preserves_unset_versus_empty_list_definitions(
+    lists: object, fragment: str
+) -> None:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    content.lists = lists  # type: ignore[assignment]
+
+    xhtml = serialize_document(document)
+
+    assert ("<g:list-definitions" in xhtml) is bool(fragment)
+    assert fragment in xhtml
+    decoded = deserialize_document(xhtml).tabs[0].content
+    assert isinstance(decoded, DocumentTab)
+    assert decoded.lists == lists
+
+
+def xhtml_with_structure(structure: str, metadata: str = "") -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Lists">'
+        '<body><g:tab g:tab-id="tab" g:title="Main" g:index="0">'
+        f"<g:document-tab>{metadata}<g:body><section><g:section-style />"
+        f"{structure}"
+        "</section></g:body></g:document-tab></g:tab></body></html>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("structure", "message"),
+    [
+        ('<g:list g:list-id="id" />', "at least one"),
+        ("<g:list><li><p /></li></g:list>", "exactly one"),
+        (
+            '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
+            "<li><p /></li></g:list>",
+            "exactly one",
+        ),
+        (
+            '<g:list g:bullet-preset="BULLET_CHECKBOX"><li>'
+            "<g:bullet-style /><p /></li></g:list>",
+            "forbidden",
+        ),
+        ('<g:list g:list-id="id"><li /></g:list>', "exactly one paragraph"),
+        (
+            '<g:list g:list-id="id"><li><p /><p /></li></g:list>',
+            "exactly one paragraph",
+        ),
+        (
+            '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>',
+            "non-negative",
+        ),
+        (
+            '<g:list g:bullet-preset="NOT_A_PRESET"><li><p /></li></g:list>',
+            "expected one of",
+        ),
+    ],
+)
+def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
+    with pytest.raises(XHTMLParseError, match=message):
+        deserialize_document(xhtml_with_structure(structure))
+
+
+@pytest.mark.parametrize(
+    ("level", "message"),
+    [
+        ('<g:list-level g:glyph-type="DECIMAL" />', "glyph-format"),
+        ('<g:list-level g:glyph-format="%0" />', "exactly one"),
+        (
+            '<g:list-level g:glyph-format="%0" g:glyph-type="DECIMAL" '
+            'g:glyph-symbol="x" />',
+            "exactly one",
+        ),
+        (
+            '<g:list-level g:glyph-format="%0" g:glyph-type="INVALID" />',
+            "expected one of",
+        ),
+        (
+            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x" '
+            'g:alignment="INVALID" />',
+            "expected one of",
+        ),
+    ],
+)
+def test_rejects_invalid_list_levels(level: str, message: str) -> None:
+    metadata = (
+        '<g:list-definitions><g:list-definition g:list-id="id">'
+        f"{level}</g:list-definition></g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError, match=message):
+        deserialize_document(xhtml_with_structure("", metadata))
 
 
 def document_with_table(table: Table) -> Document:

@@ -5,6 +5,8 @@ from gdocs_patch.models import (
     UNSET,
     AutoText,
     Body,
+    Bullet,
+    BulletPreset,
     Color,
     ColumnBreak,
     DateElement,
@@ -16,6 +18,8 @@ from gdocs_patch.models import (
     HorizontalRule,
     InlineObjectReference,
     Link,
+    ListDefinition,
+    ListLevel,
     PageBreak,
     Paragraph,
     ParagraphBorder,
@@ -38,6 +42,7 @@ from gdocs_patch.models import (
     TableRow,
     TabStop,
     TextRun,
+    TextStyle,
     UnsetType,
 )
 
@@ -95,6 +100,35 @@ _DATE_FORMATS = {
     "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
     "DATE_FORMAT_ISO8601",
 }
+_BULLET_PRESETS = {
+    "BULLET_GLYPH_PRESET_UNSPECIFIED",
+    "BULLET_DISC_CIRCLE_SQUARE",
+    "BULLET_DIAMONDX_ARROW3D_SQUARE",
+    "BULLET_CHECKBOX",
+    "BULLET_ARROW_DIAMOND_DISC",
+    "BULLET_STAR_CIRCLE_SQUARE",
+    "BULLET_ARROW3D_CIRCLE_SQUARE",
+    "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
+    "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
+    "BULLET_DIAMOND_CIRCLE_SQUARE",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
+    "NUMBERED_DECIMAL_NESTED",
+    "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
+    "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
+    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
+}
+_GLYPH_TYPES = {
+    "GLYPH_TYPE_UNSPECIFIED",
+    "NONE",
+    "DECIMAL",
+    "ZERO_DECIMAL",
+    "UPPER_ALPHA",
+    "ALPHA",
+    "UPPER_ROMAN",
+    "ROMAN",
+}
+_BULLET_ALIGNMENTS = {"BULLET_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
 _TIME_FORMATS = {
     "TIME_FORMAT_UNSPECIFIED",
     "TIME_FORMAT_DISABLED",
@@ -248,6 +282,7 @@ class _Decoder:
             gdocs_name("headers"),
             gdocs_name("footers"),
             gdocs_name("footnotes"),
+            gdocs_name("list-definitions"),
         }
         for child in children:
             if child.tag not in supported:
@@ -256,6 +291,7 @@ class _Decoder:
         headers = extract_one_child(children, gdocs_name("headers"), path)
         footers = extract_one_child(children, gdocs_name("footers"), path)
         footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
+        lists = extract_one_child(children, gdocs_name("list-definitions"), path)
         return DocumentTab(
             body=UNSET if body is None else self.decode_body(body, f"{path}/g:body"),
             headers=(
@@ -273,7 +309,116 @@ class _Decoder:
                 if footnotes is None
                 else self.decode_segments(footnotes, "footnote", f"{path}/g:footnotes")
             ),
+            lists=(
+                UNSET
+                if lists is None
+                else self.decode_list_definitions(lists, f"{path}/g:list-definitions")
+            ),
         )
+
+    def decode_list_definitions(
+        self, element: ElementTree.Element, path: str
+    ) -> dict[str, ListDefinition]:
+        validate_attributes(element, set(), path)
+        validate_whitespace(element, path)
+        result: dict[str, ListDefinition] = {}
+        for index, child in enumerate(element):
+            child_path = f"{path}/g:list-definition[{index + 1}]"
+            if child.tag != gdocs_name("list-definition"):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+            validate_attributes(child, {gdocs_name("list-id")}, child_path)
+            validate_whitespace(child, child_path)
+            list_id = required_string(child, gdocs_name("list-id"), child_path)
+            if list_id in result:
+                parse_error(child_path, f"duplicate list key {list_id!r}")
+            levels: list[ListLevel] = []
+            for level_index, level in enumerate(child):
+                level_path = f"{child_path}/g:list-level[{level_index + 1}]"
+                if level.tag != gdocs_name("list-level"):
+                    parse_error(
+                        child_path, f"unknown child element {display_name(level.tag)}"
+                    )
+                levels.append(self.decode_list_level(level, level_path))
+            result[list_id] = ListDefinition(levels=levels)
+        return result
+
+    def decode_list_level(self, element: ElementTree.Element, path: str) -> ListLevel:
+        scalar_names = {
+            "glyph-format",
+            "glyph-type",
+            "glyph-symbol",
+            "alignment",
+            "indent-first-line",
+            "indent-start",
+            "start-number",
+        }
+        validate_attributes(
+            element,
+            {gdocs_name(name) for name in scalar_names} | text_style_attributes(),
+            path,
+        )
+        glyph_type = element.get(gdocs_name("glyph-type"))
+        glyph_symbol = element.get(gdocs_name("glyph-symbol"))
+        if (glyph_type is None) == (glyph_symbol is None):
+            parse_error(
+                path, "exactly one of g:glyph-type and g:glyph-symbol is required"
+            )
+        if glyph_type is not None:
+            glyph_type = parse_allowed(
+                glyph_type, _GLYPH_TYPES, f"{path}/@g:glyph-type"
+            )
+        return ListLevel(
+            glyph_format=required_string(element, gdocs_name("glyph-format"), path),
+            glyph_type=UNSET if glyph_type is None else glyph_type,  # type: ignore[arg-type]
+            glyph_symbol=UNSET if glyph_symbol is None else glyph_symbol,
+            alignment=self.decode_default_allowed(
+                element,
+                "alignment",
+                _BULLET_ALIGNMENTS,
+                "BULLET_ALIGNMENT_UNSPECIFIED",
+                path,
+            ),  # type: ignore[arg-type]
+            indent_first_line=self.optional_point(element, "indent-first-line", path),
+            indent_start=self.optional_point(element, "indent-start", path),
+            start_number=self.decode_default_integer(element, "start-number", 0, path),
+            text_style=self.decode_metadata_text_style(element, path),
+        )
+
+    def decode_default_allowed(
+        self,
+        element: ElementTree.Element,
+        name: str,
+        allowed: set[str],
+        default: str,
+        path: str,
+    ) -> str:
+        raw = element.get(gdocs_name(name))
+        return (
+            default if raw is None else parse_allowed(raw, allowed, f"{path}/@g:{name}")
+        )
+
+    def decode_default_integer(
+        self, element: ElementTree.Element, name: str, default: int, path: str
+    ) -> int:
+        raw = element.get(gdocs_name(name))
+        return default if raw is None else parse_integer(raw, f"{path}/@g:{name}")
+
+    def decode_metadata_text_style(
+        self, element: ElementTree.Element, path: str
+    ) -> TextStyle | UnsetType:
+        validate_whitespace(element, path)
+        children = list(element)
+        anchor = extract_one_child(children, xhtml_name("a"), path)
+        for child in children:
+            if child is not anchor:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        link: Link | UnsetType = UNSET
+        if anchor is not None:
+            anchor_path = f"{path}/a"
+            validate_whitespace(anchor, anchor_path)
+            _validate_no_children(anchor, anchor_path)
+            link = decode_link(anchor, anchor_path)
+        return decode_text_style(element, link, path)
 
     def decode_body(self, element: ElementTree.Element, path: str) -> Body:
         validate_attributes(element, set(), path)
@@ -478,6 +623,8 @@ class _Decoder:
                 parse_error(child_path, "section elements are only valid in a body")
             if element.tag in _PARAGRAPH_TAGS:
                 decoded.append(self.decode_paragraph(element, child_path))
+            elif element.tag == gdocs_name("list"):
+                decoded.extend(self.decode_list(element, child_path))
             elif element.tag == xhtml_name("table"):
                 decoded.append(self.decode_table(element, child_path))
             elif element.tag == gdocs_name("table-of-contents"):
@@ -496,6 +643,83 @@ class _Decoder:
                     f"unknown structural element {display_name(element.tag)}",
                 )
         return decoded
+
+    def decode_list(self, element: ElementTree.Element, path: str) -> list[Paragraph]:
+        validate_attributes(
+            element, {gdocs_name("list-id"), gdocs_name("bullet-preset")}, path
+        )
+        validate_whitespace(element, path)
+        list_id = element.get(gdocs_name("list-id"))
+        raw_preset = element.get(gdocs_name("bullet-preset"))
+        if (list_id is None) == (raw_preset is None):
+            parse_error(
+                path, "exactly one of g:list-id and g:bullet-preset is required"
+            )
+        preset = (
+            None
+            if raw_preset is None
+            else parse_allowed(raw_preset, _BULLET_PRESETS, f"{path}/@g:bullet-preset")
+        )
+        if not list(element):
+            parse_error(path, "list must contain at least one item")
+        result: list[Paragraph] = []
+        for index, item in enumerate(element):
+            item_path = f"{path}/li[{index + 1}]"
+            if item.tag != xhtml_name("li"):
+                parse_error(path, f"unknown child element {display_name(item.tag)}")
+            validate_attributes(item, {gdocs_name("nesting-level")}, item_path)
+            validate_whitespace(item, item_path)
+            children = list(item)
+            style_element = extract_one_child(
+                children, gdocs_name("bullet-style"), item_path
+            )
+            paragraph_elements = [
+                child for child in children if child.tag in _PARAGRAPH_TAGS
+            ]
+            unknown = [
+                child
+                for child in children
+                if child is not style_element and child.tag not in _PARAGRAPH_TAGS
+            ]
+            if unknown:
+                parse_error(
+                    item_path, f"unknown child element {display_name(unknown[0].tag)}"
+                )
+            if len(paragraph_elements) != 1:
+                parse_error(item_path, "list item must contain exactly one paragraph")
+            if preset is not None and style_element is not None:
+                parse_error(item_path, "bullet style is forbidden in a preset list")
+            raw_level = item.get(gdocs_name("nesting-level"))
+            level = (
+                0
+                if raw_level is None
+                else parse_integer(raw_level, f"{item_path}/@g:nesting-level")
+            )
+            if level < 0:
+                parse_error(item_path, "nesting level must be non-negative")
+            style = (
+                UNSET
+                if style_element is None
+                else self.decode_bullet_style(
+                    style_element, f"{item_path}/g:bullet-style"
+                )
+            )
+            paragraph = self.decode_paragraph(paragraph_elements[0], item_path + "/*")
+            paragraph.bullet = (
+                Bullet(
+                    list_id=cast(str, list_id), nesting_level=level, text_style=style
+                )
+                if preset is None
+                else BulletPreset(preset=preset, nesting_level=level)  # type: ignore[arg-type]
+            )
+            result.append(paragraph)
+        return result
+
+    def decode_bullet_style(
+        self, element: ElementTree.Element, path: str
+    ) -> TextStyle | UnsetType:
+        validate_attributes(element, text_style_attributes(), path)
+        return self.decode_metadata_text_style(element, path)
 
     def decode_table(self, element: ElementTree.Element, path: str) -> Table:
         validate_attributes(element, {gdocs_name("table-key")}, path)

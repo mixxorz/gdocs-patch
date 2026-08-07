@@ -5,6 +5,8 @@ from gdocs_patch.models import (
     UNSET,
     AutoText,
     Body,
+    Bullet,
+    BulletPreset,
     Color,
     ColumnBreak,
     DateElement,
@@ -15,6 +17,8 @@ from gdocs_patch.models import (
     FootnoteReference,
     HorizontalRule,
     InlineObjectReference,
+    ListDefinition,
+    ListLevel,
     PageBreak,
     Paragraph,
     ParagraphBorder,
@@ -36,6 +40,7 @@ from gdocs_patch.models import (
     TableRow,
     TabStop,
     TextRun,
+    TextStyle,
     UnsetType,
 )
 
@@ -102,9 +107,11 @@ class _Encoder:
             raise ValueError("DocumentStyle is not supported yet")
         if document_tab.named_styles is not UNSET:
             raise ValueError("named styles are not supported yet")
-        if document_tab.lists is not UNSET:
-            raise ValueError("list definitions are not supported yet")
         element = ElementTree.Element(gdocs_name("document-tab"))
+        if document_tab.lists is not UNSET:
+            self.encode_list_definitions(
+                element, cast(dict[str, ListDefinition], document_tab.lists)
+            )
         if document_tab.body is not UNSET:
             element.append(self.encode_body(cast(Body, document_tab.body)))
         self.encode_segments(element, "headers", "header", document_tab.headers)
@@ -117,14 +124,59 @@ class _Encoder:
         if not body.content or not isinstance(body.content[0], SectionBreak):
             raise ValueError("Body.content must begin with SectionBreak")
         current: ElementTree.Element | None = None
+        section_content: list[StructuralElement] = []
         for node in body.content:
             if isinstance(node, SectionBreak):
+                if current is not None:
+                    current.extend(
+                        self.encode_structural_sequence(section_content, body=True)
+                    )
                 current = ElementTree.SubElement(element, xhtml_name("section"))
                 self.encode_section_style(current, node)
+                section_content = []
             else:
-                assert current is not None
-                current.extend(self.encode_structural_sequence([node], body=True))
+                section_content.append(node)
+        assert current is not None
+        current.extend(self.encode_structural_sequence(section_content, body=True))
         return element
+
+    def encode_list_definitions(
+        self, parent: ElementTree.Element, definitions: dict[str, ListDefinition]
+    ) -> None:
+        wrapper = ElementTree.SubElement(parent, gdocs_name("list-definitions"))
+        for list_id, definition in definitions.items():
+            element = ElementTree.SubElement(wrapper, gdocs_name("list-definition"))
+            element.set(gdocs_name("list-id"), list_id)
+            for level in definition.levels:
+                element.append(self.encode_list_level(level))
+
+    def encode_list_level(self, level: ListLevel) -> ElementTree.Element:
+        element = ElementTree.Element(gdocs_name("list-level"))
+        element.set(gdocs_name("glyph-format"), level.glyph_format)
+        if level.glyph_type is not UNSET:
+            element.set(gdocs_name("glyph-type"), cast(str, level.glyph_type))
+        if level.glyph_symbol is not UNSET:
+            element.set(gdocs_name("glyph-symbol"), cast(str, level.glyph_symbol))
+        if level.alignment != "BULLET_ALIGNMENT_UNSPECIFIED":
+            element.set(gdocs_name("alignment"), level.alignment)
+        self.encode_point_attribute(
+            element, "indent-first-line", level.indent_first_line
+        )
+        self.encode_point_attribute(element, "indent-start", level.indent_start)
+        if level.start_number != 0:
+            element.set(gdocs_name("start-number"), str(level.start_number))
+        self.encode_metadata_text_style(element, level.text_style)
+        return element
+
+    def encode_metadata_text_style(
+        self, element: ElementTree.Element, style: TextStyle | UnsetType
+    ) -> None:
+        if style is UNSET:
+            return
+        encoded = encode_text_style(element, style)
+        if encoded is not element:
+            encoded.remove(element)
+            element.append(encoded)
 
     def encode_section_style(
         self, section: ElementTree.Element, section_break: SectionBreak
@@ -217,13 +269,29 @@ class _Encoder:
         self, elements: list[StructuralElement], body: bool = False
     ) -> list[ElementTree.Element]:
         encoded: list[ElementTree.Element] = []
-        for element in elements:
+        index = 0
+        while index < len(elements):
+            element = elements[index]
             if isinstance(element, SectionBreak):
                 if body:
                     raise ValueError("SectionBreak must be projected as a section")
                 raise ValueError("SectionBreak is only valid in a body")
             if isinstance(element, Paragraph):
-                encoded.append(self.encode_paragraph(element))
+                key = self.bullet_group_key(element)
+                if key is None:
+                    encoded.append(self.encode_paragraph(element))
+                else:
+                    end = index + 1
+                    while end < len(elements):
+                        candidate = elements[end]
+                        if not isinstance(candidate, Paragraph):
+                            break
+                        if self.bullet_group_key(candidate) != key:
+                            break
+                        end += 1
+                    encoded.append(self.encode_list(elements[index:end], key))  # type: ignore[arg-type]
+                    index = end
+                    continue
             elif isinstance(element, Table):
                 encoded.append(self.encode_table(element))
             elif isinstance(element, TableOfContents):
@@ -236,7 +304,38 @@ class _Encoder:
                 raise ValueError(
                     f"unsupported structural element {type(element).__name__}"
                 )
+            index += 1
         return encoded
+
+    def bullet_group_key(self, paragraph: Paragraph) -> tuple[str, str] | None:
+        bullet = paragraph.bullet
+        if isinstance(bullet, Bullet):
+            return ("existing", bullet.list_id)
+        if isinstance(bullet, BulletPreset):
+            return ("preset", bullet.preset)
+        return None
+
+    def encode_list(
+        self, paragraphs: list[Paragraph], key: tuple[str, str]
+    ) -> ElementTree.Element:
+        element = ElementTree.Element(gdocs_name("list"))
+        kind, identity = key
+        element.set(
+            gdocs_name("list-id" if kind == "existing" else "bullet-preset"), identity
+        )
+        for paragraph in paragraphs:
+            item = ElementTree.SubElement(element, xhtml_name("li"))
+            bullet = paragraph.bullet
+            assert isinstance(bullet, (Bullet, BulletPreset))
+            if bullet.nesting_level != 0:
+                item.set(gdocs_name("nesting-level"), str(bullet.nesting_level))
+            if isinstance(bullet, Bullet) and bullet.text_style is not UNSET:
+                metadata = ElementTree.Element(gdocs_name("bullet-style"))
+                self.encode_metadata_text_style(metadata, bullet.text_style)
+                if metadata.attrib or list(metadata):
+                    item.append(metadata)
+            item.append(self.encode_paragraph(paragraph))
+        return element
 
     def encode_table(self, table: Table) -> ElementTree.Element:
         element = ElementTree.Element(xhtml_name("table"))
@@ -320,8 +419,6 @@ class _Encoder:
         self.encode_optional_color(element, "color", border.color)
 
     def encode_paragraph(self, paragraph: Paragraph) -> ElementTree.Element:
-        if paragraph.bullet is not UNSET:
-            raise ValueError("paragraph bullets are not supported yet")
         tag = gdocs_name("paragraph")
         style: ParagraphStyle | None = None
         if paragraph.style is not UNSET:
