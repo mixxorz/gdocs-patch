@@ -205,6 +205,75 @@ def test_parent_scalar_error_precedes_invalid_descendant(
     assert expected_attribute in str(error.value)
 
 
+@pytest.mark.parametrize(
+    ("xhtml", "expected_attribute"),
+    [
+        (
+            document(
+                '<g:list g:list-id="id"><li g:nesting-level="invalid">'
+                "BAD<p /></li></g:list>"
+            ),
+            "@g:nesting-level",
+        ),
+        (
+            document(
+                '<table><colgroup><col g:width-type="INVALID">'
+                "<g:unknown /></col></colgroup><tbody /></table>"
+            ),
+            "@g:width-type",
+        ),
+        (
+            document(
+                "<p><g:positioned-objects><g:positioned-object>"
+                "<g:unknown /></g:positioned-object></g:positioned-objects></p>"
+            ),
+            "g:id",
+        ),
+        (
+            document(
+                '<p><g:paragraph-style><g:tab-stops><g:tab-stop g:alignment="INVALID">'
+                "<g:unknown /></g:tab-stop></g:tab-stops></g:paragraph-style></p>"
+            ),
+            "@g:alignment",
+        ),
+        (
+            document("<p><g:auto-text><g:unknown /></g:auto-text></p>"),
+            "g:type",
+        ),
+        (
+            document('<p><a href="x" g:tab-id="tab">BAD<span /></a></p>'),
+            "link target attribute combination",
+        ),
+        (
+            document(
+                '<g:list g:list-id="id"><li><p /></li></g:list>',
+                metadata='<g:list-definitions><g:list-definition g:list-id="id">'
+                '<g:list-level g:glyph-format="%0" g:glyph-symbol="x">'
+                '<a href="x" g:tab-id="tab">BAD</a></g:list-level>'
+                "</g:list-definition></g:list-definitions>",
+            ),
+            "link target attribute combination",
+        ),
+    ],
+    ids=[
+        "list-item",
+        "table-column",
+        "positioned-object",
+        "tab-stop",
+        "non-text-required",
+        "content-link",
+        "metadata-link",
+    ],
+)
+def test_local_attribute_error_precedes_text_or_child_error(
+    xhtml: str, expected_attribute: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert expected_attribute in str(error.value)
+
+
 def test_malformed_xml_preserves_element_tree_cause() -> None:
     with pytest.raises(XHTMLParseError) as error:
         deserialize_document(DECLARATION + "<html>")
