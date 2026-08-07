@@ -6,8 +6,8 @@ This document records the canonical XML/XHTML representation of the supported `g
 
 ## Goals
 
-- Round-trip compiler-significant values in the supported XHTML subset of `Document`.
-- Intentionally omit provider-owned list definitions that cannot be mutated directly; list mutations are expressed through retained list IDs and target bullet presets.
+- Round-trip every currently modeled `Document` field, subject only to the explicit normalization rules below.
+- Represent both provider-owned list definitions and paragraph-level list mutation intent.
 - Canonicalize model states that the compiler intentionally treats as equivalent.
 - Remain readable as document markup rather than exposing a generic Python-object dump.
 - Use XML/XHTML syntax without CSS.
@@ -152,6 +152,7 @@ The serializer writes present `DocumentTab` children in this order:
 <g:document-tab>
   <g:document-style />
   <g:named-styles />
+  <g:list-definitions />
   <g:body>...</g:body>
   <g:headers>...</g:headers>
   <g:footers>...</g:footers>
@@ -159,7 +160,7 @@ The serializer writes present `DocumentTab` children in this order:
 </g:document-tab>
 ```
 
-Omitted fields disappear without changing the relative order of the remaining children. The deserializer accepts these unique field wrappers in any order. `DocumentTab.lists` is intentionally absent from the grammar.
+Omitted fields disappear without changing the relative order of the remaining children. The deserializer accepts these unique field wrappers in any order.
 
 ### Bodies and segments
 
@@ -718,11 +719,32 @@ An absent `<g:named-styles>` means `UNSET`; an empty wrapper means an empty list
 
 Both `g:type` and the nested paragraph style's `g:named-style-type` accept `NAMED_STYLE_TYPE_UNSPECIFIED`, `NORMAL_TEXT`, `TITLE`, `SUBTITLE`, `HEADING_1`, `HEADING_2`, `HEADING_3`, `HEADING_4`, `HEADING_5`, or `HEADING_6`. A nested `g:named-style-type` attribute is necessary here because no owning paragraph element exists to encode that `ParagraphStyle` field.
 
-### Intentionally omitted list definitions
+### List definitions
 
-The `DocumentTab.lists` definition map is not represented in XHTML. Serialization omits it, and deserialization sets it to `UNSET`, because Google list definitions cannot be mutated directly. Paragraph-level list syntax remains supported: `g:list-id` preserves membership in a Google-assigned list and `g:bullet-preset` expresses target list-creation intent.
+`DocumentTab.lists` uses a dictionary wrapper alongside the other document-tab metadata:
 
-A future source-backed target strategy may combine omitted list definitions from the parsed source document if later compiler stages require them; that work is recorded in `OUTLINE.md`. Named styles and document style remain in XHTML scope even though complete compiler reconciliation is future work.
+```xml
+<g:list-definitions>
+  <g:list-definition g:list-id="list-1">
+    <g:list-level
+        g:glyph-format="%0."
+        g:glyph-type="DECIMAL"
+        g:alignment="START"
+        g:indent-first-line="18"
+        g:indent-start="36"
+        g:start-number="1"
+        g:bold="true">
+      <a href="https://example.com" />
+    </g:list-level>
+  </g:list-definition>
+</g:list-definitions>
+```
+
+An absent `<g:list-definitions>` means `UNSET`; an empty wrapper means an empty dictionary. `g:list-id` is the dictionary key and accepts any string. Each `<g:list-definition>` represents `ListDefinition`, preserves the order of its `<g:list-level>` children, and may contain zero levels.
+
+For each level, `g:glyph-format` is required and accepts any string. Exactly one of `g:glyph-type` and `g:glyph-symbol` is required. `g:glyph-symbol` accepts any string. `g:glyph-type` accepts `GLYPH_TYPE_UNSPECIFIED`, `NONE`, `DECIMAL`, `ZERO_DECIMAL`, `UPPER_ALPHA`, `ALPHA`, `UPPER_ROMAN`, or `ROMAN`.
+
+`g:alignment` accepts `BULLET_ALIGNMENT_UNSPECIFIED`, `START`, `CENTER`, or `END`; omission uses the model default `BULLET_ALIGNMENT_UNSPECIFIED`. `g:start-number` is an integer and omission uses the model default `0`. Optional `g:indent-first-line` and `g:indent-start` are point magnitudes. Text-style attributes represent `ListLevel.text_style`, and an optional empty `<a>` supplies its metadata link.
 
 ### Compiler scope boundary for lists
 

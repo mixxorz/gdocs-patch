@@ -15,9 +15,7 @@ The detailed, normative element and attribute grammar lives in [`docs/xhtml-synt
 
 ## Scope
 
-The codec supports the current document hierarchy, tabs, indexed regions, sections, paragraphs, text runs, text and paragraph styles, links, paragraph-element variants, tables, list membership and bullet presets, document style, and named styles as documented in the syntax reference.
-
-The codec intentionally omits `DocumentTab.lists` definitions. Google assigns and owns existing list definitions; target mutations are expressed through retained `Bullet.list_id` values and `BulletPreset` creation intent. Serialization ignores the definition map, and deserialization sets it to `UNSET`.
+The codec supports the complete current modeled document hierarchy, including tabs, indexed regions, sections, paragraphs, text runs, text and paragraph styles, links, paragraph-element variants, tables, list membership, bullet presets, list definitions and levels, document style, and named styles as documented in the syntax reference.
 
 Out of scope:
 
@@ -25,7 +23,7 @@ Out of scope:
 - Google API retrieval;
 - source/target orchestration;
 - compiler invocation or compiler changes;
-- combining omitted target metadata with a source document;
+- combining a target document with source-backed metadata;
 - coalescing redundant `createParagraphBullets` requests;
 - changing existing list definitions directly.
 
@@ -46,7 +44,6 @@ Intentional normalizations are limited to:
 - a default-span `TableCellStyle()` with no other values normalizes to `UNSET`;
 - metadata and attributes serialize in canonical order;
 - literal line feeds accepted inside spans serialize back as `<br />`;
-- `DocumentTab.lists` definitions are omitted;
 - synthetic XHTML section and list containers flatten back into existing model nodes and fields.
 
 `DocumentStyle()` remains distinct from `UNSET`, and the required `SectionStyle` is always represented.
@@ -193,6 +190,8 @@ A present body contains one or more `<section>` elements. Each section contains 
 
 Serialization groups contiguous compatible bullet paragraphs. New adjacent lists with the same preset intentionally canonicalize into one group. The codec does not optimize the compiler requests produced for those paragraphs.
 
+`DocumentTab.lists` is independently encoded under `<g:list-definitions>`. Dictionary keys, list-definition level order, list-level glyph configuration, indentation, numbering, and text styles all round-trip even though compiler support for mutating those definitions is out of scope.
+
 ### Text
 
 Each `TextRun` is exactly one `<span>`, preserving adjacent and empty run boundaries. The encoder replaces each newline character with an empty `<br />`; the decoder accepts `<br />` and literal line feeds as newline characters. It adds or removes no terminal newline.
@@ -230,9 +229,9 @@ Test levels:
 
 1. Focused behavior for text runs, newlines, links, booleans, colors, dimensions, metadata placement, sections, lists, tables, and recursive content.
 2. Exact canonical XML for representative models, including stable namespace and ordering behavior and indentation that does not mutate mixed content.
-3. Explicit normalized round trips using `deserialize_document(serialize_document(document))` and a hand-written expected model. Final document-equality assertions exclude `DocumentTab.lists` on both sides because that field is intentionally not serialized. A separate focused assertion verifies that deserialization leaves the omitted field as `UNSET`.
+3. Explicit normalized round trips using `deserialize_document(serialize_document(document))` and a hand-written expected model. Round-trip equality includes `DocumentTab.lists`, `ListDefinition`, and `ListLevel` values.
 4. Parameterized invalid input covering malformed XML, unknown syntax, duplicates, missing fields, invalid constants, and contradictory combinations.
-5. One kitchen-sink supported document containing nested tabs, regions, sections, list items, tables, cells, styles, and every paragraph-element variant. Its final round-trip comparison also ignores `DocumentTab.lists` definitions.
+5. One kitchen-sink supported document containing nested tabs, regions, sections, list items, list definitions, tables, cells, styles, and every paragraph-element variant.
 
 Tests assert public behavior rather than private delegation. Expected normalized models are written explicitly rather than derived by production helpers. CLI and live Google API tests are excluded.
 

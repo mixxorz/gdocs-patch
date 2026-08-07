@@ -187,10 +187,10 @@ Treat a table of contents as an opaque, non-creatable structure unless API behav
 
 ## Source-backed target materialization
 
-The initial XHTML representation intentionally omits `DocumentTab.lists` definitions because Google list definitions cannot be mutated directly; paragraph list mutations are expressed through retained list IDs and target bullet presets. Named styles and document style remain represented even before their compiler reconciliation is complete. Define a broader strategy for reducing XHTML in areas that Google Docs cannot mutate directly:
+The initial XHTML representation includes all currently modeled fields, including list definitions, named styles, and document style. Before reducing future XHTML representations for provider-owned or immutable data, define a source-backed target strategy:
 
-- combine omitted target data with the parsed source `Document` before compilation when later compiler stages require it;
-- identify which additional provider-owned or immutable definitions and resources are safe to omit and inherit from the source;
+- identify which definitions and resources are safe to omit and inherit from the parsed source `Document`;
+- combine such omitted target data with the source before compilation when later compiler stages require it;
 - distinguish omission meaning “inherit from source” from intentional deletion, reset, or replacement;
 - ensure source-backed materialization occurs before feasibility checks and mutation planning.
 
