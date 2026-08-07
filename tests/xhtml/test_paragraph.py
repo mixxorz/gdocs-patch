@@ -174,6 +174,44 @@ def test_decodes_literal_line_feed_breaks_and_preserves_run_boundaries() -> None
     ]
 
 
+def test_rejects_nested_child_in_empty_paragraph_style() -> None:
+    with pytest.raises(
+        XHTMLParseError,
+        match=r"/html/body/g:tab\[1\].*/g:paragraph-style: unknown child element g:unknown",
+    ):
+        deserialize_document(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Style">'
+            "<body>"
+            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
+            "<g:document-tab><g:body><section><g:section-style /><p>"
+            "<g:paragraph-style><g:unknown /></g:paragraph-style><span>ok</span>"
+            "</p></section></g:body></g:document-tab>"
+            "</g:tab>"
+            "</body></html>"
+        )
+
+
+def test_rejects_nested_child_in_break() -> None:
+    with pytest.raises(
+        XHTMLParseError,
+        match=r"/html/body/g:tab\[1\].*/br: unknown child element g:unknown",
+    ):
+        deserialize_document(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Break">'
+            "<body>"
+            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
+            "<g:document-tab><g:body><section><g:section-style />"
+            "<p><span>before<br><g:unknown /></br>after</span></p>"
+            "</section></g:body></g:document-tab>"
+            "</g:tab>"
+            "</body></html>"
+        )
+
+
 def test_rejects_non_whitespace_tail_after_paragraph_metadata() -> None:
     with pytest.raises(
         XHTMLParseError,

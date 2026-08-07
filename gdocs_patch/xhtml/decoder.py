@@ -44,6 +44,14 @@ _SUGGESTIONS_VIEW_MODES = {
     "PREVIEW_SUGGESTIONS_ACCEPTED",
     "PREVIEW_WITHOUT_SUGGESTIONS",
 }
+
+
+def _validate_no_children(element: ElementTree.Element, path: str) -> None:
+    children = list(element)
+    if children:
+        parse_error(path, f"unknown child element {display_name(children[0].tag)}")
+
+
 SuggestionsViewMode = Literal[
     "DEFAULT_FOR_CURRENT_ACCESS",
     "SUGGESTIONS_INLINE",
@@ -223,6 +231,7 @@ class _Decoder:
             style_path = f"{section_path}/g:section-style"
             validate_attributes(style, set(), style_path)
             validate_whitespace(style, style_path)
+            _validate_no_children(style, style_path)
             content.append(SectionBreak(style=SectionStyle()))
             content.extend(
                 self.decode_structural_sequence(
@@ -286,6 +295,7 @@ class _Decoder:
             metadata_path = f"{path}/g:paragraph-style"
             validate_attributes(metadata, set(), metadata_path)
             validate_whitespace(metadata, metadata_path)
+            _validate_no_children(metadata, metadata_path)
         runs: list[ParagraphElement] = []
         for index, child in enumerate(children):
             if child.tail is not None and child.tail.strip():
@@ -332,6 +342,7 @@ class _Decoder:
             validate_attributes(child, set(), child_path)
             if child.text:
                 parse_error(child_path, "br must be empty")
+            _validate_no_children(child, child_path)
             content += "\n" + (child.tail or "")
         return TextRun(
             content=content,
