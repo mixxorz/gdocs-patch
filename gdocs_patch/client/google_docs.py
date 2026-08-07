@@ -1,12 +1,9 @@
-# pyright: reportAttributeAccessIssue=false, reportUnknownMemberType=false
-# pyright: reportUnknownVariableType=false
-
 from typing import Any, cast
 
 from google.auth.credentials import Credentials
 from googleapiclient.discovery import (  # pyright: ignore[reportMissingTypeStubs]
     Resource,
-    build,
+    build,  # pyright: ignore[reportUnknownVariableType]
 )
 
 
@@ -20,8 +17,8 @@ class GoogleDocsClient:
         )
 
     def get_document(self, *, document_id: str) -> dict[str, Any]:
-        response = (
-            self._service.documents()
+        response = (  # pyright: ignore[reportUnknownVariableType]
+            self._service.documents()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
             .get(documentId=document_id, includeTabsContent=True)
             .execute()
         )
@@ -33,8 +30,8 @@ class GoogleDocsClient:
         document_id: str,
         body: dict[str, object],
     ) -> dict[str, Any]:
-        response = (
-            self._service.documents()
+        response = (  # pyright: ignore[reportUnknownVariableType]
+            self._service.documents()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
             .batchUpdate(documentId=document_id, body=body)
             .execute()
         )

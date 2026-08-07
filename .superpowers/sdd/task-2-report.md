@@ -75,3 +75,33 @@ Result: passed with no whitespace errors.
 
 - Strict Pyright 1.1.411 reports the dynamically generated `googleapiclient.discovery.Resource` methods and partially typed `build` as unknown despite the brief's missing-stubs suppression. Module-local suppressions were required for the mandated static check. They are restricted to the transport-boundary module.
 - Real Google transport behavior remains intentionally unautomated and requires manual verification against Google, as specified by the brief.
+
+## Review fix: narrow Pyright suppressions
+
+Removed the module-wide `reportAttributeAccessIssue`, `reportUnknownMemberType`, and `reportUnknownVariableType` settings. Added narrow inline suppressions only to the dynamically typed `build` import, the two response assignments, and the two generated `Resource.documents()` call-chain sites. The missing-stubs suppression and intended three boundary casts remain unchanged.
+
+Commands and results:
+
+```bash
+uv run ruff check gdocs_patch/client/google_docs.py
+```
+
+Result: passed (`All checks passed!`).
+
+```bash
+uv run ruff format --check gdocs_patch/client/google_docs.py
+```
+
+Result: passed (`1 file already formatted`).
+
+```bash
+uv run pyright
+```
+
+Result: passed (`0 errors, 0 warnings, 0 informations`).
+
+```bash
+uv run pytest
+```
+
+Result: passed (`100 passed in 0.08s`).
