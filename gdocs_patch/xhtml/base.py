@@ -221,7 +221,8 @@ def encode_text_color(
 
 
 def format_number(value: float) -> str:
-    return format(value, ".15g")
+    text = repr(value)
+    return text[:-2] if text.endswith(".0") else text
 
 
 def decode_link(element: ElementTree.Element, path: str) -> Link:

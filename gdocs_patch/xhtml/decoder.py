@@ -288,6 +288,8 @@ class _Decoder:
             validate_whitespace(metadata, metadata_path)
         runs: list[ParagraphElement] = []
         for index, child in enumerate(children):
+            if child.tail is not None and child.tail.strip():
+                parse_error(path, "unexpected text between paragraph elements")
             if child is metadata:
                 continue
             child_path = f"{path}/*[{index + 1}]"
@@ -299,8 +301,6 @@ class _Decoder:
                 parse_error(
                     child_path, f"unknown paragraph element {display_name(child.tag)}"
                 )
-            if child.tail is not None and child.tail.strip():
-                parse_error(path, "unexpected text between paragraph elements")
         style = (
             ParagraphStyle(named_style_type="NORMAL_TEXT")
             if element.tag == xhtml_name("p")
