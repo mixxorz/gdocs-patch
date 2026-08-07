@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal, cast
 from xml.etree import ElementTree
 
@@ -153,6 +154,46 @@ def _validate_no_children(element: ElementTree.Element, path: str) -> None:
         parse_error(path, f"unknown child element {display_name(children[0].tag)}")
 
 
+@dataclass
+class _TableCellStyleFields:
+    background_color: Color | None | UnsetType = UNSET
+    border_left: TableCellBorder | UnsetType = UNSET
+    border_right: TableCellBorder | UnsetType = UNSET
+    border_top: TableCellBorder | UnsetType = UNSET
+    border_bottom: TableCellBorder | UnsetType = UNSET
+    padding_left: Dimension | UnsetType = UNSET
+    padding_right: Dimension | UnsetType = UNSET
+    padding_top: Dimension | UnsetType = UNSET
+    padding_bottom: Dimension | UnsetType = UNSET
+    content_alignment: (
+        Literal[
+            "CONTENT_ALIGNMENT_UNSPECIFIED",
+            "CONTENT_ALIGNMENT_UNSUPPORTED",
+            "TOP",
+            "MIDDLE",
+            "BOTTOM",
+        ]
+        | UnsetType
+    ) = UNSET
+
+    def has_values(self) -> bool:
+        return any(
+            value is not UNSET
+            for value in (
+                self.background_color,
+                self.border_left,
+                self.border_right,
+                self.border_top,
+                self.border_bottom,
+                self.padding_left,
+                self.padding_right,
+                self.padding_top,
+                self.padding_bottom,
+                self.content_alignment,
+            )
+        )
+
+
 SuggestionsViewMode = Literal[
     "DEFAULT_FOR_CURRENT_ACCESS",
     "SUGGESTIONS_INLINE",
@@ -246,21 +287,18 @@ class _Decoder:
             if raw_level is None
             else parse_integer(raw_level, f"{path}/@g:nesting-level")
         )
-        if nesting_level < 0:
-            parse_error(
-                f"{path}/@g:nesting-level", "nesting level must be non-negative"
-            )
         parent_tab_id = optional_string(element, gdocs_name("parent-tab-id"))
         icon_emoji = optional_string(element, gdocs_name("icon-emoji"))
 
         validate_whitespace(element, path)
         children = list(element)
         document_tab = extract_one_child(children, gdocs_name("document-tab"), path)
+        decoded_content = (
+            UNSET
+            if document_tab is None
+            else self.decode_document_tab(document_tab, f"{path}/g:document-tab")
+        )
         child_tabs = extract_one_child(children, gdocs_name("child-tabs"), path)
-        for child in children:
-            if child not in (document_tab, child_tabs):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-
         decoded_children: list[Tab] = []
         if child_tabs is not None:
             child_path = f"{path}/g:child-tabs"
@@ -274,6 +312,13 @@ class _Decoder:
                 decoded_children.append(
                     self.decode_tab(child, f"{child_path}/g:tab[{index + 1}]")
                 )
+        for child in children:
+            if child not in (document_tab, child_tabs):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        if nesting_level < 0:
+            parse_error(
+                f"{path}/@g:nesting-level", "nesting level must be non-negative"
+            )
         return Tab(
             tab_id=tab_id,
             title=title,
@@ -281,11 +326,7 @@ class _Decoder:
             nesting_level=nesting_level,
             parent_tab_id=parent_tab_id,
             icon_emoji=icon_emoji,
-            content=(
-                UNSET
-                if document_tab is None
-                else self.decode_document_tab(document_tab, f"{path}/g:document-tab")
-            ),
+            content=decoded_content,
             children=decoded_children,
         )
 
@@ -295,6 +336,46 @@ class _Decoder:
         validate_attributes(element, set(), path)
         validate_whitespace(element, path)
         children = list(element)
+        body = extract_one_child(children, gdocs_name("body"), path)
+        decoded_body = (
+            UNSET if body is None else self.decode_body(body, f"{path}/g:body")
+        )
+        headers = extract_one_child(children, gdocs_name("headers"), path)
+        decoded_headers = (
+            UNSET
+            if headers is None
+            else self.decode_segments(headers, "header", f"{path}/g:headers")
+        )
+        footers = extract_one_child(children, gdocs_name("footers"), path)
+        decoded_footers = (
+            UNSET
+            if footers is None
+            else self.decode_segments(footers, "footer", f"{path}/g:footers")
+        )
+        footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
+        decoded_footnotes = (
+            UNSET
+            if footnotes is None
+            else self.decode_segments(footnotes, "footnote", f"{path}/g:footnotes")
+        )
+        lists = extract_one_child(children, gdocs_name("list-definitions"), path)
+        decoded_lists = (
+            UNSET
+            if lists is None
+            else self.decode_list_definitions(lists, f"{path}/g:list-definitions")
+        )
+        document_style = extract_one_child(children, gdocs_name("document-style"), path)
+        decoded_document_style = (
+            UNSET
+            if document_style is None
+            else self.decode_document_style(document_style, f"{path}/g:document-style")
+        )
+        named_styles = extract_one_child(children, gdocs_name("named-styles"), path)
+        decoded_named_styles = (
+            UNSET
+            if named_styles is None
+            else self.decode_named_styles(named_styles, f"{path}/g:named-styles")
+        )
         supported = {
             gdocs_name("body"),
             gdocs_name("headers"),
@@ -307,47 +388,14 @@ class _Decoder:
         for child in children:
             if child.tag not in supported:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
-        body = extract_one_child(children, gdocs_name("body"), path)
-        headers = extract_one_child(children, gdocs_name("headers"), path)
-        footers = extract_one_child(children, gdocs_name("footers"), path)
-        footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
-        lists = extract_one_child(children, gdocs_name("list-definitions"), path)
-        document_style = extract_one_child(children, gdocs_name("document-style"), path)
-        named_styles = extract_one_child(children, gdocs_name("named-styles"), path)
         return DocumentTab(
-            body=UNSET if body is None else self.decode_body(body, f"{path}/g:body"),
-            headers=(
-                UNSET
-                if headers is None
-                else self.decode_segments(headers, "header", f"{path}/g:headers")
-            ),
-            footers=(
-                UNSET
-                if footers is None
-                else self.decode_segments(footers, "footer", f"{path}/g:footers")
-            ),
-            footnotes=(
-                UNSET
-                if footnotes is None
-                else self.decode_segments(footnotes, "footnote", f"{path}/g:footnotes")
-            ),
-            lists=(
-                UNSET
-                if lists is None
-                else self.decode_list_definitions(lists, f"{path}/g:list-definitions")
-            ),
-            document_style=(
-                UNSET
-                if document_style is None
-                else self.decode_document_style(
-                    document_style, f"{path}/g:document-style"
-                )
-            ),
-            named_styles=(
-                UNSET
-                if named_styles is None
-                else self.decode_named_styles(named_styles, f"{path}/g:named-styles")
-            ),
+            body=decoded_body,
+            headers=decoded_headers,
+            footers=decoded_footers,
+            footnotes=decoded_footnotes,
+            lists=decoded_lists,
+            document_style=decoded_document_style,
+            named_styles=decoded_named_styles,
         )
 
     def decode_document_style(
@@ -423,14 +471,14 @@ class _Decoder:
         validate_whitespace(element, path)
         children = list(element)
         background = extract_one_child(children, gdocs_name("background-color"), path)
-        for child in children:
-            if child is not background:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
         background_color = (
             UNSET
             if background is None
             else self.decode_optional_color(background, f"{path}/g:background-color")
         )
+        for child in children:
+            if child is not background:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
         return DocumentStyle(
             background_color=background_color,
             document_mode=document_mode,  # type: ignore[arg-type]
@@ -480,15 +528,6 @@ class _Decoder:
             validate_whitespace(child, child_path)
             children = list(child)
             anchor = extract_one_child(children, xhtml_name("a"), child_path)
-            paragraph = extract_one_child(
-                children, gdocs_name("paragraph-style"), child_path
-            )
-            for metadata in children:
-                if metadata not in (anchor, paragraph):
-                    parse_error(
-                        child_path,
-                        f"unknown child element {display_name(metadata.tag)}",
-                    )
             link: Link | UnsetType = UNSET
             if anchor is not None:
                 anchor_path = f"{child_path}/a"
@@ -496,17 +535,27 @@ class _Decoder:
                 validate_whitespace(anchor, anchor_path)
                 _validate_no_children(anchor, anchor_path)
             text_style = construct_text_style(link)
+            paragraph = extract_one_child(
+                children, gdocs_name("paragraph-style"), child_path
+            )
+            paragraph_style = (
+                UNSET
+                if paragraph is None
+                else self.decode_paragraph_style(
+                    paragraph, f"{child_path}/g:paragraph-style"
+                )
+            )
+            for metadata in children:
+                if metadata not in (anchor, paragraph):
+                    parse_error(
+                        child_path,
+                        f"unknown child element {display_name(metadata.tag)}",
+                    )
             result.append(
                 NamedStyle(
                     named_style_type=named_style_type,  # type: ignore[arg-type]
                     text_style=text_style,
-                    paragraph_style=(
-                        UNSET
-                        if paragraph is None
-                        else self.decode_paragraph_style(
-                            paragraph, f"{child_path}/g:paragraph-style"
-                        )
-                    ),
+                    paragraph_style=paragraph_style,
                 )
             )
         return result
@@ -614,16 +663,17 @@ class _Decoder:
         validate_whitespace(element, path)
         children = list(element)
         anchor = extract_one_child(children, xhtml_name("a"), path)
-        for child in children:
-            if child is not anchor:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
         link: Link | UnsetType = UNSET
         if anchor is not None:
             anchor_path = f"{path}/a"
             link = decode_link(anchor, anchor_path)
             validate_whitespace(anchor, anchor_path)
             _validate_no_children(anchor, anchor_path)
-        return construct_text_style(link)
+        text_style = construct_text_style(link)
+        for child in children:
+            if child is not anchor:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
+        return text_style
 
     def decode_body(self, element: ElementTree.Element, path: str) -> Body:
         validate_attributes(element, set(), path)
@@ -725,9 +775,6 @@ class _Decoder:
         validate_whitespace(element, path)
         children = list(element)
         columns_element = extract_one_child(children, gdocs_name("columns"), path)
-        for child in children:
-            if child is not columns_element:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
         columns: list[SectionColumn] | UnsetType = UNSET
         if columns_element is not None:
             columns = []
@@ -748,6 +795,9 @@ class _Decoder:
                 validate_whitespace(child, child_path)
                 _validate_no_children(child, child_path)
                 columns.append(SectionColumn(width=width, padding_end=padding_end))
+        for child in children:
+            if child is not columns_element:
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
         return SectionStyle(
             columns=columns,
             column_separator_style=column_separator_style,  # type: ignore[arg-type]
@@ -901,6 +951,13 @@ class _Decoder:
             style_element = extract_one_child(
                 children, gdocs_name("bullet-style"), item_path
             )
+            style = (
+                UNSET
+                if style_element is None
+                else self.decode_bullet_style(
+                    style_element, f"{item_path}/g:bullet-style"
+                )
+            )
             paragraph_elements = [
                 child for child in children if child.tag in _PARAGRAPH_TAGS
             ]
@@ -915,18 +972,11 @@ class _Decoder:
                 )
             if len(paragraph_elements) != 1:
                 parse_error(item_path, "list item must contain exactly one paragraph")
+            paragraph = self.decode_paragraph(paragraph_elements[0], item_path + "/*")
             if preset is not None and style_element is not None:
                 parse_error(item_path, "bullet style is forbidden in a preset list")
             if level < 0:
                 parse_error(item_path, "nesting level must be non-negative")
-            style = (
-                UNSET
-                if style_element is None
-                else self.decode_bullet_style(
-                    style_element, f"{item_path}/g:bullet-style"
-                )
-            )
-            paragraph = self.decode_paragraph(paragraph_elements[0], item_path + "/*")
             paragraph.bullet = (
                 Bullet(
                     list_id=cast(str, list_id), nesting_level=level, text_style=style
@@ -949,14 +999,11 @@ class _Decoder:
         validate_whitespace(element, path)
         children = list(element)
         colgroup = extract_one_child(children, xhtml_name("colgroup"), path)
-        tbody = extract_one_child(children, xhtml_name("tbody"), path, required=True)
-        assert tbody is not None
-        for child in children:
-            if child not in (colgroup, tbody):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
         columns: list[TableColumn] | UnsetType = UNSET
         if colgroup is not None:
             columns = self.decode_table_columns(colgroup, f"{path}/colgroup")
+        tbody = extract_one_child(children, xhtml_name("tbody"), path, required=True)
+        assert tbody is not None
         tbody_path = f"{path}/tbody"
         validate_attributes(tbody, set(), tbody_path)
         validate_whitespace(tbody, tbody_path)
@@ -967,6 +1014,9 @@ class _Decoder:
                     tbody_path, f"unknown child element {display_name(child.tag)}"
                 )
             rows.append(self.decode_table_row(child, f"{tbody_path}/tr[{index + 1}]"))
+        for child in children:
+            if child not in (colgroup, tbody):
+                parse_error(path, f"unknown child element {display_name(child.tag)}")
         return Table(
             rows=rows,
             column_styles=columns,
@@ -1062,33 +1112,36 @@ class _Decoder:
         validate_whitespace(element, path)
         children = list(element)
         metadata = extract_one_child(children, gdocs_name("cell-style"), path)
-        style_fields: dict[str, object] = {}
-        if metadata is not None:
-            style_fields = self.decode_table_cell_style(
-                metadata, f"{path}/g:cell-style"
-            )
-        has_style = (
-            row_span != 1
-            or column_span != 1
-            or any(value is not UNSET for value in style_fields.values())
+        style_fields = (
+            _TableCellStyleFields()
+            if metadata is None
+            else self.decode_table_cell_style(metadata, f"{path}/g:cell-style")
         )
+        content = self.decode_structural_sequence(
+            [child for child in children if child is not metadata], path
+        )
+        self.validate_cell_span(element, row_span, "rowspan", path)
+        self.validate_cell_span(element, column_span, "colspan", path)
         style: TableCellStyle | UnsetType = UNSET
-        if has_style:
+        if row_span != 1 or column_span != 1 or style_fields.has_values():
             style = construct_model(
                 path,
                 lambda: TableCellStyle(
                     row_span=row_span,
                     column_span=column_span,
-                    **style_fields,  # type: ignore[arg-type]
+                    background_color=style_fields.background_color,
+                    border_left=style_fields.border_left,
+                    border_right=style_fields.border_right,
+                    border_top=style_fields.border_top,
+                    border_bottom=style_fields.border_bottom,
+                    padding_left=style_fields.padding_left,
+                    padding_right=style_fields.padding_right,
+                    padding_top=style_fields.padding_top,
+                    padding_bottom=style_fields.padding_bottom,
+                    content_alignment=style_fields.content_alignment,
                 ),
             )
-        return TableCell(
-            content=self.decode_structural_sequence(
-                [child for child in children if child is not metadata], path
-            ),
-            style=style,
-            cell_key=cell_key,
-        )
+        return TableCell(content=content, style=style, cell_key=cell_key)
 
     def decode_cell_span(
         self, element: ElementTree.Element, name: str, path: str
@@ -1096,14 +1149,17 @@ class _Decoder:
         raw = element.get(name)
         if raw is None:
             return 1
-        value = parse_integer(raw, f"{path}/@{name}")
-        if value <= 1:
+        return parse_integer(raw, f"{path}/@{name}")
+
+    def validate_cell_span(
+        self, element: ElementTree.Element, value: int, name: str, path: str
+    ) -> None:
+        if element.get(name) is not None and value <= 1:
             parse_error(f"{path}/@{name}", "cell span must be greater than 1")
-        return value
 
     def decode_table_cell_style(
         self, element: ElementTree.Element, path: str
-    ) -> dict[str, object]:
+    ) -> _TableCellStyleFields:
         attribute_names = {
             "content-alignment",
             "padding-left",
@@ -1114,44 +1170,71 @@ class _Decoder:
         validate_attributes(
             element, {gdocs_name(name) for name in attribute_names}, path
         )
-        content_alignment = self.optional_allowed(
-            element,
-            "content-alignment",
-            {
-                "CONTENT_ALIGNMENT_UNSPECIFIED",
-                "CONTENT_ALIGNMENT_UNSUPPORTED",
-                "TOP",
-                "MIDDLE",
-                "BOTTOM",
-            },
-            path,
+        content_alignment = cast(
+            "Literal['CONTENT_ALIGNMENT_UNSPECIFIED', 'CONTENT_ALIGNMENT_UNSUPPORTED', 'TOP', 'MIDDLE', 'BOTTOM'] | UnsetType",
+            self.optional_allowed(
+                element,
+                "content-alignment",
+                {
+                    "CONTENT_ALIGNMENT_UNSPECIFIED",
+                    "CONTENT_ALIGNMENT_UNSUPPORTED",
+                    "TOP",
+                    "MIDDLE",
+                    "BOTTOM",
+                },
+                path,
+            ),
         )
-        padding = {
-            name.replace("-", "_"): self.optional_point(element, name, path)
-            for name in (
-                "padding-left",
-                "padding-right",
-                "padding-top",
-                "padding-bottom",
-            )
-        }
+        padding_left = self.optional_point(element, "padding-left", path)
+        padding_right = self.optional_point(element, "padding-right", path)
+        padding_top = self.optional_point(element, "padding-top", path)
+        padding_bottom = self.optional_point(element, "padding-bottom", path)
         validate_whitespace(element, path)
         children = list(element)
         background = extract_one_child(children, gdocs_name("background-color"), path)
-        result: dict[str, object] = {
-            "background_color": UNSET
+        background_color = (
+            UNSET
             if background is None
-            else self.decode_optional_color(background, f"{path}/g:background-color"),
-            "content_alignment": content_alignment,
-            **padding,
-        }
-        for name in ("border-left", "border-right", "border-top", "border-bottom"):
-            border = extract_one_child(children, gdocs_name(name), path)
-            result[name.replace("-", "_")] = (
-                UNSET
-                if border is None
-                else self.decode_table_cell_border(border, f"{path}/g:{name}")
+            else self.decode_optional_color(background, f"{path}/g:background-color")
+        )
+        border_left_element = extract_one_child(
+            children, gdocs_name("border-left"), path
+        )
+        border_left = (
+            UNSET
+            if border_left_element is None
+            else self.decode_table_cell_border(
+                border_left_element, f"{path}/g:border-left"
             )
+        )
+        border_right_element = extract_one_child(
+            children, gdocs_name("border-right"), path
+        )
+        border_right = (
+            UNSET
+            if border_right_element is None
+            else self.decode_table_cell_border(
+                border_right_element, f"{path}/g:border-right"
+            )
+        )
+        border_top_element = extract_one_child(children, gdocs_name("border-top"), path)
+        border_top = (
+            UNSET
+            if border_top_element is None
+            else self.decode_table_cell_border(
+                border_top_element, f"{path}/g:border-top"
+            )
+        )
+        border_bottom_element = extract_one_child(
+            children, gdocs_name("border-bottom"), path
+        )
+        border_bottom = (
+            UNSET
+            if border_bottom_element is None
+            else self.decode_table_cell_border(
+                border_bottom_element, f"{path}/g:border-bottom"
+            )
+        )
         known = {gdocs_name("background-color")} | {
             gdocs_name(name)
             for name in ("border-left", "border-right", "border-top", "border-bottom")
@@ -1159,7 +1242,18 @@ class _Decoder:
         for child in children:
             if child.tag not in known:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return result
+        return _TableCellStyleFields(
+            background_color=background_color,
+            border_left=border_left,
+            border_right=border_right,
+            border_top=border_top,
+            border_bottom=border_bottom,
+            padding_left=padding_left,
+            padding_right=padding_right,
+            padding_top=padding_top,
+            padding_bottom=padding_bottom,
+            content_alignment=content_alignment,
+        )
 
     def decode_table_cell_border(
         self, element: ElementTree.Element, path: str
@@ -1177,11 +1271,12 @@ class _Decoder:
         children = list(element)
         color = extract_one_child(children, gdocs_name("color"), path, required=True)
         assert color is not None
+        decoded_color = self.decode_optional_color(color, f"{path}/g:color")
         for child in children:
             if child is not color:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
         return TableCellBorder(
-            color=self.decode_optional_color(color, f"{path}/g:color"),
+            color=decoded_color,
             width=width,
             dash_style=dash_style,  # type: ignore[arg-type]
         )
@@ -1192,7 +1287,6 @@ class _Decoder:
             parse_error(path, "unexpected text content")
         children = list(element)
         metadata = extract_one_child(children, gdocs_name("paragraph-style"), path)
-        positioned = extract_one_child(children, gdocs_name("positioned-objects"), path)
         named_style_type = _PARAGRAPH_TAGS[element.tag]
         decoded_style: ParagraphStyle | UnsetType = UNSET
         if metadata is not None:
@@ -1204,6 +1298,7 @@ class _Decoder:
             )
         elif named_style_type is not UNSET:
             decoded_style = ParagraphStyle(named_style_type=named_style_type)  # type: ignore[arg-type]
+        positioned = extract_one_child(children, gdocs_name("positioned-objects"), path)
         positioned_ids: list[str] | UnsetType = UNSET
         if positioned is not None:
             positioned_ids = self.decode_positioned_objects(
@@ -1250,11 +1345,11 @@ class _Decoder:
         if element.tag == xhtml_name("span"):
             return self.decode_text_run(element, link, path)
         if element.tag == gdocs_name("equation"):
-            if link is not UNSET:
-                parse_error(path, "equation cannot be a link target")
             validate_attributes(element, set(), path)
             validate_whitespace(element, path)
             _validate_no_children(element, path)
+            if link is not UNSET:
+                parse_error(path, "equation cannot be a link target")
             return Equation()
 
         fields: set[str]
@@ -1482,7 +1577,15 @@ class _Decoder:
                 else self.decode_paragraph_border(child, f"{path}/g:{name}")
             )
         shading = extract_one_child(children, gdocs_name("shading-color"), path)
+        shading_color = (
+            UNSET
+            if shading is None
+            else self.decode_optional_color(shading, f"{path}/g:shading-color")
+        )
         tab_stops_element = extract_one_child(children, gdocs_name("tab-stops"), path)
+        tab_stops: list[TabStop] | UnsetType = UNSET
+        if tab_stops_element is not None:
+            tab_stops = self.decode_tab_stops(tab_stops_element, f"{path}/g:tab-stops")
         known = {gdocs_name(name) for name in border_names} | {
             gdocs_name("shading-color"),
             gdocs_name("tab-stops"),
@@ -1490,16 +1593,8 @@ class _Decoder:
         for child in children:
             if child.tag not in known:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
-        tab_stops: list[TabStop] | UnsetType = UNSET
-        if tab_stops_element is not None:
-            tab_stops = self.decode_tab_stops(tab_stops_element, f"{path}/g:tab-stops")
         if paragraph_owns_named_style and raw_named_style is not None:
             parse_error(path, "named style type is owned by the paragraph element")
-        shading_color = (
-            UNSET
-            if shading is None
-            else self.decode_optional_color(shading, f"{path}/g:shading-color")
-        )
         return ParagraphStyle(
             named_style_type=named_style,  # type: ignore[arg-type]
             alignment=alignment,  # type: ignore[arg-type]
@@ -1544,11 +1639,12 @@ class _Decoder:
         children = list(element)
         color = extract_one_child(children, gdocs_name("color"), path, required=True)
         assert color is not None
+        decoded_color = self.decode_optional_color(color, f"{path}/g:color")
         for child in children:
             if child is not color:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
         return ParagraphBorder(
-            color=self.decode_optional_color(color, f"{path}/g:color"),
+            color=decoded_color,
             width=width,
             padding=padding,
             dash_style=dash_style,  # type: ignore[arg-type]

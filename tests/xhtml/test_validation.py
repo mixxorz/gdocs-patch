@@ -298,6 +298,126 @@ def test_local_attribute_error_precedes_text_or_child_error(
 
 
 @pytest.mark.parametrize(
+    ("xhtml", "metadata_path"),
+    [
+        (
+            document(
+                "",
+                metadata='<g:document-style><g:background-color g:red="bad" />'
+                "<g:unknown /></g:document-style>",
+            ),
+            "/g:document-style/g:background-color/@g:red",
+        ),
+        (
+            document().replace(
+                "<g:section-style />",
+                '<g:section-style><g:columns><g:column g:width="bad" '
+                'g:padding-end="0" /></g:columns><g:unknown /></g:section-style>',
+            ),
+            "/g:section-style/g:columns/g:column[1]/@g:width",
+        ),
+        (
+            document(
+                '<table><colgroup><col g:width-type="INVALID" /></colgroup>'
+                "<g:unknown /><tbody /></table>"
+            ),
+            "/colgroup/col[1]/@g:width-type",
+        ),
+        (
+            document(
+                "",
+                metadata='<g:named-styles><g:named-style g:type="NORMAL_TEXT">'
+                '<a href="x" g:tab-id="tab" /><g:unknown />'
+                "</g:named-style></g:named-styles>",
+            ),
+            "/g:named-style[1]/a",
+        ),
+        (
+            document(
+                "",
+                metadata='<g:list-definitions><g:list-definition g:list-id="id">'
+                '<g:list-level g:glyph-format="%0" g:glyph-symbol="x">'
+                '<a href="x" g:tab-id="tab" /><g:unknown /></g:list-level>'
+                "</g:list-definition></g:list-definitions>",
+            ),
+            "/g:list-level[1]/a",
+        ),
+        (
+            document(
+                '<g:list g:list-id="id"><li><g:bullet-style>'
+                '<a href="x" g:tab-id="tab" /><g:unknown /></g:bullet-style>'
+                "<p /></li></g:list>"
+            ),
+            "/li[1]/g:bullet-style/a",
+        ),
+        (
+            document(
+                '<p><g:paragraph-style><g:border-top g:width="bad" '
+                'g:padding="0" g:dash-style="SOLID"><g:color g:transparent="true" />'
+                "</g:border-top><g:unknown /></g:paragraph-style></p>"
+            ),
+            "/g:paragraph-style/g:border-top/@g:width",
+        ),
+    ],
+    ids=[
+        "document-background",
+        "section-columns",
+        "table-colgroup",
+        "named-style-anchor",
+        "metadata-text-style-anchor",
+        "list-item-bullet-style",
+        "paragraph-style-border",
+    ],
+)
+def test_invalid_metadata_precedes_unknown_sibling(
+    xhtml: str, metadata_path: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert metadata_path in str(error.value)
+
+
+def test_linked_equation_local_validation_precedes_link_relation_check() -> None:
+    xhtml = document(
+        '<p><a href="https://example.test"><g:equation g:unknown="x" /></a></p>'
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/section[1]/*[1]/*[1]" in str(error.value)
+    assert "unknown attribute g:unknown" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (
+            '<td rowspan="1"><g:cell-style><g:background-color g:red="bad" />'
+            "</g:cell-style></td>",
+            "/td[1]/g:cell-style/g:background-color/@g:red",
+        ),
+        (
+            '<td colspan="1"><g:unknown /></td>',
+            "unknown structural element g:unknown",
+        ),
+    ],
+    ids=["metadata", "content"],
+)
+def test_cell_validation_precedes_span_cross_field_check(
+    cell: str, expected: str
+) -> None:
+    xhtml = document(f"<table><tbody><tr>{cell}</tr></tbody></table>")
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/td[1]" in str(error.value)
+    assert expected in str(error.value)
+
+
+@pytest.mark.parametrize(
     ("xhtml", "path", "message"),
     [
         (
