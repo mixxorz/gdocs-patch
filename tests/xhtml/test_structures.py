@@ -582,31 +582,6 @@ def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     assert "/@g:nesting-level" not in str(error.value)
 
 
-def test_duplicate_second_list_definition_precedes_its_malformed_descendant() -> None:
-    definitions = (
-        "<g:list-definitions>"
-        '<g:list-definition g:list-id="duplicate" />'
-        '<g:list-definition g:list-id="duplicate"><g:unknown /></g:list-definition>'
-        "</g:list-definitions>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="duplicate list key 'duplicate'"):
-        deserialize_document(xhtml_with_structure("", definitions))
-
-
-def test_duplicate_list_definition_direct_tail_precedes_duplicate_key() -> None:
-    definitions = (
-        "<g:list-definitions>"
-        '<g:list-definition g:list-id="duplicate" />'
-        '<g:list-definition g:list-id="duplicate"><g:list-level '
-        'g:glyph-format="%0" g:glyph-symbol="x" />tail</g:list-definition>'
-        "</g:list-definitions>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="unexpected text after child element"):
-        deserialize_document(xhtml_with_structure("", definitions))
-
-
 @pytest.mark.parametrize(
     ("definitions", "message"),
     [

@@ -93,30 +93,6 @@ def test_anchor_target_validation_precedes_malformed_content(attributes: str) ->
         deserialize_document(xhtml)
 
 
-def test_duplicate_second_segment_precedes_its_malformed_descendant() -> None:
-    metadata = (
-        "<g:headers>"
-        '<g:header g:key="duplicate" g:segment-id="first" />'
-        '<g:header g:key="duplicate" g:segment-id="second"><g:unknown /></g:header>'
-        "</g:headers>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="duplicate segment key 'duplicate'"):
-        deserialize_document(document(metadata=metadata))
-
-
-def test_duplicate_segment_direct_tail_precedes_duplicate_key() -> None:
-    metadata = (
-        "<g:headers>"
-        '<g:header g:key="duplicate" g:segment-id="first" />'
-        '<g:header g:key="duplicate" g:segment-id="second"><p />tail</g:header>'
-        "</g:headers>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="unexpected text after child element"):
-        deserialize_document(document(metadata=metadata))
-
-
 @pytest.mark.parametrize(
     ("metadata", "message"),
     [

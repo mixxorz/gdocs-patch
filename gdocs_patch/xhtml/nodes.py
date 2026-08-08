@@ -292,6 +292,15 @@ class Children(Field[list[Node]]):
                     f"{spec.node_type.__name__} child(ren); got {count}"
                 )
 
+        if self.unique_by is not None:
+            seen: set[object] = set()
+            for node in value:
+                tag = cast(Tag, node)
+                key: object = self.unique_by.__get__(tag, type(tag))
+                if key in seen:
+                    raise ValidationError(self.duplicate_error.format(key=key))
+                seen.add(key)
+
     def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
         if len(node_types) < self.min_num:
             if self.min_error is not None:
@@ -468,9 +477,6 @@ class Tag(Node):
         children_field = next(
             (field for field in fields.values() if isinstance(field, Children)), None
         )
-        if children_field is not None and decoder.child_uniqueness_is_active:
-            decoder.validate_whitespace_shell(element, children_field)
-        decoder.validate_child_uniqueness(node)
         if children_field is not None:
             with decoder.children_of(node):
                 setattr(
@@ -505,7 +511,6 @@ class Decoder:
     def __init__(self) -> None:
         self._path: list[str] = []
         self._child_owners: list[Tag] = []
-        self._uniqueness: list[tuple[Children, set[object]]] = []
 
     def fail(
         self,
@@ -532,43 +537,10 @@ class Decoder:
     @contextmanager
     def children_of(self, owner: Tag) -> Generator[None]:
         self._child_owners.append(owner)
-        field = next(
-            (item for item in owner.fields().values() if isinstance(item, Children)),
-            None,
-        )
-        if field is None:
-            raise TypeError(f"{type(owner).__name__} has no Children field")
-        self._uniqueness.append((field, set()))
         try:
             yield
         finally:
-            self._uniqueness.pop()
             self._child_owners.pop()
-
-    @property
-    def child_uniqueness_is_active(self) -> bool:
-        return bool(self._uniqueness and self._uniqueness[-1][0].unique_by is not None)
-
-    def validate_whitespace_shell(
-        self, element: ElementTree.Element, field: Children
-    ) -> None:
-        if element.text and element.text.strip() and not field.permits_text:
-            self.fail(field.text_error)
-        if not field.permits_text:
-            for child in element:
-                if child.tail and child.tail.strip():
-                    self.fail(field.tail_error)
-
-    def validate_child_uniqueness(self, child: Tag) -> None:
-        if not self._uniqueness:
-            return
-        field, seen = self._uniqueness[-1]
-        if field.unique_by is None:
-            return
-        key = field.unique_by.__get__(child, type(child))
-        if key in seen:
-            self.fail(field.duplicate_error.format(key=key))
-        seen.add(key)
 
     def loads[T: Tag](self, source: str, root_type: type[T]) -> T:
         try:
@@ -597,8 +569,6 @@ class Decoder:
     ) -> list[Node]:
         result: list[Node] = []
         owner = self._child_owners[-1] if self._child_owners else None
-        if field.unique_by is not None:
-            self.validate_whitespace_shell(parent, field)
 
         def append_text(value: str | None, error_message: str) -> None:
             if value is None or not value:
