@@ -1,5 +1,4 @@
 from typing import Any, cast
-from xml.etree import ElementTree
 
 from .attributes import (
     BooleanAttribute,
@@ -18,8 +17,6 @@ from .nodes import (
     UNSET,
     Child,
     Children,
-    DecodeError,
-    Decoder,
     Field,
     Node,
     Tag,
@@ -623,7 +620,7 @@ class RichLinkTag(StyledParagraphElementTag):
 def _styled_paragraph_element_children() -> tuple[Child, ...]:
     return (
         Child(SpanTag),
-        Child(AutoTextTag),
+        Child(AutoTextTag, path_by_position=True),
         Child(ColumnBreakTag),
         Child(DateElementTag),
         Child(FootnoteReferenceTag),
@@ -657,34 +654,8 @@ class ContentAnchorTag(MetadataAnchorTag):
     )
 
 
-class _ParagraphChildren(Children):
-    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
-        try:
-            return super().decode_from(element, decoder)
-        except DecodeError as error:
-            if (
-                error.attribute_name == gdocs_name("type")
-                and error.path
-                and error.path[-1].startswith(gdocs_name("auto-text"))
-            ):
-                occurrence = int(error.path[-1].rsplit("[", 1)[1][:-1])
-                matching = 0
-                for index, child in enumerate(element, 1):
-                    if child.tag == AutoTextTag.tag_name:
-                        matching += 1
-                    if matching == occurrence:
-                        path = (*error.path[:-1], f"*[{index}]")
-                        raise DecodeError(
-                            str(error),
-                            path=path,
-                            attribute_name=error.attribute_name,
-                            element_name=error.element_name,
-                        ) from error
-            raise
-
-
 class ParagraphVocabularyTag(Tag):
-    children = _ParagraphChildren(
+    children = Children(
         Child(ParagraphStyleTag, max_num=1),
         Child(PositionedObjectsTag, max_num=1),
         *_styled_paragraph_element_children(),
@@ -938,25 +909,13 @@ class TableCellStyleTag(Tag):
     )
 
 
-class _TableCellChildren(Children):
-    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
-        for child in element:
-            if self.spec_for_element(child) is None:
-                decoder.fail("unknown structural element", element_name=child.tag)
-        return super().decode_from(element, decoder)
-
-    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
-        if (
-            sum(issubclass(node_type, TableCellStyleTag) for node_type in node_types)
-            > 1
-        ):
-            raise ValidationError("expected at most one g:cell-style child")
-        super().validate_resolved_types(node_types)
-
-
 def _table_cell_children() -> Children:
-    return _TableCellChildren(
-        Child(TableCellStyleTag, max_num=1),
+    return Children(
+        Child(
+            TableCellStyleTag,
+            max_num=1,
+            max_error="expected at most one g:cell-style child",
+        ),
         Child(lambda: GenericParagraphTag),
         Child(lambda: UnspecifiedParagraphTag),
         Child(lambda: ParagraphTag),
@@ -971,6 +930,7 @@ def _table_cell_children() -> Children:
         Child(lambda: ListTag),
         Child(lambda: TableTag),
         Child(lambda: TableOfContentsTag),
+        unknown_child_error="unknown structural element",
     )
 
 
@@ -1090,30 +1050,25 @@ class SectionTag(Tag):
     )
 
 
-class _DocumentBodyChildren(Children):
-    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
-        if not list(element):
-            decoder.fail("body must contain at least one section")
-        return super().decode_from(element, decoder)
-
-
 class DocumentBodyTag(Tag):
     tag_name = gdocs_name("body")
 
-    children = _DocumentBodyChildren(Child(lambda: SectionTag, min_num=1))
-
-
-class _TableOfContentsChildren(Children):
-    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
-        if any(child.tag == xhtml_name("section") for child in element):
-            decoder.fail("section elements are only valid in a body")
-        return super().decode_from(element, decoder)
+    children = Children(
+        Child(lambda: SectionTag, min_num=1),
+        min_num=1,
+        min_error="body must contain at least one section",
+    )
 
 
 class TableOfContentsTag(Tag):
     tag_name = gdocs_name("table-of-contents")
 
-    children = _TableOfContentsChildren(*_structural_children().specs)
+    children = Children(
+        *_structural_children().specs,
+        forbidden_children={
+            xhtml_name("section"): "section elements are only valid in a body"
+        },
+    )
 
 
 class SegmentTag(Tag):

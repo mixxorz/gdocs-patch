@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator
+from abc import ABC
+from collections.abc import Callable, Generator, Mapping, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Never, Self, cast, overload
@@ -95,20 +95,18 @@ class Field[T](ABC):
     def validate(self, _value: T | UnsetType) -> None:
         pass
 
-    @abstractmethod
-    def decode_from(
-        self, element: ElementTree.Element, decoder: "Decoder"
+    def decode_from_attributes(
+        self, _attributes: Mapping[str, str], _decoder: "Decoder"
     ) -> T | UnsetType:
-        raise NotImplementedError
+        raise TypeError("field is not represented by XML attributes")
 
-    @abstractmethod
-    def encode_into(
+    def encode_into_attributes(
         self,
-        value: T | UnsetType,
-        element: ElementTree.Element,
-        encoder: "Encoder",
+        _value: T | UnsetType,
+        _attributes: MutableMapping[str, str],
+        _encoder: "Encoder",
     ) -> None:
-        raise NotImplementedError
+        raise TypeError("field is not represented by XML attributes")
 
 
 class Child:
@@ -121,6 +119,8 @@ class Child:
         min_num: int = 0,
         max_num: int | None = None,
         min_error: str | None = None,
+        max_error: str | None = None,
+        path_by_position: bool = False,
     ) -> None:
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
@@ -130,6 +130,8 @@ class Child:
         self.min_num = min_num
         self.max_num = max_num
         self.min_error = min_error
+        self.max_error = max_error
+        self.path_by_position = path_by_position
 
     @property
     def node_type(self) -> type[Node]:
@@ -160,6 +162,8 @@ class Children(Field[list[Node]]):
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
         min_error: str | None = None,
+        unknown_child_error: str = "unknown child element",
+        forbidden_children: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         if min_num < 0:
@@ -172,6 +176,8 @@ class Children(Field[list[Node]]):
         self.text_error = text_error
         self.tail_error = tail_error
         self.min_error = min_error
+        self.unknown_child_error = unknown_child_error
+        self.forbidden_children = forbidden_children or {}
 
     def get_default(self) -> list[Node]:
         return []
@@ -261,6 +267,8 @@ class Children(Field[list[Node]]):
                     f"{spec.node_type.__name__} child(ren); got {count}"
                 )
             if spec.max_num is not None and count > spec.max_num:
+                if spec.max_error is not None:
+                    raise ValidationError(spec.max_error)
                 tag_name = getattr(spec.node_type, "tag_name", None)
                 if spec.max_num == 1 and isinstance(tag_name, str):
                     local_name = tag_name.rsplit("}", 1)[-1]
@@ -295,6 +303,8 @@ class Children(Field[list[Node]]):
                     f"{spec.node_type.__name__} child(ren); got {count}"
                 )
             if spec.max_num is not None and count > spec.max_num:
+                if spec.max_error is not None:
+                    raise ValidationError(spec.max_error)
                 tag_name = getattr(spec.node_type, "tag_name", None)
                 if spec.max_num == 1 and isinstance(tag_name, str):
                     local_name = tag_name.rsplit("}", 1)[-1]
@@ -421,7 +431,7 @@ class Tag(Node):
 
         fields = cls.fields()
         values = {
-            name: field.decode_from(element, decoder)
+            name: field.decode_from_attributes(element.attrib, decoder)
             for name, field in fields.items()
             if not isinstance(field, Children)
         }
@@ -529,12 +539,15 @@ class Decoder:
 
         append_text(parent.text, field.text_error)
         child_totals: dict[str, int] = {}
-        resolved: list[tuple[ElementTree.Element, Child, type[Tag]]] = []
-        for child_element in parent:
+        resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
+        for position, child_element in enumerate(parent, 1):
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
             spec = field.spec_for_element(child_element)
             if spec is None:
-                self.fail("unknown child element", element_name=child_element.tag)
+                message = field.forbidden_children.get(
+                    child_element.tag, field.unknown_child_error
+                )
+                self.fail(message, element_name=child_element.tag)
             child_type = spec.node_type
             if not issubclass(child_type, Tag):
                 raise TypeError("element child declaration must refer to a Tag")
@@ -544,9 +557,9 @@ class Decoder:
                 and not field.permits_text
             ):
                 self.fail(field.tail_error)
-            resolved.append((child_element, spec, child_type))
+            resolved.append((position, child_element, spec, child_type))
 
-        child_types = tuple(child_type for _, _, child_type in resolved)
+        child_types = tuple(child_type for _, _, _, child_type in resolved)
         try:
             if owner is not None:
                 owner.validate_after_child_shell()
@@ -557,12 +570,14 @@ class Decoder:
             self.fail(str(error))
 
         child_counts: dict[str, int] = {}
-        for child_element, spec, child_type in resolved:
+        for position, child_element, spec, child_type in resolved:
             child_counts[child_element.tag] = child_counts.get(child_element.tag, 0) + 1
-            path_step = child_element.tag
+            path_step = f"*[{position}]" if spec.path_by_position else child_element.tag
             repeated = spec.max_num is None or spec.max_num > 1
-            if repeated and (
-                not field.permits_text or child_totals[child_element.tag] > 1
+            if (
+                not spec.path_by_position
+                and repeated
+                and (not field.permits_text or child_totals[child_element.tag] > 1)
             ):
                 path_step += f"[{child_counts[child_element.tag]}]"
             with self.at(path_step):
@@ -587,7 +602,10 @@ class Encoder:
             raise EncodeError(f"{type(node).__name__} has no tag_name")
         element = ElementTree.Element(node.tag_name)
         for name, field in node.fields().items():
-            field.encode_into(getattr(node, name), element, self)
+            if isinstance(field, Children):
+                field.encode_into(getattr(node, name), element, self)
+            else:
+                field.encode_into_attributes(getattr(node, name), element.attrib, self)
         return element
 
     def encode_children(

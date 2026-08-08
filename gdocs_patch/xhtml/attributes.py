@@ -1,9 +1,8 @@
 import math
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from typing import Any, cast
-from xml.etree import ElementTree
 
 from gdocs_patch.models import UNSET, Color, Dimension, UnsetType
 
@@ -56,10 +55,10 @@ class Attribute[T](Field[T], ABC):
         if value is UNSET and self.required:
             raise ValidationError(f"{self.name} is required")
 
-    def decode_from(
-        self, element: ElementTree.Element, decoder: Decoder
+    def decode_from_attributes(
+        self, attributes: Mapping[str, str], decoder: Decoder
     ) -> T | UnsetType:
-        raw = element.get(self.bound_xml_name)
+        raw = attributes.get(self.bound_xml_name)
         if raw is None:
             if self.required:
                 decoder.fail(
@@ -72,10 +71,10 @@ class Attribute[T](Field[T], ABC):
         except (TypeError, ValueError) as error:
             decoder.fail(str(error), attribute_name=self.bound_xml_name)
 
-    def encode_into(
+    def encode_into_attributes(
         self,
         value: T | UnsetType,
-        element: ElementTree.Element,
+        attributes: MutableMapping[str, str],
         encoder: Encoder,
     ) -> None:
         if value is UNSET:
@@ -88,7 +87,7 @@ class Attribute[T](Field[T], ABC):
             raise EncodeError(
                 f"could not encode attribute {self.bound_xml_name!r}: {value!r}"
             ) from error
-        element.set(self.bound_xml_name, raw)
+        attributes[self.bound_xml_name] = raw
 
     @abstractmethod
     def decode(self, raw: str) -> T:
@@ -252,11 +251,11 @@ class MultiValueAttribute[T](Field[T], ABC):
             names.update(attribute.xml_names())
         return names
 
-    def decode_from(
-        self, element: ElementTree.Element, decoder: Decoder
+    def decode_from_attributes(
+        self, attributes: Mapping[str, str], decoder: Decoder
     ) -> T | UnsetType:
         values = {
-            name: attribute.decode_from(element, decoder)
+            name: attribute.decode_from_attributes(attributes, decoder)
             for name, attribute in self.attributes.items()
         }
         try:
@@ -267,10 +266,10 @@ class MultiValueAttribute[T](Field[T], ABC):
             decoder.fail(f"{self.name} is required")
         return value
 
-    def encode_into(
+    def encode_into_attributes(
         self,
         value: T | UnsetType,
-        element: ElementTree.Element,
+        attributes: MutableMapping[str, str],
         encoder: Encoder,
     ) -> None:
         if value is UNSET and self.required:
@@ -278,8 +277,8 @@ class MultiValueAttribute[T](Field[T], ABC):
         try:
             values = self.decompress(value)
             for name, attribute in self.attributes.items():
-                attribute.encode_into(
-                    cast(Any, values.get(name, UNSET)), element, encoder
+                attribute.encode_into_attributes(
+                    cast(Any, values.get(name, UNSET)), attributes, encoder
                 )
         except EncodeError:
             raise

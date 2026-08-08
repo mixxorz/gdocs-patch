@@ -16,57 +16,49 @@ from .base import (
     XHTMLParseError,
     construct_model,
     display_name,
-    gdocs_name,
     parse_error,
     xhtml_name,
 )
 from .nodes import DecodeError, Node, Tag, Text
 from .nodes import Decoder as XHTMLDecoder
 
-_PARAGRAPH_TAGS = {
-    gdocs_name("paragraph"): models.UNSET,
-    gdocs_name("named-style-unspecified"): "NAMED_STYLE_TYPE_UNSPECIFIED",
-    xhtml_name("p"): "NORMAL_TEXT",
-    gdocs_name("title"): "TITLE",
-    gdocs_name("subtitle"): "SUBTITLE",
-    **{xhtml_name(f"h{level}"): f"HEADING_{level}" for level in range(1, 7)},
-}
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 
-class _Decoder:
-    def decode_tag[T: Tag](
-        self, element: ElementTree.Element, tag_type: type[T], path: str
-    ) -> T:
-        recursion_limit = sys.getrecursionlimit()
-        try:
-            sys.setrecursionlimit(max(recursion_limit, MAX_ELEMENT_DEPTH * 20))
-            return XHTMLDecoder().decode_element(element, tag_type)
-        except DecodeError as error:
-            error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
-            if error.attribute_name is not None:
-                error_path += f"/@{display_name(error.attribute_name)}"
-            message = str(error)
-            if message == "required attribute is missing":
-                message = "missing required attribute"
-            if error.attribute_name is not None:
-                if error.attribute_name.startswith(
-                    "{"
-                ) and not error.attribute_name.startswith(
-                    (f"{{{XHTML_NAMESPACE}}}", f"{{{GDOCS_NAMESPACE}}}")
-                ):
-                    message = (
-                        "unsupported namespace in attribute "
-                        f"{display_name(error.attribute_name)}"
-                    )
-                elif message == "unknown attribute":
-                    message += f" {display_name(error.attribute_name)}"
-            if error.element_name is not None:
-                message += f" {display_name(error.element_name)}"
-            parse_error(error_path, message, cause=error)
-        finally:
-            sys.setrecursionlimit(recursion_limit)
+def _decode_tag[T: Tag](
+    element: ElementTree.Element, tag_type: type[T], path: str
+) -> T:
+    recursion_limit = sys.getrecursionlimit()
+    try:
+        sys.setrecursionlimit(max(recursion_limit, MAX_ELEMENT_DEPTH * 20))
+        return XHTMLDecoder().decode_element(element, tag_type)
+    except DecodeError as error:
+        error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
+        if error.attribute_name is not None:
+            error_path += f"/@{display_name(error.attribute_name)}"
+        message = str(error)
+        if message == "required attribute is missing":
+            message = "missing required attribute"
+        if error.attribute_name is not None:
+            if error.attribute_name.startswith(
+                "{"
+            ) and not error.attribute_name.startswith(
+                (f"{{{XHTML_NAMESPACE}}}", f"{{{GDOCS_NAMESPACE}}}")
+            ):
+                message = (
+                    "unsupported namespace in attribute "
+                    f"{display_name(error.attribute_name)}"
+                )
+            elif message == "unknown attribute":
+                message += f" {display_name(error.attribute_name)}"
+        if error.element_name is not None:
+            message += f" {display_name(error.element_name)}"
+        parse_error(error_path, message, cause=error)
+    finally:
+        sys.setrecursionlimit(recursion_limit)
 
+
+class _Decoder:
     def decode_document(self, root: tags.HtmlTag) -> models.Document:
         body = cast(tags.BodyTag, cast(list[Node], root.children)[0])
         return models.Document(
@@ -803,7 +795,7 @@ def deserialize_document(xhtml: str) -> models.Document:
         ):
             raise XHTMLParseError("/html: unsupported XHTML namespace")
         decoder = _Decoder()
-        return decoder.decode_document(decoder.decode_tag(root, tags.HtmlTag, "/html"))
+        return decoder.decode_document(_decode_tag(root, tags.HtmlTag, "/html"))
     except XHTMLParseError:
         raise
     except (ElementTree.ParseError, RecursionError) as error:

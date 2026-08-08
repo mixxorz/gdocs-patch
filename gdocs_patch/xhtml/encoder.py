@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from typing import cast
 from xml.etree import ElementTree
 
@@ -11,16 +12,41 @@ from .base import (
     XHTML_NAMESPACE,
     XML_DECLARATION,
     XHTMLParseError,
-    _indent_xml,  # pyright: ignore[reportPrivateUsage]
-    require_dict,
-    require_enum,
-    require_integer,
-    require_list,
-    require_string,
 )
-from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
+from .decoder import _decode_tag, _Decoder  # pyright: ignore[reportPrivateUsage]
 from .nodes import Encoder as XHTMLEncoder
 from .nodes import Tag, Text
+
+
+def _require_string(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    return value
+
+
+def _require_integer(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{field} must be an integer")
+    return value
+
+
+def _require_enum(value: object, allowed: Collection[str], field: str) -> str:
+    result = _require_string(value, field)
+    if result not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise ValueError(f"{field} must be one of {choices}")
+    return result
+
+
+def _require_list(value: object, field: str) -> None:
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a list")
+
+
+def _require_dict(value: object, field: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} must be a dictionary")
+
 
 _NAMED_STYLE_TYPES = {
     "NAMED_STYLE_TYPE_UNSPECIFIED",
@@ -39,7 +65,7 @@ _NAMED_STYLE_TYPES = {
 def _omit_integer_default(
     value: object, default: int, field: str
 ) -> int | models.UnsetType:
-    validated = require_integer(value, field)
+    validated = _require_integer(value, field)
     return models.UNSET if validated == default else validated
 
 
@@ -47,7 +73,7 @@ class _Encoder:
     def encode_document(self, document: models.Document) -> tags.HtmlTag:
         if not isinstance(document, models.Document):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError("document must be a Document")
-        require_list(document.tabs, "Document.tabs")
+        _require_list(document.tabs, "Document.tabs")
         return tags.HtmlTag(
             document_id=document.document_id,
             title=document.title,
@@ -66,7 +92,7 @@ class _Encoder:
             if not isinstance(tab.content, models.DocumentTab):
                 raise ValueError("Tab.content must be a DocumentTab or UNSET")
             children.append(self.encode_document_tab(tab.content))
-        require_list(tab.children, "Tab.children")
+        _require_list(tab.children, "Tab.children")
         if tab.children:
             children.append(
                 tags.ChildTabsTag(
@@ -143,7 +169,7 @@ class _Encoder:
     def encode_named_styles(
         self, styles: list[models.NamedStyle]
     ) -> tags.NamedStylesTag:
-        require_list(styles, "DocumentTab.named_styles")
+        _require_list(styles, "DocumentTab.named_styles")
         children: list[tags.NamedStyleTag] = []
         for style in styles:
             values, metadata = self._encode_metadata_text_style_tag(style.text_style)
@@ -197,7 +223,7 @@ class _Encoder:
         return values, children
 
     def encode_body(self, body: models.Body) -> tags.DocumentBodyTag:
-        require_list(body.content, "Body.content")
+        _require_list(body.content, "Body.content")
         if not body.content or not isinstance(body.content[0], models.SectionBreak):
             raise ValueError("Body.content must begin with SectionBreak")
         sections: list[tags.SectionTag] = []
@@ -230,10 +256,10 @@ class _Encoder:
     def encode_list_definitions(
         self, definitions: dict[str, models.ListDefinition]
     ) -> tags.ListDefinitionsTag:
-        require_dict(definitions, "DocumentTab.lists")
+        _require_dict(definitions, "DocumentTab.lists")
         children: list[tags.ListDefinitionTag] = []
         for list_id, definition in definitions.items():
-            require_list(definition.levels, "ListDefinition.levels")
+            _require_list(definition.levels, "ListDefinition.levels")
             children.append(
                 tags.ListDefinitionTag(
                     list_id=list_id,
@@ -275,7 +301,7 @@ class _Encoder:
         }
         children: list[Tag] = []
         if style.columns is not models.UNSET:
-            require_list(style.columns, "SectionStyle.columns")
+            _require_list(style.columns, "SectionStyle.columns")
             children.append(
                 tags.SectionColumnsTag(
                     children=[
@@ -297,7 +323,7 @@ class _Encoder:
         | type[tags.FootersTag]
         | type[tags.FootnotesTag],
     ) -> tags.HeadersTag | tags.FootersTag | tags.FootnotesTag:
-        require_dict(segments, f"DocumentTab.{wrapper_name}")
+        _require_dict(segments, f"DocumentTab.{wrapper_name}")
         item_type: type[tags.SegmentTag] = {
             "headers": tags.HeaderTag,
             "footers": tags.FooterTag,
@@ -305,11 +331,13 @@ class _Encoder:
         }[wrapper_name]
         children: list[tags.SegmentTag] = []
         for key, segment in segments.items():
-            require_list(segment.content, "Segment.content")
+            _require_list(segment.content, "Segment.content")
             children.append(
                 item_type(
-                    key=require_string(key, f"DocumentTab.{wrapper_name} key"),
-                    segment_id=require_string(segment.segment_id, "Segment.segment_id"),
+                    key=_require_string(key, f"DocumentTab.{wrapper_name} key"),
+                    segment_id=_require_string(
+                        segment.segment_id, "Segment.segment_id"
+                    ),
                     children=self.encode_structural_sequence(segment.content),
                 )
             )
@@ -318,7 +346,7 @@ class _Encoder:
     def encode_structural_sequence(
         self, elements: list[models.StructuralElement], body: bool = False
     ) -> list[Tag]:
-        require_list(elements, "structural content")
+        _require_list(elements, "structural content")
         encoded: list[Tag] = []
         index = 0
         while index < len(elements):
@@ -367,11 +395,11 @@ class _Encoder:
     def bullet_group_key(self, paragraph: models.Paragraph) -> tuple[str, str] | None:
         bullet = paragraph.bullet
         if isinstance(bullet, models.Bullet):
-            return ("existing", require_string(bullet.list_id, "Bullet.list_id"))
+            return ("existing", _require_string(bullet.list_id, "Bullet.list_id"))
         if isinstance(bullet, models.BulletPreset):
             return (
                 "preset",
-                require_enum(
+                _require_enum(
                     bullet.preset,
                     tags.ListTag.bullet_preset.choices,
                     "BulletPreset.preset",
@@ -384,7 +412,7 @@ class _Encoder:
     def encode_list(
         self, paragraphs: list[models.Paragraph], key: tuple[str, str]
     ) -> tags.ListTag:
-        require_list(paragraphs, "list paragraphs")
+        _require_list(paragraphs, "list paragraphs")
         kind, identity = key
         items: list[tags.ListItemTag] = []
         for paragraph in paragraphs:
@@ -422,10 +450,10 @@ class _Encoder:
         )
 
     def encode_table(self, table: models.Table) -> tags.TableTag:
-        require_list(table.rows, "Table.rows")
+        _require_list(table.rows, "Table.rows")
         children: list[Tag] = []
         if table.column_styles is not models.UNSET:
-            require_list(table.column_styles, "Table.column_styles")
+            _require_list(table.column_styles, "Table.column_styles")
             children.append(
                 tags.TableColgroupTag(
                     children=[
@@ -447,18 +475,18 @@ class _Encoder:
             table_key=(
                 models.UNSET
                 if table.table_key is None
-                else require_string(table.table_key, "Table.table_key")
+                else _require_string(table.table_key, "Table.table_key")
             ),
             children=children,
         )
 
     def encode_table_row(self, row: models.TableRow) -> tags.TableRowTag:
-        require_list(row.cells, "TableRow.cells")
+        _require_list(row.cells, "TableRow.cells")
         return tags.TableRowTag(
             row_key=(
                 models.UNSET
                 if row.row_key is None
-                else require_string(row.row_key, "TableRow.row_key")
+                else _require_string(row.row_key, "TableRow.row_key")
             ),
             min_height=row.min_height,
             prevent_overflow=row.prevent_overflow,
@@ -467,16 +495,16 @@ class _Encoder:
         )
 
     def encode_table_cell(self, cell: models.TableCell) -> tags.TableCellTag:
-        require_list(cell.content, "TableCell.content")
+        _require_list(cell.content, "TableCell.content")
         row_span: int | models.UnsetType = models.UNSET
         column_span: int | models.UnsetType = models.UNSET
         children: list[Tag] = []
         if cell.style is not models.UNSET:
             style = cast(models.TableCellStyle, cell.style)
-            validated_row_span = require_integer(
+            validated_row_span = _require_integer(
                 style.row_span, "TableCellStyle.row_span"
             )
-            validated_column_span = require_integer(
+            validated_column_span = _require_integer(
                 style.column_span, "TableCellStyle.column_span"
             )
             row_span = models.UNSET if validated_row_span == 1 else validated_row_span
@@ -491,7 +519,7 @@ class _Encoder:
             cell_key=(
                 models.UNSET
                 if cell.cell_key is None
-                else require_string(cell.cell_key, "TableCell.cell_key")
+                else _require_string(cell.cell_key, "TableCell.cell_key")
             ),
             row_span=row_span,
             column_span=column_span,
@@ -543,7 +571,7 @@ class _Encoder:
         if paragraph.style is not models.UNSET:
             style = cast(models.ParagraphStyle, paragraph.style)
             if style.named_style_type is not models.UNSET:
-                named_style_type = require_enum(
+                named_style_type = _require_enum(
                     style.named_style_type,
                     _NAMED_STYLE_TYPES,
                     "ParagraphStyle.named_style_type",
@@ -561,20 +589,20 @@ class _Encoder:
                     "HEADING_6": tags.Heading6Tag,
                 }[named_style_type]
 
-        require_list(paragraph.elements, "Paragraph.elements")
+        _require_list(paragraph.elements, "Paragraph.elements")
         children: list[Tag] = []
         metadata = None if style is None else self._encode_paragraph_style_tag(style)
         if metadata is not None:
             children.append(metadata)
         if paragraph.positioned_object_ids is not models.UNSET:
-            require_list(
+            _require_list(
                 paragraph.positioned_object_ids, "Paragraph.positioned_object_ids"
             )
             children.append(
                 tags.PositionedObjectsTag(
                     children=[
                         tags.PositionedObjectTag(
-                            object_id=require_string(
+                            object_id=_require_string(
                                 object_id, "Paragraph.positioned_object_ids entry"
                             )
                         )
@@ -713,7 +741,7 @@ class _Encoder:
                 )
             )
         if style.tab_stops is not models.UNSET:
-            require_list(style.tab_stops, "ParagraphStyle.tab_stops")
+            _require_list(style.tab_stops, "ParagraphStyle.tab_stops")
             children.append(
                 tags.TabStopsTag(
                     children=[
@@ -753,6 +781,23 @@ class _Encoder:
         return tags.SpanTag(children=children, **style_values), link
 
 
+def _indent_xml(element: ElementTree.Element, level: int = 0) -> None:
+    if element.tag == tags.SpanTag.tag_name:
+        return
+    children = list(element)
+    if not children:
+        return
+
+    indentation = "\n" + "  " * (level + 1)
+    if element.text is None or not element.text.strip():
+        element.text = indentation
+    for child in children:
+        _indent_xml(child, level + 1)
+        if child.tail is None or not child.tail.strip():
+            child.tail = indentation
+    children[-1].tail = "\n" + "  " * level
+
+
 def _is_xml_10_character(character: str) -> bool:
     codepoint = ord(character)
     return (
@@ -783,7 +828,7 @@ def _validate_generated_tree(root: ElementTree.Element) -> None:
 def _validate_encoded_tree(root: ElementTree.Element) -> None:
     try:
         decoder = _Decoder()
-        decoder.decode_document(decoder.decode_tag(root, tags.HtmlTag, "/html"))
+        decoder.decode_document(_decode_tag(root, tags.HtmlTag, "/html"))
     except XHTMLParseError as error:
         raise ValueError(
             f"document model cannot be encoded as valid XHTML: {error}"
