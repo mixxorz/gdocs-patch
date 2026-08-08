@@ -541,8 +541,11 @@ def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
         "</g:list-definitions>"
     )
 
-    with pytest.raises(XHTMLParseError, match="duplicate child key 'duplicate'"):
+    with pytest.raises(XHTMLParseError) as error:
         deserialize_document(xhtml_with_structure("", definitions))
+
+    assert str(error.value).endswith(": duplicate child key 'duplicate'")
+    assert "ListDefinitionsTag.children" not in str(error.value)
 
 
 def test_list_level_identity_precedes_malformed_metadata_anchor() -> None:

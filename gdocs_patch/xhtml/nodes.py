@@ -407,6 +407,8 @@ class Tag(Node):
         try:
             field.validate(getattr(self, name))
         except ValidationError as error:
+            if isinstance(field, Children):
+                raise
             raise ValidationError(
                 f"{type(self).__name__}.{name}: {error}",
                 attribute_name=error.attribute_name,
