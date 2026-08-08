@@ -135,6 +135,34 @@ class IntegerAttribute(Attribute[int]):
         return str(value)
 
 
+class NonNegativeIntegerAttribute(IntegerAttribute):
+    def decode(self, raw: str) -> int:
+        value = super().decode(raw)
+        if value < 0:
+            raise ValueError(f"expected a non-negative integer, got {raw!r}")
+        return value
+
+    def encode(self, value: int) -> str:
+        raw = super().encode(value)
+        if value < 0:
+            raise ValueError("expected a non-negative integer")
+        return raw
+
+
+class PositiveIntegerAttribute(IntegerAttribute):
+    def decode(self, raw: str) -> int:
+        value = super().decode(raw)
+        if value <= 0:
+            raise ValueError(f"expected a positive integer, got {raw!r}")
+        return value
+
+    def encode(self, value: int) -> str:
+        raw = super().encode(value)
+        if value <= 0:
+            raise ValueError("expected a positive integer")
+        return raw
+
+
 class FloatAttribute(Attribute[float]):
     def decode(self, raw: str) -> float:
         if _CANONICAL_FLOAT.fullmatch(raw) is None:
