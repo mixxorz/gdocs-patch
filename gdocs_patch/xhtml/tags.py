@@ -79,8 +79,6 @@ def _text_style_attributes() -> tuple[
 class BreakTag(Tag):
     tag_name = xhtml_name("br")
 
-    children = Children()
-
 
 class SpanTag(Tag):
     tag_name = xhtml_name("span")
@@ -115,14 +113,12 @@ class ColorTag(Tag):
     tag_name = gdocs_name("color")
 
     color = _structured_color_attribute()
-    children = Children()
 
 
 class ShadingColorTag(Tag):
     tag_name = gdocs_name("shading-color")
 
     color = _structured_color_attribute()
-    children = Children()
 
 
 class ParagraphBorderTag(Tag):
@@ -170,7 +166,6 @@ class TabStopTag(Tag):
         required=True,
     )
     offset = PointAttribute(gdocs_name("offset"), required=True)
-    children = Children()
 
 
 class TabStopsTag(Tag):
@@ -258,12 +253,8 @@ class MetadataAnchorTag(Tag):
     tab_id = StringAttribute(gdocs_name("tab-id"))
     bookmark_id = StringAttribute(gdocs_name("bookmark-id"))
     heading_id = StringAttribute(gdocs_name("heading-id"))
-    children = Children()
 
     def clean(self) -> None:
-        self._validate_target()
-
-    def _validate_target(self) -> None:
         primary = sum(
             value is not UNSET
             for value in (self.href, self.bookmark_id, self.heading_id)
@@ -285,7 +276,6 @@ class BackgroundColorTag(Tag):
     tag_name = gdocs_name("background-color")
 
     color = _structured_color_attribute()
-    children = Children()
 
 
 class DocumentStyleTag(Tag):
@@ -451,9 +441,6 @@ class ListLevelTag(Tag):
     children = Children(Child(MetadataAnchorTag, max_num=1))
 
     def clean(self) -> None:
-        self._validate_glyph_identity()
-
-    def _validate_glyph_identity(self) -> None:
         if (self.glyph_type is UNSET) == (self.glyph_symbol is UNSET):
             raise ValidationError(
                 "exactly one of g:glyph-type and g:glyph-symbol is required"
@@ -480,7 +467,6 @@ class PositionedObjectTag(Tag):
     tag_name = gdocs_name("positioned-object")
 
     object_id = StringAttribute(gdocs_name("id"), required=True)
-    children = Children()
 
 
 class PositionedObjectsTag(Tag):
@@ -503,7 +489,6 @@ class StyledParagraphElementTag(Tag):
         foreground_color,
         background_color,
     ) = _text_style_attributes()
-    children = Children()
 
 
 def _styled_paragraph_element_field_order(*identity_fields: str) -> tuple[str, ...]:
@@ -579,7 +564,6 @@ class DateElementTag(StyledParagraphElementTag):
 
 class EquationTag(Tag):
     tag_name = gdocs_name("equation")
-    children = Children()
 
 
 class FootnoteReferenceTag(StyledParagraphElementTag):
@@ -774,9 +758,6 @@ class ListTag(Tag):
     )
 
     def clean(self) -> None:
-        self._validate_identity()
-
-    def _validate_identity(self) -> None:
         if (self.list_id is UNSET) == (self.bullet_preset is UNSET):
             raise ValidationError(
                 "exactly one of g:list-id and g:bullet-preset is required"
@@ -809,7 +790,6 @@ class TableColumnTag(Tag):
         gdocs_name("width-type"), choices=_TABLE_WIDTH_TYPES, required=True
     )
     width = PointAttribute(gdocs_name("width"))
-    children = Children()
 
     def clean(self) -> None:
         fixed = self.width_type == "FIXED_WIDTH"
@@ -827,7 +807,6 @@ class TableColgroupTag(Tag):
 class TableCellBackgroundColorTag(Tag):
     tag_name = gdocs_name("background-color")
     color = _structured_color_attribute()
-    children = Children()
 
 
 class TableCellBorderTag(Tag):
@@ -908,9 +887,6 @@ class TableCellTag(Tag):
     children = _table_cell_children()
 
     def clean(self) -> None:
-        self._validate_spans()
-
-    def _validate_spans(self) -> None:
         for name, xml_name in (("row_span", "rowspan"), ("column_span", "colspan")):
             value = getattr(self, name)
             if value == 1:
@@ -973,7 +949,6 @@ class SectionColumnTag(Tag):
 
     width = PointAttribute(gdocs_name("width"), required=True)
     padding_end = PointAttribute(gdocs_name("padding-end"), required=True)
-    children = Children()
 
 
 class SectionColumnsTag(Tag):

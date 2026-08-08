@@ -237,15 +237,6 @@ class Children(Field[list[Node]]):
             )
         return matches[0] if matches else None
 
-    def type_for_element(self, element: ElementTree.Element) -> "type[Tag] | None":
-        spec = self.spec_for_element(element)
-        if spec is None:
-            return None
-        node_type = spec.node_type
-        if not issubclass(node_type, Tag):
-            raise TypeError("element child declaration must refer to a Tag")
-        return node_type
-
     def validate(self, value: list[Node] | UnsetType) -> None:
         if value is UNSET or not isinstance(value, list):
             raise ValidationError("children must be a list")
@@ -314,6 +305,7 @@ class Tag(Node):
 
     tag_name: str | None = None
     field_order: tuple[str, ...] = ()
+    children = Children()
 
     @classmethod
     def fields(cls) -> dict[str, Field[Any]]:
@@ -362,15 +354,11 @@ class Tag(Node):
     def clean(self) -> None:
         """Validate relationships between fields on a complete tag."""
 
-    def _validate_field(self, name: str, field: Field[Any]) -> None:
-        field.validate(getattr(self, name))
-
     def validate(self) -> None:
         if self.tag_name is None:
             raise ValidationError(f"{type(self).__name__} has no tag_name")
-        fields = self.fields()
-        for name, field in fields.items():
-            self._validate_field(name, field)
+        for name, field in self.fields().items():
+            field.validate(getattr(self, name))
         self.clean()
 
     @classmethod
@@ -443,6 +431,11 @@ class Decoder:
 
     @contextmanager
     def at(self, tag_name: str) -> Generator[None]:
+        """Track the element currently being decoded.
+
+        Errors raised inside the context include this element in their XML path. The
+        previous path is restored afterward so decoding can continue with a sibling.
+        """
         self._path.append(tag_name)
         try:
             yield
@@ -457,11 +450,6 @@ class Decoder:
         return self.decode_element(element, root_type)
 
     def decode_element[T: Tag](
-        self, element: ElementTree.Element, node_type: type[T]
-    ) -> T:
-        return self._decode_element(element, node_type)
-
-    def _decode_element[T: Tag](
         self, element: ElementTree.Element, node_type: type[T]
     ) -> T:
         node = node_type.decode_from(element, self)
@@ -520,7 +508,7 @@ class Decoder:
             ):
                 path_step += f"[{child_counts[child_element.tag]}]"
             with self.at(path_step):
-                child = self._decode_element(child_element, child_type)
+                child = self.decode_element(child_element, child_type)
             result.append(child)
             append_text(child_element.tail)
 
@@ -533,9 +521,6 @@ class Encoder:
         return ElementTree.tostring(element, encoding="unicode", method="xml")
 
     def encode_element(self, node: Tag) -> ElementTree.Element:
-        return self._encode_element(node)
-
-    def _encode_element(self, node: Tag) -> ElementTree.Element:
         element = ElementTree.Element(cast(str, node.tag_name))
         for name, field in node.fields().items():
             if isinstance(field, Children):
@@ -556,6 +541,6 @@ class Encoder:
                     previous_element.tail = (previous_element.tail or "") + child.value
                 continue
 
-            element = self._encode_element(cast(Tag, child))
+            element = self.encode_element(cast(Tag, child))
             parent.append(element)
             previous_element = element
