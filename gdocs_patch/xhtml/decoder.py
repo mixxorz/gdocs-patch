@@ -218,8 +218,6 @@ class _Decoder:
             definition = cast(tags.ListDefinitionTag, child)
             child_path = f"{path}/g:list-definition[{index}]"
             list_id = cast(str, definition.list_id)
-            if list_id in result:
-                parse_error(child_path, f"duplicate list key {list_id!r}")
             result[list_id] = models.ListDefinition(
                 levels=[
                     self.decode_list_level(cast(tags.ListLevelTag, level), level_path)
@@ -313,8 +311,6 @@ class _Decoder:
             item = cast(tags.SegmentTag, child)
             item_path = f"{path}/g:{item_name}[{index}]"
             key = cast(str, item.key)
-            if key in result:
-                parse_error(item_path, f"duplicate segment key {key!r}")
             result[key] = models.Segment(
                 segment_id=cast(str, item.segment_id),
                 content=self.decode_structural_sequence(

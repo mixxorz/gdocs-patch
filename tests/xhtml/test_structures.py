@@ -109,6 +109,24 @@ def test_toc_prioritizes_forbidden_section_over_unknown_siblings(
     assert str(error.value).endswith("section elements are only valid in a body")
 
 
+def test_toc_raw_text_precedes_forbidden_section() -> None:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    assert isinstance(content.body, Body)
+    content.body.add_child(TableOfContents(content=[]))
+    xhtml = serialize_document(document).replace(
+        "<g:table-of-contents />",
+        "<g:table-of-contents>raw<section><g:section-style /></section>"
+        "</g:table-of-contents>",
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert str(error.value).endswith("unexpected text content")
+
+
 def test_round_trips_complete_section_style() -> None:
     style = SectionStyle(
         columns=[
@@ -658,6 +676,30 @@ def test_rejects_unknown_list_definition_content(
         deserialize_document(xhtml_with_structure("", definitions))
 
 
+def test_duplicate_second_list_definition_precedes_its_malformed_descendant() -> None:
+    definitions = (
+        "<g:list-definitions>"
+        '<g:list-definition g:list-id="duplicate" />'
+        '<g:list-definition g:list-id="duplicate"><g:unknown /></g:list-definition>'
+        "</g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="duplicate list key 'duplicate'"):
+        deserialize_document(xhtml_with_structure("", definitions))
+
+
+def test_malformed_first_list_definition_precedes_later_duplicate() -> None:
+    definitions = (
+        "<g:list-definitions>"
+        '<g:list-definition g:list-id="duplicate"><g:unknown /></g:list-definition>'
+        '<g:list-definition g:list-id="duplicate" />'
+        "</g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="unknown child element g:unknown"):
+        deserialize_document(xhtml_with_structure("", definitions))
+
+
 def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
     definitions = (
         "<g:list-definitions>"
@@ -668,6 +710,18 @@ def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
 
     with pytest.raises(XHTMLParseError, match="duplicate list key 'duplicate'"):
         deserialize_document(xhtml_with_structure("", definitions))
+
+
+def test_list_level_identity_precedes_malformed_metadata_anchor() -> None:
+    metadata = (
+        '<g:list-definitions><g:list-definition g:list-id="id">'
+        '<g:list-level g:glyph-format="%0"><a href="https://example.test">'
+        "<g:unknown /></a></g:list-level>"
+        "</g:list-definition></g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="exactly one"):
+        deserialize_document(xhtml_with_structure("", metadata))
 
 
 @pytest.mark.parametrize(
@@ -928,6 +982,16 @@ def test_normalizes_default_only_table_cell_style_to_unset() -> None:
     decoded_table = content.body.content[1]
     assert isinstance(decoded_table, Table)
     assert decoded_table.rows[0].cells[0].style is UNSET
+
+
+@pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])
+def test_malformed_cell_descendant_precedes_explicit_default_span(
+    attribute: str,
+) -> None:
+    table = f"<table><tbody><tr><td {attribute}><g:unknown /></td></tr></tbody></table>"
+
+    with pytest.raises(XHTMLParseError, match="unknown structural element g:unknown"):
+        deserialize_document(xhtml_with_table_tree(table))
 
 
 @pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])

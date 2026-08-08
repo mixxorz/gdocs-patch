@@ -2,7 +2,7 @@ from abc import ABC
 from collections.abc import Callable, Generator, Mapping, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Never, Self, cast, overload
+from typing import Any, Literal, Never, Self, cast, overload
 from xml.etree import ElementTree
 
 from gdocs_patch.models import UNSET, UnsetType
@@ -14,6 +14,10 @@ class XHTMLModelError(ValueError):
 
 class ValidationError(XHTMLModelError):
     """The XHTML tree does not conform to its declared model."""
+
+    def __init__(self, message: str, *, attribute_name: str | None = None) -> None:
+        super().__init__(message)
+        self.attribute_name = attribute_name
 
 
 class DecodeError(XHTMLModelError):
@@ -171,6 +175,9 @@ class Children(Field[list[Node]]):
         forbidden_children: dict[str, ForbiddenChild] | None = None,
         min_cardinality_before_text: bool = False,
         positional_path_attributes: dict[str, str] | None = None,
+        forbidden_child_phase: Literal["before_text", "after_text"] = "before_text",
+        unique_by: str | None = None,
+        duplicate_error: str = "duplicate child key {key!r}",
     ) -> None:
         super().__init__()
         if min_num < 0:
@@ -187,6 +194,9 @@ class Children(Field[list[Node]]):
         self.forbidden_children = forbidden_children or {}
         self.min_cardinality_before_text = min_cardinality_before_text
         self.positional_path_attributes = positional_path_attributes or {}
+        self.forbidden_child_phase = forbidden_child_phase
+        self.unique_by = unique_by
+        self.duplicate_error = duplicate_error
 
     def get_default(self) -> list[Node]:
         return []
@@ -392,6 +402,12 @@ class Tag(Node):
     def clean(self) -> None:
         """Validate relationships between fully decoded fields on this tag."""
 
+    def validate_after_attributes(self) -> None:
+        """Validate field relationships before any child content is decoded."""
+
+    def validate_after_descendants(self) -> None:
+        """Validate decode semantics after all descendant content is decoded."""
+
     def validate_after_child_shell(self) -> None:
         """Validate fields after direct-child lexical/type shell validation."""
 
@@ -404,7 +420,10 @@ class Tag(Node):
         try:
             field.validate(getattr(self, name))
         except ValidationError as error:
-            raise ValidationError(f"{type(self).__name__}.{name}: {error}") from error
+            raise ValidationError(
+                f"{type(self).__name__}.{name}: {error}",
+                attribute_name=error.attribute_name,
+            ) from error
 
     def validate(self) -> None:
         if self.tag_name is None:
@@ -449,13 +468,27 @@ class Tag(Node):
             for name, field in fields.items():
                 if not isinstance(field, Children):
                     node._validate_field(name, field)
+            node.validate_after_attributes()
         except ValidationError as error:
-            decoder.fail(str(error))
+            decoder.fail(str(error), attribute_name=error.attribute_name)
 
-        for name, field in fields.items():
-            if isinstance(field, Children):
-                with decoder.children_of(node):
-                    setattr(node, name, field.decode_from(element, decoder))
+        children_field = next(
+            (field for field in fields.values() if isinstance(field, Children)), None
+        )
+        if children_field is not None and decoder.child_uniqueness_is_active:
+            decoder.validate_initial_text(element, children_field)
+        decoder.validate_child_uniqueness(node)
+        if children_field is not None:
+            with decoder.children_of(node):
+                setattr(
+                    node,
+                    cast(str, children_field.name),
+                    children_field.decode_from(element, decoder),
+                )
+        try:
+            node.validate_after_descendants()
+        except ValidationError as error:
+            decoder.fail(str(error), attribute_name=error.attribute_name)
         return node
 
     @classmethod
@@ -479,6 +512,7 @@ class Decoder:
     def __init__(self) -> None:
         self._path: list[str] = []
         self._child_owners: list[Tag] = []
+        self._uniqueness: list[tuple[Children, set[object]]] = []
 
     def fail(
         self,
@@ -505,10 +539,39 @@ class Decoder:
     @contextmanager
     def children_of(self, owner: Tag) -> Generator[None]:
         self._child_owners.append(owner)
+        field = next(
+            (item for item in owner.fields().values() if isinstance(item, Children)),
+            None,
+        )
+        if field is None:
+            raise TypeError(f"{type(owner).__name__} has no Children field")
+        self._uniqueness.append((field, set()))
         try:
             yield
         finally:
+            self._uniqueness.pop()
             self._child_owners.pop()
+
+    @property
+    def child_uniqueness_is_active(self) -> bool:
+        return bool(self._uniqueness and self._uniqueness[-1][0].unique_by is not None)
+
+    def validate_initial_text(
+        self, element: ElementTree.Element, field: Children
+    ) -> None:
+        if element.text and element.text.strip() and not field.permits_text:
+            self.fail(field.text_error)
+
+    def validate_child_uniqueness(self, child: Tag) -> None:
+        if not self._uniqueness:
+            return
+        field, seen = self._uniqueness[-1]
+        if field.unique_by is None:
+            return
+        key = getattr(child, field.unique_by)
+        if key in seen:
+            self.fail(field.duplicate_error.format(key=key))
+        seen.add(key)
 
     def loads[T: Tag](self, source: str, root_type: type[T]) -> T:
         try:
@@ -555,7 +618,10 @@ class Decoder:
             ),
             None,
         )
-        if prioritized_forbidden is not None:
+        if (
+            prioritized_forbidden is not None
+            and field.forbidden_child_phase == "before_text"
+        ):
             child, forbidden = prioritized_forbidden
             self.fail(
                 forbidden.message,
@@ -568,6 +634,15 @@ class Decoder:
                 self.fail(str(error))
 
         append_text(parent.text, field.text_error)
+        if (
+            prioritized_forbidden is not None
+            and field.forbidden_child_phase == "after_text"
+        ):
+            child, forbidden = prioritized_forbidden
+            self.fail(
+                forbidden.message,
+                element_name=child.tag if forbidden.include_element_name else None,
+            )
         child_totals: dict[str, int] = {}
         resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
         for position, child_element in enumerate(parent, 1):

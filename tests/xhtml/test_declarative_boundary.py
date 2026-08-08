@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, tags
+from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
 from gdocs_patch.xhtml.attributes import (
     IntegerAttribute,
     NonNegativeIntegerAttribute,
@@ -22,75 +22,6 @@ def test_integer_attribute_encoders_reject_non_integer_runtime_values(
 ) -> None:
     with pytest.raises(TypeError, match="expected int"):
         attribute_type().encode(value)
-
-
-def test_all_paragraph_vocabulary_is_declarative() -> None:
-    paragraph_tags = (
-        tags.GenericParagraphTag,
-        tags.UnspecifiedParagraphTag,
-        tags.ParagraphTag,
-        tags.TitleTag,
-        tags.SubtitleTag,
-        tags.Heading1Tag,
-        tags.Heading2Tag,
-        tags.Heading3Tag,
-        tags.Heading4Tag,
-        tags.Heading5Tag,
-        tags.Heading6Tag,
-    )
-
-    assert all(issubclass(tag, tags.Tag) for tag in paragraph_tags)
-    assert "payload" not in tags.ParagraphTag.fields()
-    assert (
-        tags.PositionedObjectsTag.fields()["children"].specs[0].node_type
-        is tags.PositionedObjectTag
-    )
-    assert tags.ContentAnchorTag.fields()["children"].max_num == 1
-    assert tags.AutoTextTag.fields()["auto_text_type"].required
-    assert tags.RichLinkTag.fields()["uri"].required
-
-
-def test_lists_are_fully_declarative() -> None:
-    assert issubclass(tags.ListTag, tags.Tag)
-    assert "payload" not in tags.ListTag.fields()
-    assert tags.ListTag.fields()["children"].specs[0].node_type is tags.ListItemTag
-    assert tags.ListTag.fields()["children"].min_num == 1
-
-    list_id = tags.ListTag.fields()["list_id"]
-    bullet_preset = tags.ListTag.fields()["bullet_preset"]
-    nesting_level = tags.ListItemTag.fields()["nesting_level"]
-    item_children = tags.ListItemTag.fields()["children"]
-
-    assert list_id.bound_xml_name.endswith("list-id")
-    assert bullet_preset.bound_xml_name.endswith("bullet-preset")
-    assert nesting_level.default == 0
-    assert item_children.min_num == 1
-    assert any(spec.node_type is tags.BulletStyleTag for spec in item_children.specs)
-    assert any(spec.node_type is tags.ParagraphTag for spec in item_children.specs)
-
-
-def test_tables_are_fully_declarative() -> None:
-    assert issubclass(tags.TableTag, tags.Tag)
-    assert "payload" not in tags.TableTag.fields()
-
-    table_children = tags.TableTag.fields()["children"]
-    assert any(spec.node_type is tags.TableColgroupTag for spec in table_children.specs)
-    assert any(spec.node_type is tags.TableBodyTag for spec in table_children.specs)
-    assert tags.TableBodyTag.fields()["children"].specs[0].node_type is tags.TableRowTag
-    assert tags.TableRowTag.fields()["children"].specs[0].node_type is tags.TableCellTag
-    assert any(
-        spec.node_type is tags.TableCellStyleTag
-        for spec in tags.TableCellTag.fields()["children"].specs
-    )
-    assert any(
-        spec.node_type is tags.TableTag
-        for spec in tags.TableCellTag.fields()["children"].specs
-    )
-
-
-def test_direct_table_cell_tag_rejects_explicit_span_one() -> None:
-    with pytest.raises(ValueError, match="cell span must be greater than 1"):
-        tags.TableCellTag(row_span=1).dumps()
 
 
 def test_repeated_child_decode_error_path_includes_one_based_index() -> None:

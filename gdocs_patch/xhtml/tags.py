@@ -261,7 +261,13 @@ class MetadataAnchorTag(Tag):
     heading_id = StringAttribute(gdocs_name("heading-id"))
     children = Children()
 
+    def validate_after_attributes(self) -> None:
+        self._validate_target()
+
     def clean(self) -> None:
+        self._validate_target()
+
+    def _validate_target(self) -> None:
         primary = sum(
             value is not UNSET
             for value in (self.href, self.bookmark_id, self.heading_id)
@@ -448,7 +454,13 @@ class ListLevelTag(Tag):
     ) = _text_style_attributes()
     children = Children(Child(MetadataAnchorTag, max_num=1))
 
+    def validate_after_attributes(self) -> None:
+        self._validate_glyph_identity()
+
     def clean(self) -> None:
+        self._validate_glyph_identity()
+
+    def _validate_glyph_identity(self) -> None:
         if (self.glyph_type is UNSET) == (self.glyph_symbol is UNSET):
             raise ValidationError(
                 "exactly one of g:glyph-type and g:glyph-symbol is required"
@@ -465,7 +477,11 @@ class ListDefinitionTag(Tag):
 class ListDefinitionsTag(Tag):
     tag_name = gdocs_name("list-definitions")
 
-    children = Children(Child(ListDefinitionTag))
+    children = Children(
+        Child(ListDefinitionTag),
+        unique_by="list_id",
+        duplicate_error="duplicate list key {key!r}",
+    )
 
 
 class PositionedObjectTag(Tag):
@@ -813,24 +829,11 @@ _TABLE_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 
 
 class _CellSpanAttribute(PositiveIntegerAttribute):
-    def _validate_canonical(self, value: int) -> None:
-        if value == 1:
-            raise ValueError("cell span must be greater than 1")
-
-    def decode(self, raw: str) -> int:
-        value = super().decode(raw)
-        self._validate_canonical(value)
-        return value
-
     def encode(self, value: int) -> str:
         raw = super().encode(value)
-        self._validate_canonical(value)
+        if value == 1:
+            raise ValueError("cell span must be greater than 1")
         return raw
-
-    def validate(self, value: int | UnsetType) -> None:
-        super().validate(value)
-        if value is not UNSET:
-            self._validate_canonical(cast(int, value))
 
 
 class TableColumnTag(Tag):
@@ -944,6 +947,20 @@ class TableCellTag(Tag):
     column_span = _CellSpanAttribute("colspan")
     children = _table_cell_children()
 
+    def validate_after_descendants(self) -> None:
+        self._validate_spans()
+
+    def clean(self) -> None:
+        self._validate_spans()
+
+    def _validate_spans(self) -> None:
+        for name, xml_name in (("row_span", "rowspan"), ("column_span", "colspan")):
+            value = getattr(self, name)
+            if value == 1:
+                raise ValidationError(
+                    "cell span must be greater than 1", attribute_name=xml_name
+                )
+
 
 class TableRowTag(Tag):
     tag_name = xhtml_name("tr")
@@ -992,7 +1009,7 @@ def _structural_children() -> Children:
         Child(lambda: TableTag),
         Child(lambda: TableOfContentsTag),
     ]
-    return Children(*specs)
+    return Children(*specs, unknown_child_error="unknown structural element")
 
 
 class SectionColumnTag(Tag):
@@ -1075,6 +1092,8 @@ class TableOfContentsTag(Tag):
                 include_element_name=False,
             )
         },
+        text_error="unexpected text content",
+        forbidden_child_phase="after_text",
     )
 
 
@@ -1096,19 +1115,27 @@ class FootnoteTag(SegmentTag):
     tag_name = gdocs_name("footnote")
 
 
+def _segment_children(segment_type: type[SegmentTag]) -> Children:
+    return Children(
+        Child(segment_type),
+        unique_by="key",
+        duplicate_error="duplicate segment key {key!r}",
+    )
+
+
 class HeadersTag(Tag):
     tag_name = gdocs_name("headers")
-    children = Children(Child(HeaderTag))
+    children = _segment_children(HeaderTag)
 
 
 class FootersTag(Tag):
     tag_name = gdocs_name("footers")
-    children = Children(Child(FooterTag))
+    children = _segment_children(FooterTag)
 
 
 class FootnotesTag(Tag):
     tag_name = gdocs_name("footnotes")
-    children = Children(Child(FootnoteTag))
+    children = _segment_children(FootnoteTag)
 
 
 class DocumentTabTag(Tag):

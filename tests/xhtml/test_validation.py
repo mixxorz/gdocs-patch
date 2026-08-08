@@ -106,6 +106,19 @@ def test_auto_text_type_failure_uses_paragraph_child_position() -> None:
     assert "/*[2]/@g:type" in str(error.value)
 
 
+@pytest.mark.parametrize(
+    "attributes",
+    ["", 'href="https://example.test" g:bookmark-id="bookmark"'],
+)
+def test_anchor_target_validation_precedes_malformed_content(attributes: str) -> None:
+    xhtml = document(f"<p><a {attributes}>raw<g:unknown /></a></p>")
+
+    with pytest.raises(
+        XHTMLParseError, match="invalid link target attribute combination"
+    ):
+        deserialize_document(xhtml)
+
+
 def test_anchored_auto_text_type_failure_uses_tag_occurrence_path() -> None:
     xhtml = document('<p><a href="https://example.test"><g:auto-text /></a></p>')
 
@@ -124,6 +137,30 @@ def test_auto_text_unknown_attribute_uses_tag_occurrence_path() -> None:
         deserialize_document(xhtml)
 
     assert "/g:auto-text[1]/@g:unknown" in str(error.value)
+
+
+def test_duplicate_second_segment_precedes_its_malformed_descendant() -> None:
+    metadata = (
+        "<g:headers>"
+        '<g:header g:key="duplicate" g:segment-id="first" />'
+        '<g:header g:key="duplicate" g:segment-id="second"><g:unknown /></g:header>'
+        "</g:headers>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="duplicate segment key 'duplicate'"):
+        deserialize_document(document(metadata=metadata))
+
+
+def test_malformed_first_segment_precedes_later_duplicate() -> None:
+    metadata = (
+        "<g:headers>"
+        '<g:header g:key="duplicate" g:segment-id="first"><g:unknown /></g:header>'
+        '<g:header g:key="duplicate" g:segment-id="second" />'
+        "</g:headers>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="unknown structural element g:unknown"):
+        deserialize_document(document(metadata=metadata))
 
 
 def test_body_rejects_direct_structural_children_as_parse_error() -> None:
