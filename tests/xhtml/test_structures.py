@@ -478,51 +478,6 @@ def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
         deserialize_document(xhtml_with_structure(structure))
 
 
-@pytest.mark.parametrize(
-    ("structure", "diagnostic"),
-    [
-        (
-            "<g:list />",
-            "exactly one of g:list-id and g:bullet-preset is required",
-        ),
-        (
-            '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>',
-            "nesting level must be non-negative",
-        ),
-    ],
-)
-def test_rejects_invalid_list_structure(structure: str, diagnostic: str) -> None:
-    with pytest.raises(XHTMLParseError, match=diagnostic):
-        deserialize_document(xhtml_with_structure(structure))
-
-
-@pytest.mark.parametrize(
-    ("structure", "diagnostic"),
-    [
-        (
-            "<g:list><li><p><g:unknown /></p></li></g:list>",
-            "exactly one of g:list-id and g:bullet-preset is required",
-        ),
-        (
-            '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
-            "<li><p><g:unknown /></p></li></g:list>",
-            "exactly one of g:list-id and g:bullet-preset is required",
-        ),
-        (
-            '<g:list g:list-id="id"><li><p><g:unknown /></p><p /></li></g:list>',
-            "list item must contain exactly one paragraph",
-        ),
-    ],
-)
-def test_list_preflight_errors_win_over_malformed_descendants(
-    structure: str, diagnostic: str
-) -> None:
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml_with_structure(structure))
-
-    assert str(error.value).endswith(f": {diagnostic}")
-
-
 def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
 
@@ -546,18 +501,6 @@ def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
 
     assert str(error.value).endswith(": duplicate child key 'duplicate'")
     assert "ListDefinitionsTag.children" not in str(error.value)
-
-
-def test_list_level_identity_precedes_malformed_metadata_anchor() -> None:
-    metadata = (
-        '<g:list-definitions><g:list-definition g:list-id="id">'
-        '<g:list-level g:glyph-format="%0"><a href="https://example.test">'
-        "<g:unknown /></a></g:list-level>"
-        "</g:list-definition></g:list-definitions>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="exactly one"):
-        deserialize_document(xhtml_with_structure("", metadata))
 
 
 @pytest.mark.parametrize(
@@ -784,8 +727,11 @@ def test_rejects_explicit_default_cell_span(attribute: str) -> None:
         document_with_table(Table(rows=[TableRow(cells=[TableCell(content=[])])]))
     ).replace("<td />", f"<td {attribute} />")
 
-    with pytest.raises(XHTMLParseError, match="must be greater than 1"):
+    with pytest.raises(XHTMLParseError, match="must be greater than 1") as error:
         deserialize_document(xhtml)
+
+    attribute_name = attribute.partition("=")[0]
+    assert f"/@{attribute_name}" in str(error.value)
 
 
 @pytest.mark.parametrize(

@@ -260,9 +260,6 @@ class MetadataAnchorTag(Tag):
     heading_id = StringAttribute(gdocs_name("heading-id"))
     children = Children()
 
-    def validate_after_attributes(self) -> None:
-        self._validate_target()
-
     def clean(self) -> None:
         self._validate_target()
 
@@ -452,9 +449,6 @@ class ListLevelTag(Tag):
         background_color,
     ) = _text_style_attributes()
     children = Children(Child(MetadataAnchorTag, max_num=1))
-
-    def validate_after_attributes(self) -> None:
-        self._validate_glyph_identity()
 
     def clean(self) -> None:
         self._validate_glyph_identity()
@@ -655,13 +649,6 @@ class _ContentAnchorChildren(Children):
             )
         super().validate(value)
 
-    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
-        if len(node_types) != 1:
-            raise ValidationError(
-                "link target must contain exactly one paragraph element"
-            )
-        super().validate_resolved_types(node_types)
-
 
 class ContentAnchorTag(MetadataAnchorTag):
     children = _ContentAnchorChildren(
@@ -763,16 +750,13 @@ class ListItemTag(Tag):
         min_num=1,
     )
 
-    def validate_resolved_child_types(
-        self, child_types: tuple[type[Node], ...]
-    ) -> None:
+    def clean(self) -> None:
+        children = cast(list[Node], self.children)
         paragraphs = sum(
-            issubclass(child_type, ParagraphVocabularyTag) for child_type in child_types
+            isinstance(child, ParagraphVocabularyTag) for child in children
         )
         if paragraphs != 1:
             raise ValidationError("list item must contain exactly one paragraph")
-
-    def clean(self) -> None:
         if self.nesting_level is not UNSET and cast(int, self.nesting_level) < 0:
             raise ValidationError("nesting level must be non-negative")
 
@@ -788,9 +772,6 @@ class ListTag(Tag):
         Child(ListItemTag, min_num=1),
         min_num=1,
     )
-
-    def validate_after_child_shell(self) -> None:
-        self._validate_identity()
 
     def clean(self) -> None:
         self._validate_identity()
@@ -925,9 +906,6 @@ class TableCellTag(Tag):
     row_span = _CellSpanAttribute("rowspan")
     column_span = _CellSpanAttribute("colspan")
     children = _table_cell_children()
-
-    def validate_after_descendants(self) -> None:
-        self._validate_spans()
 
     def clean(self) -> None:
         self._validate_spans()

@@ -82,8 +82,8 @@ def test_rejects_empty_body() -> None:
     "attributes",
     ["", 'href="https://example.test" g:bookmark-id="bookmark"'],
 )
-def test_anchor_target_validation_precedes_malformed_content(attributes: str) -> None:
-    xhtml = document(f"<p><a {attributes}>raw<g:unknown /></a></p>")
+def test_rejects_invalid_anchor_target_combination(attributes: str) -> None:
+    xhtml = document(f"<p><a {attributes}><span>linked</span></a></p>")
 
     with pytest.raises(
         XHTMLParseError, match="invalid link target attribute combination"

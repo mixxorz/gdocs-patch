@@ -295,33 +295,6 @@ class Children(Field[list[Node]]):
                     raise ValidationError(f"duplicate child key {key!r}")
                 seen.add(key)
 
-    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
-        if len(node_types) < self.min_num:
-            raise ValidationError(
-                f"expected at least {_quantity(self.min_num)} child element"
-                f"{'' if self.min_num == 1 else 's'}"
-            )
-        if self.max_num is not None and len(node_types) > self.max_num:
-            raise ValidationError(
-                f"expected at most {_quantity(self.max_num)} child element"
-                f"{'' if self.max_num == 1 else 's'}"
-            )
-        for spec in self.specs:
-            count = sum(
-                issubclass(node_type, spec.node_type) for node_type in node_types
-            )
-            child_name = _node_name(spec.node_type)
-            if count < spec.min_num:
-                raise ValidationError(
-                    f"expected at least {_quantity(spec.min_num)} {child_name} "
-                    f"{_children(spec.min_num)}"
-                )
-            if spec.max_num is not None and count > spec.max_num:
-                raise ValidationError(
-                    f"expected at most {_quantity(spec.max_num)} {child_name} "
-                    f"{_children(spec.max_num)}"
-                )
-
     def decode_from(
         self, element: ElementTree.Element, decoder: "Decoder"
     ) -> list[Node]:
@@ -387,21 +360,7 @@ class Tag(Node):
             setattr(self, name, value)
 
     def clean(self) -> None:
-        """Validate relationships between fully decoded fields on this tag."""
-
-    def validate_after_attributes(self) -> None:
-        """Validate field relationships before any child content is decoded."""
-
-    def validate_after_descendants(self) -> None:
-        """Validate decode semantics after all descendant content is decoded."""
-
-    def validate_after_child_shell(self) -> None:
-        """Validate fields after direct-child lexical/type shell validation."""
-
-    def validate_resolved_child_types(
-        self, child_types: tuple[type[Node], ...]
-    ) -> None:
-        """Validate relationships across resolved direct child alternatives."""
+        """Validate relationships between fields on a complete tag."""
 
     def _validate_field(self, name: str, field: Field[Any]) -> None:
         field.validate(getattr(self, name))
@@ -411,16 +370,7 @@ class Tag(Node):
             raise ValidationError(f"{type(self).__name__} has no tag_name")
         fields = self.fields()
         for name, field in fields.items():
-            if not isinstance(field, Children):
-                self._validate_field(name, field)
-        self.validate_after_child_shell()
-        for name, field in fields.items():
-            if isinstance(field, Children):
-                self._validate_field(name, field)
-                children = cast(list[Node], getattr(self, name))
-                self.validate_resolved_child_types(
-                    tuple(type(child) for child in children)
-                )
+            self._validate_field(name, field)
         self.clean()
 
     @classmethod
@@ -445,28 +395,15 @@ class Tag(Node):
             if not isinstance(field, Children)
         }
         node = cls(**values)
-        try:
-            for name, field in fields.items():
-                if not isinstance(field, Children):
-                    node._validate_field(name, field)
-            node.validate_after_attributes()
-        except ValidationError as error:
-            decoder.fail(str(error), attribute_name=error.attribute_name)
-
         children_field = next(
             (field for field in fields.values() if isinstance(field, Children)), None
         )
         if children_field is not None:
-            with decoder.children_of(node):
-                setattr(
-                    node,
-                    cast(str, children_field.name),
-                    children_field.decode_from(element, decoder),
-                )
-        try:
-            node.validate_after_descendants()
-        except ValidationError as error:
-            decoder.fail(str(error), attribute_name=error.attribute_name)
+            setattr(
+                node,
+                cast(str, children_field.name),
+                children_field.decode_from(element, decoder),
+            )
         return node
 
     @classmethod
@@ -489,7 +426,6 @@ class Tag(Node):
 class Decoder:
     def __init__(self) -> None:
         self._path: list[str] = []
-        self._child_owners: list[Tag] = []
 
     def fail(
         self,
@@ -513,14 +449,6 @@ class Decoder:
         finally:
             self._path.pop()
 
-    @contextmanager
-    def children_of(self, owner: Tag) -> Generator[None]:
-        self._child_owners.append(owner)
-        try:
-            yield
-        finally:
-            self._child_owners.pop()
-
     def loads[T: Tag](self, source: str, root_type: type[T]) -> T:
         try:
             element = ElementTree.fromstring(source)
@@ -540,14 +468,17 @@ class Decoder:
         try:
             node.validate()
         except ValidationError as error:
-            raise DecodeError(str(error), path=tuple(self._path)) from error
+            raise DecodeError(
+                str(error),
+                path=tuple(self._path),
+                attribute_name=error.attribute_name,
+            ) from error
         return node
 
     def decode_children(
         self, parent: ElementTree.Element, field: Children
     ) -> list[Node]:
         result: list[Node] = []
-        owner = self._child_owners[-1] if self._child_owners else None
 
         def append_text(value: str | None) -> None:
             if value is None or not value:
@@ -578,16 +509,6 @@ class Decoder:
             ):
                 self.fail("text is not permitted under this parent")
             resolved.append((position, child_element, spec, child_type))
-
-        child_types = tuple(child_type for _, _, _, child_type in resolved)
-        try:
-            if owner is not None:
-                owner.validate_after_child_shell()
-            field.validate_resolved_types(child_types)
-            if owner is not None:
-                owner.validate_resolved_child_types(child_types)
-        except ValidationError as error:
-            self.fail(str(error))
 
         child_counts: dict[str, int] = {}
         for position, child_element, spec, child_type in resolved:
