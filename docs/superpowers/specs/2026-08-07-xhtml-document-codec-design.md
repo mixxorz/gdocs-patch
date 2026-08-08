@@ -65,7 +65,7 @@ class XHTMLParseError(ValueError):
 
 There are no public serializer classes or configuration objects in the initial version.
 
-`serialize_document()` returns canonical XML text including the XML declaration. It raises `ValueError` for model states that the supported grammar cannot represent.
+`serialize_document()` returns canonical XML text including the XML declaration. It assumes its `Document` is valid trusted model data returned by Google Docs and does not revalidate model values while encoding.
 
 `deserialize_document()` wraps malformed XML and semantic validation failures in `XHTMLParseError`. Errors identify the relevant element or attribute path when available. Unknown elements or attributes, duplicate singular metadata, missing required values, invalid constants, and contradictory representations are errors.
 
@@ -76,11 +76,11 @@ Use a small package with a declarative XHTML syntax tree between the Google Docs
 ```text
 gdocs_patch/xhtml/
 ├── __init__.py    # public functions and XHTMLParseError
-├── base.py        # namespaces, security limits, shared helpers, and public errors
+├── base.py        # namespaces, input security limits, shared helpers, and public errors
 ├── nodes.py       # generic Node, Text, Field, Children, Tag, Encoder, and Decoder
 ├── attributes.py  # reusable scalar, point, choice, literal, and composite attributes
 ├── tags.py        # declarative XHTML vocabulary and child grammar
-├── encoder.py     # model mapping, generated-tree checks, indentation, and rendering
+├── encoder.py     # trusted model mapping, indentation, and rendering
 └── decoder.py     # XML security/parsing boundary, error paths, and model mapping
 ```
 
@@ -104,20 +104,20 @@ The following abridged signatures show the relevant data flow (module qualifiers
 class _Encoder:
     def encode_document(self, document: Document) -> HtmlTag: ...
     def encode_structural_sequence(
-        self, elements: list[StructuralElement], body: bool = False
+        self, elements: list[StructuralElement]
     ) -> list[Tag]: ...
 ```
 
 `serialize_document()` calls the generic XHTML `Encoder` exactly once at the XML boundary:
 
 ```text
-Document models
+trusted Document models
 └── _Encoder → declared Tag/Text tree
     └── nodes.Encoder → ElementTree
-        └── encoder.py → generated-tree checks, indentation, and XML rendering
+        └── encoder.py → indentation and XML rendering
 ```
 
-The model mapper retains the two unavoidable sibling projections: body sections and adjacent compatible list paragraphs. All XML lexical conversion, unknown vocabulary, cardinality, mixed text, and attribute mechanics are hidden below the tag declarations.
+The model mapper retains the two unavoidable sibling projections: body sections and adjacent compatible list paragraphs. All XML lexical conversion and attribute mechanics are hidden below the tag declarations. Vocabulary, cardinality, mixed-text, and attribute validation apply when decoding external XHTML; encoding trusts its model input.
 
 ### Decoder
 

@@ -835,11 +835,7 @@ _TABLE_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 
 
 class _CellSpanAttribute(PositiveIntegerAttribute):
-    def encode(self, value: int) -> str:
-        raw = super().encode(value)
-        if value == 1:
-            raise ValueError("cell span must be greater than 1")
-        return raw
+    pass
 
 
 class TableColumnTag(Tag):

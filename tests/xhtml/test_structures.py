@@ -1,5 +1,3 @@
-from typing import cast
-
 import pytest
 
 from gdocs_patch.models import (
@@ -310,19 +308,6 @@ def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
     assert decoded.body.content[1:] == paragraphs
 
 
-def test_rejects_invalid_mutated_paragraph_bullet() -> None:
-    paragraph = Paragraph(elements=[TextRun(content="invalid")])
-    paragraph.bullet = cast("Bullet | BulletPreset", object())
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    content.body.add_child(paragraph)
-
-    with pytest.raises(ValueError, match="unsupported paragraph bullet object"):
-        serialize_document(document)
-
-
 def test_same_list_key_separated_by_paragraph_creates_two_groups() -> None:
     document = document_with_section(SectionStyle())
     content = document.tabs[0].content
@@ -385,19 +370,6 @@ def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
     assert isinstance(decoded_paragraph, Paragraph)
     assert isinstance(decoded_paragraph.bullet, Bullet)
     assert decoded_paragraph.bullet.text_style is UNSET
-
-
-@pytest.mark.parametrize("invalid_start", [False, 0.0])
-def test_rejects_non_integer_default_list_start_number(invalid_start: object) -> None:
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    level = ListLevel(glyph_format="%0", glyph_type="DECIMAL")
-    level.start_number = invalid_start  # type: ignore[assignment]
-    content.lists = {"list": ListDefinition(levels=[level])}
-
-    with pytest.raises(ValueError, match="integer"):
-        serialize_document(document)
 
 
 def test_round_trips_complete_list_definitions_and_levels() -> None:
@@ -810,18 +782,6 @@ def decoded_table(document: Document) -> Table:
     table = content.body.content[1]
     assert isinstance(table, Table)
     return table
-
-
-@pytest.mark.parametrize("key_field", ["table_key", "row_key", "cell_key"])
-def test_rejects_invalid_mutated_table_keys(key_field: str) -> None:
-    cell = TableCell(content=[])
-    row = TableRow(cells=[cell])
-    table = Table(rows=[row])
-    owner = {"table_key": table, "row_key": row, "cell_key": cell}[key_field]
-    setattr(owner, key_field, UNSET)
-
-    with pytest.raises(ValueError, match="must be a string"):
-        serialize_document(document_with_table(table))
 
 
 def test_round_trips_complete_recursive_table() -> None:

@@ -48,11 +48,11 @@ gdocs_patch/xhtml/
 **Interfaces:**
 - Produces `Encoder.encode_element(node: Tag) -> ElementTree.Element` and `Decoder.decode_element(element: ElementTree.Element, node_type: type[T]) -> T` suitable for the complete document tree.
 - Produces contextual `DecodeError` paths with repeated-child indexes and attribute names.
-- Produces shallow per-node validation without repeatedly validating descendants.
+- Produces shallow per-node validation during decoding without repeatedly validating descendants; encoding trusts its typed tag tree.
 
 - [ ] Add indexed path steps to the generic decoder so repeated tags render as `g:tab[1]`, `g:named-style[1]`, and similar existing paths.
 - [ ] Validate each decoded tag at its own current path after its children are decoded; make `Children.validate()` enforce only direct grammar and cardinality.
-- [ ] Validate each encoded tag once as recursive encoding reaches it.
+- [ ] Encode each trusted tag once as recursive encoding reaches it without a second validation pass.
 - [ ] Keep whitespace policy declarative through `Children(text_error=..., tail_error=...)`.
 - [ ] Add only attribute primitives required by later declarations: positive/non-negative integer variants or decode hooks if those rules cannot remain in semantic mapping.
 - [ ] Run `uv run pytest tests/xhtml -q`, Ruff, Fixit, and Pyright; commit as `refactor: complete declarative XHTML boundary`.
@@ -76,7 +76,7 @@ gdocs_patch/xhtml/
 - [ ] Declare full `DocumentStyle`, structured background color, `NamedStyle`, metadata link, `ListDefinition`, and `ListLevel` tags.
 - [ ] Reuse shared declarative text-style attributes for span, metadata style, inline element, and list-level contexts without sharing mutable descriptor instances.
 - [ ] Convert document, recursive tabs, document-tab metadata, named styles, and list definitions to model/tag mappings.
-- [ ] Change `serialize_document()` to encode the returned `HtmlTag` through the generic encoder; retain generated-tree limits and rendering.
+- [ ] Change `serialize_document()` to encode the returned trusted `HtmlTag` through the generic encoder and render it without model revalidation.
 - [ ] Change `deserialize_document()` to decode `HtmlTag` before model mapping; retain declaration, DTD/entity, character, and depth preflight.
 - [ ] Delete superseded envelope/document-style/named-style/list-definition XML helper methods and constants.
 - [ ] Run the full unchanged suite and static checks; commit as `refactor: map XHTML document metadata through tags`.

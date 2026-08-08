@@ -286,19 +286,6 @@ def test_round_trips_complete_document_style_and_preserves_empty_presence() -> N
     assert actual.tabs[2].content.document_style is UNSET
 
 
-@pytest.mark.parametrize("invalid_level", [False, 0.0])
-def test_rejects_non_integer_default_tab_nesting_level(invalid_level: object) -> None:
-    document = Document(
-        document_id="doc",
-        title="Invalid tab",
-        tabs=[Tab(tab_id="tab", title="Tab", index=0, children=[])],
-    )
-    document.tabs[0].nesting_level = invalid_level  # type: ignore[assignment]
-
-    with pytest.raises(ValueError, match="integer"):
-        serialize_document(document)
-
-
 def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
     border = ParagraphBorder(
         color=None, width=_pt(1), padding=_pt(2), dash_style="DASH"

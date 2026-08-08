@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from gdocs_patch.models import UNSET, Color, Dimension, UnsetType
 
-from .nodes import Decoder, EncodeError, Encoder, Field, ValidationError
+from .nodes import Decoder, Encoder, Field, ValidationError
 
 _CANONICAL_INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
 _CANONICAL_FLOAT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?\Z")
@@ -78,16 +78,8 @@ class Attribute[T](Field[T], ABC):
         encoder: Encoder,
     ) -> None:
         if value is UNSET:
-            if self.required:
-                raise EncodeError(f"attribute {self.bound_xml_name!r} is required")
             return
-        try:
-            raw = self.encode(cast(T, value))
-        except (TypeError, ValueError) as error:
-            raise EncodeError(
-                f"could not encode attribute {self.bound_xml_name!r}: {value!r}"
-            ) from error
-        attributes[self.bound_xml_name] = raw
+        attributes[self.bound_xml_name] = self.encode(cast(T, value))
 
     @abstractmethod
     def decode(self, raw: str) -> T:
@@ -103,8 +95,6 @@ class StringAttribute(Attribute[str]):
         return raw
 
     def encode(self, value: str) -> str:
-        if not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError("expected a string")
         return value
 
 
@@ -117,8 +107,6 @@ class BooleanAttribute(Attribute[bool]):
         raise ValueError(f"expected 'true' or 'false', got {raw!r}")
 
     def encode(self, value: bool) -> str:
-        if not isinstance(value, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError("expected bool")
         return "true" if value else "false"
 
 
@@ -129,8 +117,6 @@ class IntegerAttribute(Attribute[int]):
         return int(raw)
 
     def encode(self, value: int) -> str:
-        if isinstance(value, bool) or not isinstance(value, int):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError("expected int")
         return str(value)
 
 
@@ -142,10 +128,7 @@ class NonNegativeIntegerAttribute(IntegerAttribute):
         return value
 
     def encode(self, value: int) -> str:
-        raw = super().encode(value)
-        if value < 0:
-            raise ValueError("expected a non-negative integer")
-        return raw
+        return super().encode(value)
 
 
 class PositiveIntegerAttribute(IntegerAttribute):
@@ -156,10 +139,7 @@ class PositiveIntegerAttribute(IntegerAttribute):
         return value
 
     def encode(self, value: int) -> str:
-        raw = super().encode(value)
-        if value <= 0:
-            raise ValueError("expected a positive integer")
-        return raw
+        return super().encode(value)
 
 
 class FloatAttribute(Attribute[float]):
@@ -172,10 +152,6 @@ class FloatAttribute(Attribute[float]):
         return result
 
     def encode(self, value: float) -> str:
-        if isinstance(value, bool):
-            raise TypeError("expected a number")
-        if not math.isfinite(value):
-            raise ValueError("expected a finite number")
         return _format_number(value)
 
 
@@ -198,9 +174,6 @@ class ChoiceAttribute(Attribute[str]):
         return raw
 
     def encode(self, value: str) -> str:
-        if value not in self.choices:
-            choices = ", ".join(sorted(self.choices))
-            raise ValueError(f"expected one of {choices}, got {value!r}")
         return value
 
 
@@ -209,8 +182,6 @@ class PointAttribute(Attribute[Dimension]):
         return Dimension(magnitude=FloatAttribute().decode(raw), unit="PT")
 
     def encode(self, value: Dimension) -> str:
-        if not isinstance(value, Dimension):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError("expected Dimension")
         return FloatAttribute().encode(value.magnitude)
 
 
@@ -227,8 +198,6 @@ class LiteralAttribute(Attribute[bool]):
         return True
 
     def encode(self, value: bool) -> str:
-        if value is not True:
-            raise ValueError("expected True")
         return self.value
 
 
@@ -272,18 +241,11 @@ class MultiValueAttribute[T](Field[T], ABC):
         attributes: MutableMapping[str, str],
         encoder: Encoder,
     ) -> None:
-        if value is UNSET and self.required:
-            raise EncodeError(f"{self.name} is required")
-        try:
-            values = self.decompress(value)
-            for name, attribute in self.attributes.items():
-                attribute.encode_into_attributes(
-                    cast(Any, values.get(name, UNSET)), attributes, encoder
-                )
-        except EncodeError:
-            raise
-        except (TypeError, ValueError) as error:
-            raise EncodeError(f"could not encode {self.name}: {value!r}") from error
+        values = self.decompress(value)
+        for name, attribute in self.attributes.items():
+            attribute.encode_into_attributes(
+                cast(Any, values.get(name, UNSET)), attributes, encoder
+            )
 
     def validate(self, value: T | UnsetType) -> None:
         if value is UNSET and self.required:
@@ -345,10 +307,9 @@ class ColorAttribute(MultiValueAttribute[Color | None]):
             return {}
         if value is None:
             return {"transparent": True}
-        if not isinstance(value, Color):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError("expected Color, None, or UNSET")
+        color = cast(Color, value)
         return {
-            "red": value.red,
-            "green": value.green,
-            "blue": value.blue,
+            "red": color.red,
+            "green": color.green,
+            "blue": color.blue,
         }

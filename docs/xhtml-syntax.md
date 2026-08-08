@@ -719,11 +719,11 @@ The format uses XML 1.0 and XHTML-style semantic elements for document content, 
 
 ### Validation and security limits
 
-Both codec directions enforce a maximum of 10,000,000 characters and a maximum XML element depth of 256, counting the root element as depth 1. Deserialization checks its input character count and performs a stdlib expat preflight before `ElementTree` can expand content. Any DTD, internal or external entity declaration, or external entity reference is forbidden. The preflight also enforces element depth before construction of the `ElementTree` tree.
+Deserialization enforces a maximum input size of 10,000,000 characters and a maximum XML element depth of 256, counting the root element as depth 1. It performs a stdlib expat preflight before `ElementTree` can expand content. Any DTD, internal or external entity declaration, or external entity reference is forbidden. The preflight also enforces element depth before construction of the `ElementTree` tree.
 
-Serialization validates the generated tree iteratively before recursive indentation or `ElementTree` serialization, then validates the final output character count. Output exactly at either limit is accepted and can be deserialized; output over either limit is rejected. Serialization also rejects model values that are not legal XML 1.0 text or that do not have the runtime scalar, enum, collection, or structured type required by the grammar.
+Invalid external XHTML input, including parser, declaration, size, depth, and semantic failures, raises `XHTMLParseError`. Parser and recursion causes are chained when applicable; deserialization does not expose a raw parser error or `RecursionError` for these validation failures.
 
-Invalid external XHTML input, including parser, declaration, size, depth, and semantic failures, raises `XHTMLParseError`. An invalid or over-limit mutable model passed to `serialize_document` raises `ValueError`. Parser and recursion causes are chained when applicable; neither API exposes a raw parser error or `RecursionError` for these validation failures.
+Serialization treats its `Document` as trusted model data returned by Google Docs. It performs the model-to-tag projection and XML rendering without revalidating scalar types, enum values, collection shapes, grammar constraints, or output size and depth. Passing a manually mutated invalid model violates this API precondition; any resulting exception or malformed output is unspecified.
 
 ### Formatting attributes
 
@@ -905,7 +905,7 @@ class XHTMLParseError(ValueError):
     pass
 ```
 
-Errors include useful element or attribute context when available. Unknown elements or attributes, duplicate singular metadata, invalid constants, and missing required values are parse errors. Serialization raises ordinary `ValueError` for an unrepresentable model state.
+Errors include useful element or attribute context when available. Unknown elements or attributes, duplicate singular metadata, invalid constants, and missing required values are parse errors. Serialization assumes the supplied `Document` is valid trusted model data and does not provide validation for manually mutated model states.
 
 For example, malformed or unsupported input can be handled as follows:
 

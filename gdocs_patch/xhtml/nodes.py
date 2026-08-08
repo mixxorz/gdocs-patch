@@ -37,10 +37,6 @@ class DecodeError(XHTMLModelError):
         self.element_name = element_name
 
 
-class EncodeError(XHTMLModelError):
-    """The XHTML tree cannot be encoded as XML."""
-
-
 class Node:
     """Base class for nodes in the declarative XHTML tree."""
 
@@ -360,8 +356,6 @@ class Children(Field[list[Node]]):
         element: ElementTree.Element,
         encoder: "Encoder",
     ) -> None:
-        if value is UNSET:
-            raise EncodeError("children cannot be UNSET")
         encoder.encode_children(cast(list[Node], value), element)
 
 
@@ -738,10 +732,7 @@ class Encoder:
         return self._encode_element(node)
 
     def _encode_element(self, node: Tag) -> ElementTree.Element:
-        node.validate()
-        if node.tag_name is None:
-            raise EncodeError(f"{type(node).__name__} has no tag_name")
-        element = ElementTree.Element(node.tag_name)
+        element = ElementTree.Element(cast(str, node.tag_name))
         for name, field in node.fields().items():
             if isinstance(field, Children):
                 field.encode_into(getattr(node, name), element, self)
@@ -761,8 +752,6 @@ class Encoder:
                     previous_element.tail = (previous_element.tail or "") + child.value
                 continue
 
-            if not isinstance(child, Tag):
-                raise EncodeError(f"cannot encode child of type {type(child).__name__}")
-            element = self._encode_element(child)
+            element = self._encode_element(cast(Tag, child))
             parent.append(element)
             previous_element = element
