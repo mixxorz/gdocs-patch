@@ -404,15 +404,7 @@ class Tag(Node):
         """Validate relationships across resolved direct child alternatives."""
 
     def _validate_field(self, name: str, field: Field[Any]) -> None:
-        try:
-            field.validate(getattr(self, name))
-        except ValidationError as error:
-            if isinstance(field, Children):
-                raise
-            raise ValidationError(
-                f"{type(self).__name__}.{name}: {error}",
-                attribute_name=error.attribute_name,
-            ) from error
+        field.validate(getattr(self, name))
 
     def validate(self) -> None:
         if self.tag_name is None:
