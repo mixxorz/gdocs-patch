@@ -127,9 +127,6 @@ class NonNegativeIntegerAttribute(IntegerAttribute):
             raise ValueError(f"expected a non-negative integer, got {raw!r}")
         return value
 
-    def encode(self, value: int) -> str:
-        return super().encode(value)
-
 
 class PositiveIntegerAttribute(IntegerAttribute):
     def decode(self, raw: str) -> int:
@@ -137,9 +134,6 @@ class PositiveIntegerAttribute(IntegerAttribute):
         if value <= 0:
             raise ValueError(f"expected a positive integer, got {raw!r}")
         return value
-
-    def encode(self, value: int) -> str:
-        return super().encode(value)
 
 
 class FloatAttribute(Attribute[float]):

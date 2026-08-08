@@ -55,17 +55,10 @@ class DecodeError(XHTMLModelError):
 class Node:
     """Base class for nodes in the declarative XHTML tree."""
 
-    def validate(self) -> None:
-        pass
-
 
 @dataclass(eq=True)
 class Text(Node):
     value: str
-
-    def validate(self) -> None:
-        if not isinstance(self.value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise ValidationError("text value must be a string")
 
 
 class Field[T](ABC):
@@ -394,13 +387,6 @@ class Tag(Node):
             )
         return node
 
-    @classmethod
-    def loads(cls, source: str) -> Self:
-        return Decoder().loads(source, cls)
-
-    def dumps(self) -> str:
-        return Encoder().dumps(self)
-
     def __repr__(self) -> str:
         values = ", ".join(f"{name}={getattr(self, name)!r}" for name in self.fields())
         return f"{type(self).__name__}({values})"
@@ -442,13 +428,6 @@ class Decoder:
         finally:
             self._path.pop()
 
-    def loads[T: Tag](self, source: str, root_type: type[T]) -> T:
-        try:
-            element = ElementTree.fromstring(source)
-        except ElementTree.ParseError as error:
-            raise DecodeError(str(error)) from error
-        return self.decode_element(element, root_type)
-
     def decode_element[T: Tag](
         self, element: ElementTree.Element, node_type: type[T]
     ) -> T:
@@ -478,8 +457,8 @@ class Decoder:
 
         append_text(parent.text)
         child_totals: dict[str, int] = {}
-        resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
-        for position, child_element in enumerate(parent, 1):
+        resolved: list[tuple[ElementTree.Element, Child, type[Tag]]] = []
+        for child_element in parent:
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
             spec = field.spec_for_element(child_element)
             if spec is None:
@@ -496,10 +475,10 @@ class Decoder:
                 and not field.permits_text
             ):
                 self.fail("text is not permitted under this parent")
-            resolved.append((position, child_element, spec, child_type))
+            resolved.append((child_element, spec, child_type))
 
         child_counts: dict[str, int] = {}
-        for position, child_element, spec, child_type in resolved:
+        for child_element, spec, child_type in resolved:
             child_counts[child_element.tag] = child_counts.get(child_element.tag, 0) + 1
             path_step = child_element.tag
             repeated = spec.max_num is None or spec.max_num > 1
@@ -516,10 +495,6 @@ class Decoder:
 
 
 class Encoder:
-    def dumps(self, node: Tag) -> str:
-        element = self.encode_element(node)
-        return ElementTree.tostring(element, encoding="unicode", method="xml")
-
     def encode_element(self, node: Tag) -> ElementTree.Element:
         element = ElementTree.Element(cast(str, node.tag_name))
         for name, field in node.fields().items():

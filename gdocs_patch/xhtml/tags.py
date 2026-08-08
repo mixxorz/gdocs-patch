@@ -779,10 +779,6 @@ _TABLE_CONTENT_ALIGNMENTS = {
 _TABLE_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 
 
-class _CellSpanAttribute(PositiveIntegerAttribute):
-    pass
-
-
 class TableColumnTag(Tag):
     tag_name = xhtml_name("col")
 
@@ -882,8 +878,8 @@ class TableCellTag(Tag):
     tag_name = xhtml_name("td")
 
     cell_key = StringAttribute(gdocs_name("cell-key"))
-    row_span = _CellSpanAttribute("rowspan")
-    column_span = _CellSpanAttribute("colspan")
+    row_span = PositiveIntegerAttribute("rowspan")
+    column_span = PositiveIntegerAttribute("colspan")
     children = _table_cell_children()
 
     def clean(self) -> None:
