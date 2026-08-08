@@ -505,14 +505,6 @@ class _Decoder:
             models.UNSET if value is None else parse_boolean(value, f"{path}/@g:{name}")
         )
 
-    def optional_integer(
-        self, element: ElementTree.Element, name: str, path: str
-    ) -> int | models.UnsetType:
-        value = element.get(gdocs_name(name))
-        return (
-            models.UNSET if value is None else parse_integer(value, f"{path}/@g:{name}")
-        )
-
     def optional_point(
         self, element: ElementTree.Element, name: str, path: str
     ) -> models.Dimension | models.UnsetType:

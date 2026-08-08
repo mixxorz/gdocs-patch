@@ -49,3 +49,15 @@ Review verification:
 - Focused XHTML validation/document/structure suite: 89 passed.
 - Full pytest suite: 260 passed.
 - Ruff lint/format, Fixit, Pyright, and all pre-commit hooks passed.
+
+## Closure Fixes
+
+- Added a contextual declarative body-children decoder that preserves `body must contain at least one section` while retaining the one-or-more `SectionTag` cardinality declaration.
+- Removed the unused `_Decoder.optional_integer` helper.
+- Added a focused public regression for the empty-body diagnostic.
+
+Closure verification:
+
+- Focused empty-body regression: 1 passed.
+- XHTML suite: 161 passed.
+- Ruff lint/format, Fixit, Pyright, and all pre-commit hooks passed.

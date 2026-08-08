@@ -628,10 +628,17 @@ class SectionTag(Tag):
     )
 
 
+class _DocumentBodyChildren(Children):
+    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
+        if not list(element):
+            decoder.fail("body must contain at least one section")
+        return super().decode_from(element, decoder)
+
+
 class DocumentBodyTag(Tag):
     tag_name = gdocs_name("body")
 
-    children = Children(Child(lambda: SectionTag, min_num=1))
+    children = _DocumentBodyChildren(Child(lambda: SectionTag, min_num=1))
 
 
 class _TableOfContentsChildren(Children):

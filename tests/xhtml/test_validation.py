@@ -74,6 +74,17 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
+def test_empty_body_preserves_contextual_section_diagnostic() -> None:
+    xhtml = document().replace(
+        "<g:body><section><g:section-style /></section></g:body>", "<g:body />"
+    )
+
+    with pytest.raises(
+        XHTMLParseError, match=r"g:body: body must contain at least one section"
+    ):
+        deserialize_document(xhtml)
+
+
 def test_body_rejects_direct_structural_children_as_parse_error() -> None:
     xhtml = document().replace(
         "<section><g:section-style /></section>", "<p><span>orphan</span></p>"
