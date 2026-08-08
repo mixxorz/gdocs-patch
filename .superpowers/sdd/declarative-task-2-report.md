@@ -81,3 +81,61 @@ Ruff format initially identified the three edited modules, which were formatted 
 ## Concerns
 
 Body, segment, and structural descendants remain intentionally behind explicit temporary boundary adapters because their declarative declarations and mappings belong to Task 3. The migrated document-envelope and metadata mapper methods themselves use tags; Task 3 should delete `_BoundaryChildren` and the corresponding adapters when those descendants migrate.
+
+## Task 2 Review Fixes
+
+- Restored the prior canonical `DocumentStyle` attribute order through `DocumentStyleTag.field_order`: document mode, header/footer IDs, booleans, page number, then dimensions.
+- Added validation-before-default-omission for integer model fields introduced in Task 2. Mutated `False` and `0.0` values for `Tab.nesting_level` and `ListLevel.start_number` now raise rather than comparing equal to zero and disappearing as `UNSET`.
+- Restored wrong-XHTML-namespace handling at the parse boundary.
+- Generalized singular-child cardinality errors in `Children.validate()` using each child tag's declared XML local name. This restores duplicate body and all singular `DocumentTab` wrapper errors without class-specific decoder rewrites; the previous `HtmlTag` one-off was removed.
+- Replaced giant model/tag symbol imports throughout both mapper modules with module-qualified `models.*` and `tags.*` references.
+- Added the module-qualified mapper import rule to the declarative rewrite plan's Global Constraints.
+
+### Review Fix TDD Evidence
+
+Focused RED:
+
+```console
+uv run pytest tests/xhtml/test_document.py::test_round_trips_complete_document_style_and_preserves_empty_presence tests/xhtml/test_document.py::test_rejects_non_integer_default_tab_nesting_level tests/xhtml/test_document.py::test_rejects_wrong_xhtml_namespace tests/xhtml/test_document.py::test_rejects_duplicate_document_tab_wrapper tests/xhtml/test_structures.py::test_rejects_non_integer_default_list_start_number -q
+```
+
+Result: `13 failed`. The failures independently demonstrated noncanonical style ordering, silent normalization of `False`/`0.0`, generic wrong-namespace wording, and class-name-based duplicate-wrapper errors.
+
+Focused GREEN (including the existing duplicate root-body characterization):
+
+```console
+uv run pytest tests/xhtml/test_document.py::test_round_trips_complete_document_style_and_preserves_empty_presence tests/xhtml/test_document.py::test_rejects_non_integer_default_tab_nesting_level tests/xhtml/test_document.py::test_rejects_wrong_xhtml_namespace tests/xhtml/test_document.py::test_rejects_duplicate_document_tab_wrapper tests/xhtml/test_document.py::test_rejects_duplicate_required_body_wrapper tests/xhtml/test_structures.py::test_rejects_non_integer_default_list_start_number -q
+```
+
+Result: `14 passed in 0.05s`.
+
+Post-refactor XHTML suite:
+
+```console
+uv run pytest tests/xhtml -q
+```
+
+Result: `158 passed in 2.55s`.
+
+Final full verification:
+
+```console
+uv run pytest -q
+258 passed in 3.82s
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+74 files already formatted
+uv run fixit lint .
+57 files clean
+uv run pyright
+0 errors, 0 warnings, 0 informations
+git diff --check
+passed
+uv run pre-commit run --all-files
+ruff check, Ruff format, Pyright, Fixit, and hardcoded-secret detection passed
+```
+
+Review-fix commit:
+
+- `67700e7417a9d8a8ed21ebe00ad802287fd40bc5 fix: preserve declarative XHTML document behavior`
