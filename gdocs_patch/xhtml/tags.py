@@ -540,8 +540,27 @@ class StyledParagraphElementTag(Tag):
     children = Children()
 
 
+def _styled_paragraph_element_field_order(*identity_fields: str) -> tuple[str, ...]:
+    return (
+        *identity_fields,
+        "bold",
+        "italic",
+        "underline",
+        "strikethrough",
+        "small_caps",
+        "baseline_offset",
+        "font_size",
+        "font_family",
+        "font_weight",
+        "foreground_color",
+        "background_color",
+        "children",
+    )
+
+
 class AutoTextTag(StyledParagraphElementTag):
     tag_name = gdocs_name("auto-text")
+    field_order = _styled_paragraph_element_field_order("auto_text_type")
     auto_text_type = ChoiceAttribute(
         gdocs_name("type"),
         choices={"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"},
@@ -551,10 +570,20 @@ class AutoTextTag(StyledParagraphElementTag):
 
 class ColumnBreakTag(StyledParagraphElementTag):
     tag_name = gdocs_name("column-break")
+    field_order = _styled_paragraph_element_field_order()
 
 
 class DateElementTag(StyledParagraphElementTag):
     tag_name = xhtml_name("time")
+    field_order = _styled_paragraph_element_field_order(
+        "date_id",
+        "date_format",
+        "time_format",
+        "display_text",
+        "locale",
+        "time_zone_id",
+        "timestamp",
+    )
     date_id = StringAttribute(gdocs_name("date-id"), required=True)
     date_format = ChoiceAttribute(
         gdocs_name("date-format"),
@@ -589,25 +618,32 @@ class EquationTag(Tag):
 
 class FootnoteReferenceTag(StyledParagraphElementTag):
     tag_name = gdocs_name("footnote-reference")
+    field_order = _styled_paragraph_element_field_order(
+        "footnote_id", "footnote_number"
+    )
     footnote_id = StringAttribute(gdocs_name("footnote-id"), required=True)
     footnote_number = StringAttribute(gdocs_name("footnote-number"), required=True)
 
 
 class HorizontalRuleTag(StyledParagraphElementTag):
     tag_name = xhtml_name("hr")
+    field_order = _styled_paragraph_element_field_order()
 
 
 class InlineObjectReferenceTag(StyledParagraphElementTag):
     tag_name = gdocs_name("inline-object")
+    field_order = _styled_paragraph_element_field_order("inline_object_id")
     inline_object_id = StringAttribute(gdocs_name("inline-object-id"), required=True)
 
 
 class PageBreakTag(StyledParagraphElementTag):
     tag_name = gdocs_name("page-break")
+    field_order = _styled_paragraph_element_field_order()
 
 
 class PersonReferenceTag(StyledParagraphElementTag):
     tag_name = gdocs_name("person")
+    field_order = _styled_paragraph_element_field_order("person_id", "email", "name")
     person_id = StringAttribute(gdocs_name("person-id"), required=True)
     email = StringAttribute(gdocs_name("email"))
     name = StringAttribute(gdocs_name("name"))
@@ -615,6 +651,9 @@ class PersonReferenceTag(StyledParagraphElementTag):
 
 class RichLinkTag(StyledParagraphElementTag):
     tag_name = gdocs_name("rich-link")
+    field_order = _styled_paragraph_element_field_order(
+        "rich_link_id", "uri", "title", "mime_type"
+    )
     rich_link_id = StringAttribute(gdocs_name("rich-link-id"), required=True)
     uri = StringAttribute(gdocs_name("uri"), required=True)
     title = StringAttribute(gdocs_name("title"))

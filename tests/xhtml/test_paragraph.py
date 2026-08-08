@@ -150,6 +150,46 @@ def test_round_trips_non_text_paragraph_element(
     assert paragraph_from(deserialize_document(xhtml)).elements == [paragraph_element]
 
 
+def test_styled_auto_text_uses_canonical_attribute_order() -> None:
+    xhtml = serialize_document(
+        document_with_runs(
+            AutoText(
+                auto_text_type="PAGE_NUMBER",
+                text_style=TextStyle(bold=True, font_family="Arial"),
+            )
+        )
+    )
+
+    assert (
+        '<g:auto-text g:type="PAGE_NUMBER" g:bold="true" g:font-family="Arial" />'
+        in xhtml
+    )
+
+
+def test_styled_date_element_uses_canonical_attribute_order() -> None:
+    xhtml = serialize_document(
+        document_with_runs(
+            DateElement(
+                date_id="date-1",
+                date_format="DATE_FORMAT_ISO8601",
+                display_text="2026-08-08",
+                locale="en-US",
+                time_format="TIME_FORMAT_HOUR_MINUTE",
+                time_zone_id="UTC",
+                timestamp="2026-08-08T12:00:00Z",
+                text_style=TextStyle(bold=True, font_family="Arial"),
+            )
+        )
+    )
+
+    assert (
+        '<time g:date-id="date-1" g:date-format="DATE_FORMAT_ISO8601" '
+        'g:time-format="TIME_FORMAT_HOUR_MINUTE" g:display-text="2026-08-08" '
+        'g:locale="en-US" g:time-zone-id="UTC" datetime="2026-08-08T12:00:00Z" '
+        'g:bold="true" g:font-family="Arial" />'
+    ) in xhtml
+
+
 def test_rejects_multiple_children_in_content_link() -> None:
     xhtml = serialize_document(
         document_with_runs(

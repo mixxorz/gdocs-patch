@@ -48,21 +48,6 @@ _CONTENT_ALIGNMENTS = {
 }
 _WIDTH_TYPES = {"WIDTH_TYPE_UNSPECIFIED", "EVENLY_DISTRIBUTED", "FIXED_WIDTH"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
-_AUTO_TEXT_TYPES = {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"}
-_DATE_FORMATS = {
-    "DATE_FORMAT_UNSPECIFIED",
-    "DATE_FORMAT_CUSTOM",
-    "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
-    "DATE_FORMAT_MONTH_DAY_FULL",
-    "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
-    "DATE_FORMAT_ISO8601",
-}
-_TIME_FORMATS = {
-    "TIME_FORMAT_UNSPECIFIED",
-    "TIME_FORMAT_DISABLED",
-    "TIME_FORMAT_HOUR_MINUTE",
-    "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
-}
 _BULLET_PRESETS = {
     "BULLET_GLYPH_PRESET_UNSPECIFIED",
     "BULLET_DISC_CIRCLE_SQUARE",
@@ -88,15 +73,6 @@ def _omit_integer_default(
 ) -> int | models.UnsetType:
     validated = require_integer(value, field)
     return models.UNSET if validated == default else validated
-
-
-_PARAGRAPH_TAGS = {
-    "NAMED_STYLE_TYPE_UNSPECIFIED": gdocs_name("named-style-unspecified"),
-    "NORMAL_TEXT": xhtml_name("p"),
-    "TITLE": gdocs_name("title"),
-    "SUBTITLE": gdocs_name("subtitle"),
-    **{f"HEADING_{level}": xhtml_name(f"h{level}") for level in range(1, 7)},
-}
 
 
 class _Encoder:
