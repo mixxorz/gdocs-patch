@@ -772,8 +772,80 @@ class Heading6Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h6")
 
 
-class ListTag(_OpaqueStructuralTag):
+_BULLET_PRESET_CHOICES = {
+    "BULLET_GLYPH_PRESET_UNSPECIFIED",
+    "BULLET_DISC_CIRCLE_SQUARE",
+    "BULLET_DIAMONDX_ARROW3D_SQUARE",
+    "BULLET_CHECKBOX",
+    "BULLET_ARROW_DIAMOND_DISC",
+    "BULLET_STAR_CIRCLE_SQUARE",
+    "BULLET_ARROW3D_CIRCLE_SQUARE",
+    "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
+    "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
+    "BULLET_DIAMOND_CIRCLE_SQUARE",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN",
+    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
+    "NUMBERED_DECIMAL_NESTED",
+    "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
+    "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
+    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
+}
+
+
+class _ListItemChildren(Children):
+    def validate(self, value: list[Node] | UnsetType) -> None:
+        paragraphs = (
+            sum(isinstance(child, ParagraphVocabularyTag) for child in value)
+            if isinstance(value, list)
+            else 0
+        )
+        if paragraphs != 1:
+            raise ValidationError("list item must contain exactly one paragraph")
+        super().validate(value)
+
+
+class _ListChildren(Children):
+    def validate(self, value: list[Node] | UnsetType) -> None:
+        if isinstance(value, list) and not value:
+            raise ValidationError("list must contain at least one item")
+        super().validate(value)
+
+
+class ListItemTag(Tag):
+    tag_name = xhtml_name("li")
+
+    nesting_level = NonNegativeIntegerAttribute(gdocs_name("nesting-level"), default=0)
+    children = _ListItemChildren(
+        Child(BulletStyleTag, max_num=1),
+        Child(GenericParagraphTag),
+        Child(UnspecifiedParagraphTag),
+        Child(ParagraphTag),
+        Child(TitleTag),
+        Child(SubtitleTag),
+        Child(Heading1Tag),
+        Child(Heading2Tag),
+        Child(Heading3Tag),
+        Child(Heading4Tag),
+        Child(Heading5Tag),
+        Child(Heading6Tag),
+        min_num=1,
+    )
+
+
+class ListTag(Tag):
     tag_name = gdocs_name("list")
+
+    list_id = StringAttribute(gdocs_name("list-id"))
+    bullet_preset = ChoiceAttribute(
+        gdocs_name("bullet-preset"), choices=_BULLET_PRESET_CHOICES
+    )
+    children = _ListChildren(Child(ListItemTag, min_num=1), min_num=1)
+
+    def clean(self) -> None:
+        if (self.list_id is UNSET) == (self.bullet_preset is UNSET):
+            raise ValidationError(
+                "exactly one of g:list-id and g:bullet-preset is required"
+            )
 
 
 class TableTag(_OpaqueStructuralTag):

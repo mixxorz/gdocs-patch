@@ -41,24 +41,6 @@ _PARAGRAPH_TAGS = {
     **{xhtml_name(f"h{level}"): f"HEADING_{level}" for level in range(1, 7)},
 }
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
-_BULLET_PRESETS = {
-    "BULLET_GLYPH_PRESET_UNSPECIFIED",
-    "BULLET_DISC_CIRCLE_SQUARE",
-    "BULLET_DIAMONDX_ARROW3D_SQUARE",
-    "BULLET_CHECKBOX",
-    "BULLET_ARROW_DIAMOND_DISC",
-    "BULLET_STAR_CIRCLE_SQUARE",
-    "BULLET_ARROW3D_CIRCLE_SQUARE",
-    "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
-    "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
-    "BULLET_DIAMOND_CIRCLE_SQUARE",
-    "NUMBERED_DECIMAL_ALPHA_ROMAN",
-    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
-    "NUMBERED_DECIMAL_NESTED",
-    "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
-    "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
-    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
-}
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 
@@ -431,14 +413,17 @@ class _Decoder:
             if isinstance(element, tags.ParagraphVocabularyTag):
                 decoded.append(self.decode_paragraph(element, child_path))
                 continue
+            if isinstance(element, tags.ListTag):
+                decoded.extend(self.decode_list(element, child_path))
+                continue
             if not isinstance(element, tags._OpaqueStructuralTag):  # pyright: ignore[reportPrivateUsage]
                 parse_error(child_path, "unknown structural element")
-            payload = cast(ElementTree.Element, element.payload)
-            if isinstance(element, tags.ListTag):
-                decoded.extend(self.decode_list(payload, child_path))
-            else:
-                assert isinstance(element, tags.TableTag)
-                decoded.append(self.decode_table(payload, child_path))
+            assert isinstance(element, tags.TableTag)
+            decoded.append(
+                self.decode_table(
+                    cast(ElementTree.Element, element.payload), child_path
+                )
+            )
         return decoded
 
     def optional_allowed(
@@ -501,94 +486,42 @@ class _Decoder:
             parse_error(path, f"unknown structural element {display_name(name)}")
         return tag_type
 
-    def decode_list(
-        self, element: ElementTree.Element, path: str
-    ) -> list[models.Paragraph]:
-        validate_attributes(
-            element, {gdocs_name("list-id"), gdocs_name("bullet-preset")}, path
-        )
-        list_id = element.get(gdocs_name("list-id"))
-        raw_preset = element.get(gdocs_name("bullet-preset"))
-        preset = (
-            None
-            if raw_preset is None
-            else parse_allowed(raw_preset, _BULLET_PRESETS, f"{path}/@g:bullet-preset")
-        )
-        validate_whitespace(element, path)
-        items = list(element)
-        for item in items:
-            if item.tag != xhtml_name("li"):
-                parse_error(path, f"unknown child element {display_name(item.tag)}")
-        if (list_id is None) == (raw_preset is None):
-            parse_error(
-                path, "exactly one of g:list-id and g:bullet-preset is required"
-            )
-        if not items:
-            parse_error(path, "list must contain at least one item")
+    def decode_list(self, element: tags.ListTag, path: str) -> list[models.Paragraph]:
+        list_id = element.list_id
+        preset = element.bullet_preset
         result: list[models.Paragraph] = []
-        for index, item in enumerate(items):
-            item_path = f"{path}/li[{index + 1}]"
-            validate_attributes(item, {gdocs_name("nesting-level")}, item_path)
-            raw_level = item.get(gdocs_name("nesting-level"))
-            level = (
-                0
-                if raw_level is None
-                else parse_integer(raw_level, f"{item_path}/@g:nesting-level")
-            )
-            validate_whitespace(item, item_path)
-            children = list(item)
-            style_element = extract_one_child(
-                children, gdocs_name("bullet-style"), item_path
-            )
-            style = (
-                models.UNSET
-                if style_element is None
-                else self.decode_bullet_style(
-                    style_element, f"{item_path}/g:bullet-style"
-                )
-            )
-            paragraph_elements = [
-                child for child in children if child.tag in _PARAGRAPH_TAGS
-            ]
-            unknown = [
-                child
-                for child in children
-                if child is not style_element and child.tag not in _PARAGRAPH_TAGS
-            ]
-            if unknown:
-                parse_error(
-                    item_path, f"unknown child element {display_name(unknown[0].tag)}"
-                )
-            if len(paragraph_elements) != 1:
-                parse_error(item_path, "list item must contain exactly one paragraph")
-            paragraph_element = paragraph_elements[0]
-            paragraph_tag = self.decode_tag(
-                paragraph_element,
-                self._structural_tag_type(paragraph_element.tag, item_path + "/*"),
-                item_path + "/*",
-            )
-            assert isinstance(paragraph_tag, tags.ParagraphVocabularyTag)
+        for index, child in enumerate(cast(list[Node], element.children), 1):
+            item = cast(tags.ListItemTag, child)
+            item_path = f"{path}/li[{index}]"
+            style: models.TextStyle | models.UnsetType = models.UNSET
+            paragraph_tag: tags.ParagraphVocabularyTag | None = None
+            for item_child in cast(list[Node], item.children):
+                if isinstance(item_child, tags.BulletStyleTag):
+                    if preset is not models.UNSET:
+                        parse_error(
+                            item_path, "bullet style is forbidden in a preset list"
+                        )
+                    style = self._decode_metadata_text_style_tag(
+                        item_child, f"{item_path}/g:bullet-style"
+                    )
+                else:
+                    paragraph_tag = cast(tags.ParagraphVocabularyTag, item_child)
+            assert paragraph_tag is not None
             paragraph = self.decode_paragraph(paragraph_tag, item_path + "/*")
-            if preset is not None and style_element is not None:
-                parse_error(item_path, "bullet style is forbidden in a preset list")
-            if level < 0:
-                parse_error(item_path, "nesting level must be non-negative")
             paragraph.bullet = (
                 models.Bullet(
-                    list_id=cast(str, list_id), nesting_level=level, text_style=style
+                    list_id=cast(str, list_id),
+                    nesting_level=cast(int, item.nesting_level),
+                    text_style=style,
                 )
-                if preset is None
-                else models.BulletPreset(preset=preset, nesting_level=level)  # type: ignore[arg-type]
+                if preset is models.UNSET
+                else models.BulletPreset(
+                    preset=cast(Any, preset),
+                    nesting_level=cast(int, item.nesting_level),
+                )
             )
             result.append(paragraph)
         return result
-
-    def decode_bullet_style(
-        self, element: ElementTree.Element, path: str
-    ) -> models.TextStyle | models.UnsetType:
-        return self._decode_metadata_text_style_tag(
-            self.decode_tag(element, tags.BulletStyleTag, path), path
-        )
 
     def decode_table(self, element: ElementTree.Element, path: str) -> models.Table:
         validate_attributes(element, {gdocs_name("table-key")}, path)

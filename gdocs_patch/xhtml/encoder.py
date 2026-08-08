@@ -48,24 +48,6 @@ _CONTENT_ALIGNMENTS = {
 }
 _WIDTH_TYPES = {"WIDTH_TYPE_UNSPECIFIED", "EVENLY_DISTRIBUTED", "FIXED_WIDTH"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
-_BULLET_PRESETS = {
-    "BULLET_GLYPH_PRESET_UNSPECIFIED",
-    "BULLET_DISC_CIRCLE_SQUARE",
-    "BULLET_DIAMONDX_ARROW3D_SQUARE",
-    "BULLET_CHECKBOX",
-    "BULLET_ARROW_DIAMOND_DISC",
-    "BULLET_STAR_CIRCLE_SQUARE",
-    "BULLET_ARROW3D_CIRCLE_SQUARE",
-    "BULLET_LEFTTRIANGLE_DIAMOND_DISC",
-    "BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE",
-    "BULLET_DIAMOND_CIRCLE_SQUARE",
-    "NUMBERED_DECIMAL_ALPHA_ROMAN",
-    "NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS",
-    "NUMBERED_DECIMAL_NESTED",
-    "NUMBERED_UPPERALPHA_ALPHA_ROMAN",
-    "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
-    "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
-}
 
 
 def _omit_integer_default(
@@ -418,9 +400,10 @@ class _Encoder:
                         if self.bullet_group_key(candidate) != key:
                             break
                         end += 1
-                    xml = self.encode_list(elements[index:end], key)  # type: ignore[arg-type]
+                    encoded.append(
+                        self.encode_list(elements[index:end], key)  # type: ignore[arg-type]
+                    )
                     index = end
-                    encoded.append(self._structural_boundary_tag(xml))
                 if key is not None:
                     continue
             elif isinstance(element, models.Table):
@@ -468,7 +451,11 @@ class _Encoder:
         if isinstance(bullet, models.BulletPreset):
             return (
                 "preset",
-                require_enum(bullet.preset, _BULLET_PRESETS, "BulletPreset.preset"),
+                require_enum(
+                    bullet.preset,
+                    tags.ListTag.bullet_preset.choices,
+                    "BulletPreset.preset",
+                ),
             )
         if bullet is models.UNSET:
             return None
@@ -476,22 +463,14 @@ class _Encoder:
 
     def encode_list(
         self, paragraphs: list[models.Paragraph], key: tuple[str, str]
-    ) -> ElementTree.Element:
+    ) -> tags.ListTag:
         require_list(paragraphs, "list paragraphs")
-        element = ElementTree.Element(gdocs_name("list"))
         kind, identity = key
-        element.set(
-            gdocs_name("list-id" if kind == "existing" else "bullet-preset"), identity
-        )
+        items: list[tags.ListItemTag] = []
         for paragraph in paragraphs:
-            item = ElementTree.SubElement(element, xhtml_name("li"))
             bullet = paragraph.bullet
             assert isinstance(bullet, (models.Bullet, models.BulletPreset))
-            nesting_level = require_integer(
-                bullet.nesting_level, f"{type(bullet).__name__}.nesting_level"
-            )
-            if nesting_level != 0:
-                item.set(gdocs_name("nesting-level"), str(nesting_level))
+            children: list[Tag] = []
             if (
                 isinstance(bullet, models.Bullet)
                 and bullet.text_style is not models.UNSET
@@ -499,13 +478,28 @@ class _Encoder:
                 values, metadata_children = self._encode_metadata_text_style_tag(
                     bullet.text_style
                 )
-                metadata = tags.BulletStyleTag(children=metadata_children, **values)
                 if metadata_children or any(
                     value is not models.UNSET for value in values.values()
                 ):
-                    item.append(XHTMLEncoder().encode_element(metadata))
-            item.append(XHTMLEncoder().encode_element(self.encode_paragraph(paragraph)))
-        return element
+                    children.append(
+                        tags.BulletStyleTag(children=metadata_children, **values)
+                    )
+            children.append(self.encode_paragraph(paragraph))
+            items.append(
+                tags.ListItemTag(
+                    nesting_level=_omit_integer_default(
+                        bullet.nesting_level,
+                        0,
+                        f"{type(bullet).__name__}.nesting_level",
+                    ),
+                    children=children,
+                )
+            )
+        return tags.ListTag(
+            list_id=identity if kind == "existing" else models.UNSET,
+            bullet_preset=identity if kind == "preset" else models.UNSET,
+            children=items,
+        )
 
     def encode_table(self, table: models.Table) -> ElementTree.Element:
         require_list(table.rows, "Table.rows")

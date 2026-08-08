@@ -50,6 +50,25 @@ def test_all_paragraph_vocabulary_is_declarative() -> None:
     assert tags.RichLinkTag.fields()["uri"].required
 
 
+def test_lists_are_fully_declarative() -> None:
+    assert not issubclass(tags.ListTag, tags._OpaqueStructuralTag)
+    assert "payload" not in tags.ListTag.fields()
+    assert tags.ListTag.fields()["children"].specs[0].node_type is tags.ListItemTag
+    assert tags.ListTag.fields()["children"].min_num == 1
+
+    list_id = tags.ListTag.fields()["list_id"]
+    bullet_preset = tags.ListTag.fields()["bullet_preset"]
+    nesting_level = tags.ListItemTag.fields()["nesting_level"]
+    item_children = tags.ListItemTag.fields()["children"]
+
+    assert list_id.bound_xml_name.endswith("list-id")
+    assert bullet_preset.bound_xml_name.endswith("bullet-preset")
+    assert nesting_level.default == 0
+    assert item_children.min_num == 1
+    assert any(spec.node_type is tags.BulletStyleTag for spec in item_children.specs)
+    assert any(spec.node_type is tags.ParagraphTag for spec in item_children.specs)
+
+
 def test_repeated_child_decode_error_path_includes_one_based_index() -> None:
     xhtml = (
         _DECLARATION + '<html xmlns="http://www.w3.org/1999/xhtml" '
