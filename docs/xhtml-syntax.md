@@ -1,70 +1,49 @@
 # XHTML Document Syntax Reference
 
-This reference describes the canonical XML/XHTML representation used by the
-`gdocs_patch.xhtml` codec for the supported `gdocs_patch.models.Document` model.
-The format is XML 1.0, uses semantic XHTML for document content, and uses a
-versioned namespace for Google Docs-specific structure and metadata.
+Use this reference when reading or writing documents for the
+`gdocs_patch.xhtml` codec. It covers the supported
+`gdocs_patch.models.Document` vocabulary, the canonical output produced by the
+codec, and the additional input forms the parser accepts.
 
-The XHTML namespace is `http://www.w3.org/1999/xhtml`. The `g` prefix in this
-reference always denotes `urn:gdocs-patch:xhtml:1`. Both namespace declarations
-and the XML declaration are required.
+The format is XML 1.0. Document content uses semantic XHTML, while Google
+Docs-specific structure and metadata use a versioned namespace. The XHTML
+namespace is `http://www.w3.org/1999/xhtml`; throughout this reference, the `g`
+prefix denotes `urn:gdocs-patch:xhtml:1`. The XML declaration and both namespace
+declarations are required.
+
+Start with the complete example, then consult the sections for document
+structure, inline content, tables and lists, metadata and validation, and the
+Python API. The complete example is exact canonical serializer output. Smaller
+fragments use the same canonical syntax, but may wrap start tags or replace
+unrelated content with `...` for readability; examples explicitly described as
+accepted input demonstrate the parser's additional ordering flexibility.
 
 ## Complete example
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:g="urn:gdocs-patch:xhtml:1"
-      g:document-id="doc-1"
-      g:title="Example">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Example">
   <body>
     <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">
       <g:document-tab>
         <g:body>
           <section>
             <g:section-style />
-            <h1><span>Welcome</span></h1>
-            <p><span>Read the </span><a href="https://example.com"><span>guide</span></a></p>
+            <h1>
+              <span>Welcome</span>
+            </h1>
+            <p>
+              <span>Read the </span>
+              <a href="https://example.com">
+                <span>guide</span>
+              </a>
+            </p>
           </section>
         </g:body>
       </g:document-tab>
     </g:tab>
   </body>
 </html>
-```
-
-## Python API
-
-The Python API consists of two functions and no configurable serializer classes:
-
-```python
-from gdocs_patch.models import Document
-from gdocs_patch.xhtml import deserialize_document, serialize_document
-
-xhtml: str = serialize_document(document)
-document: Document = deserialize_document(xhtml)
-```
-
-`serialize_document(document: Document) -> str` returns canonical XML 1.0 text. `deserialize_document(xhtml: str) -> Document` parses the supported XHTML subset into the mutable model tree and establishes normal parent links through model constructors.
-
-Malformed XML and semantic validation failures raise one public exception:
-
-```python
-class XHTMLParseError(ValueError):
-    pass
-```
-
-Errors include useful element or attribute context when available. Unknown elements or attributes, duplicate singular metadata, invalid constants, and missing required values are parse errors. Serialization raises ordinary `ValueError` for an unrepresentable model state.
-
-For example, malformed or unsupported input can be handled as follows:
-
-```python
-from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
-
-try:
-    document = deserialize_document(xhtml)
-except XHTMLParseError as error:
-    print(f"Invalid XHTML document: {error}")
 ```
 
 ## Documents, tabs, regions, and sections
@@ -136,7 +115,7 @@ The serializer writes present `DocumentTab` children in this order:
 </g:document-tab>
 ```
 
-Omitted fields disappear without changing the relative order of the remaining children. The deserializer accepts these unique field wrappers in any order.
+Omitted fields disappear without changing the relative order of the remaining children. Input may place these unique field wrappers in any order.
 ### Bodies and segments
 
 The `DocumentTab` indexed regions use dedicated namespaced wrappers:
@@ -186,7 +165,7 @@ A body contains one or more XHTML `<section>` elements and no direct structural 
 </g:body>
 ```
 
-`SectionBreak.style` is required. The serializer canonically writes exactly one `<g:section-style>` as the first child of every section, including for an empty style object. The decoder accepts that unique required metadata element anywhere among the section's children, filters it from ordered content, and emits the `SectionBreak` before the section's structural children. Empty sections represent consecutive section breaks.
+`SectionBreak.style` is required. The serializer canonically writes exactly one `<g:section-style>` as the first child of every section, including for an empty style object. Accepted input may place that unique required metadata element anywhere among the section's children. It is metadata rather than ordered content; the resulting `SectionBreak` precedes the section's structural children. Empty sections represent consecutive section breaks.
 
 A present body must contain at least one section; `<g:body />` and direct body content outside a section are rejected. Section breaks are body-only, so headers, footers, footnotes, and table cells contain structural elements directly and reject `<section>`.
 
@@ -754,16 +733,16 @@ Formatting is represented by explicit canonical `gdocs` attributes, not `style` 
 Google-specific fields, IDs, non-semantic style values, and values such as explicit `false`, `None`, and `UNSET` use the `gdocs` namespace when XHTML has no unambiguous representation.
 
 Semantic markup is authoritative for the values it represents; equivalent `gdocs` attributes are not duplicated. In particular, `<a>` represents a text run's link. Other `TextStyle` values, including both `bold=True` and `bold=False`, use explicit `gdocs` attributes.
-### Model-to-XML mapping rule
+### Elements, attributes, and metadata
 
-The syntax uses four mapping forms:
+You can recognize the four representation forms used throughout the syntax as follows:
 
-1. Structural objects and objects containing ordered document content use XML elements. Examples include `Document`, `Tab`, `Body`, `Segment`, `Paragraph`, `TextRun`, and tables.
-2. Scalar fields use attributes on the element representing their owning object.
-3. Non-empty complex owned metadata objects use namespaced metadata children. Examples include `ParagraphStyle`, borders, and tab stops. These metadata children are not members of the owning object's document-content collection and may appear anywhere among their owner's children when deserializing.
-4. `TextStyle` fields normally use attributes on the element representing the object that owns the style. A text run's link is the semantic `<a>` exception. `Bullet.text_style` uses a dedicated `<g:bullet-style>` child so its attributes cannot be mistaken for styles on the item paragraph.
+1. Structural values and values containing ordered document content appear as XML elements. Examples include `Document`, `Tab`, `Body`, `Segment`, `Paragraph`, `TextRun`, and tables.
+2. Scalar values appear as attributes on the element they describe.
+3. Non-empty structured metadata appears in namespaced metadata children. Examples include `ParagraphStyle`, borders, and tab stops. These metadata children are not document content and may appear anywhere among the containing element's children in accepted input.
+4. `TextStyle` values normally appear as attributes on the element carrying the style. A text run's link is the semantic `<a>` exception. `Bullet.text_style` uses a dedicated `<g:bullet-style>` child so its attributes cannot be mistaken for styles on the item paragraph.
 
-For example, the first child below is paragraph metadata, while the span is the paragraph's first `ParagraphElement`:
+For example, the first child below is paragraph metadata, while the span is the paragraph's first content element:
 
 **XML fragment:**
 
@@ -904,3 +883,37 @@ has the field-specific meaning described above; no lowercase aliases are accepte
 | list `g:bullet-preset` | `BULLET_GLYPH_PRESET_UNSPECIFIED`, `BULLET_DISC_CIRCLE_SQUARE`, `BULLET_DIAMONDX_ARROW3D_SQUARE`, `BULLET_CHECKBOX`, `BULLET_ARROW_DIAMOND_DISC`, `BULLET_STAR_CIRCLE_SQUARE`, `BULLET_ARROW3D_CIRCLE_SQUARE`, `BULLET_LEFTTRIANGLE_DIAMOND_DISC`, `BULLET_DIAMONDX_HOLLOWDIAMOND_SQUARE`, `BULLET_DIAMOND_CIRCLE_SQUARE`, `NUMBERED_DECIMAL_ALPHA_ROMAN`, `NUMBERED_DECIMAL_ALPHA_ROMAN_PARENS`, `NUMBERED_DECIMAL_NESTED`, `NUMBERED_UPPERALPHA_ALPHA_ROMAN`, `NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL`, `NUMBERED_ZERODECIMAL_ALPHA_ROMAN` |
 
 Boolean attributes are not enums: they accept only `true` and `false`.
+
+## Python API
+
+The Python API consists of two functions and no configurable serializer classes:
+
+```python
+from gdocs_patch.models import Document
+from gdocs_patch.xhtml import deserialize_document, serialize_document
+
+xhtml: str = serialize_document(document)
+document: Document = deserialize_document(xhtml)
+```
+
+`serialize_document(document: Document) -> str` returns canonical XML 1.0 text. `deserialize_document(xhtml: str) -> Document` parses the supported XHTML subset into the mutable model tree and establishes normal parent links through model constructors.
+
+Malformed XML and semantic validation failures raise one public exception:
+
+```python
+class XHTMLParseError(ValueError):
+    pass
+```
+
+Errors include useful element or attribute context when available. Unknown elements or attributes, duplicate singular metadata, invalid constants, and missing required values are parse errors. Serialization raises ordinary `ValueError` for an unrepresentable model state.
+
+For example, malformed or unsupported input can be handled as follows:
+
+```python
+from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
+
+try:
+    document = deserialize_document(xhtml)
+except XHTMLParseError as error:
+    print(f"Invalid XHTML document: {error}")
+```

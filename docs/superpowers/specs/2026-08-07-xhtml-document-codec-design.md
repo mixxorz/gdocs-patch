@@ -160,44 +160,32 @@ All non-link `TextStyle` fields are explicit `gdocs` attributes. A linked conten
 
 ## Error handling
 
-XML well-formedness errors are wrapped with their parser location. Semantic decoding uses a path propagated through recursive calls. Validation occurs at each element boundary:
-
-1. verify the expected qualified name;
-2. validate allowed and required attributes;
-3. extract and validate singular metadata;
-4. dispatch remaining content children;
-5. enforce cross-field invariants before constructing the model.
+XML well-formedness errors are wrapped with their parser location. The generic declarative decoder validates qualified names, declared attributes and children, mixed-text policy, and child cardinalities while constructing the typed `Tag` tree. Declarative attribute codecs validate lexical forms and composite values. The private model mapper then enforces semantic cross-field invariants and reports model-oriented paths before construction.
 
 Examples of cross-field validation include mutually exclusive link targets, opaque versus transparent colors, table width type versus width, positive row/column spans, one list identity form, and required section/body structure.
 
-The decoder accepts metadata placement flexibility but never silently ignores unknown input.
+Metadata placement remains flexible because tag declarations identify metadata independently of child order. Unknown input is never silently ignored.
 
 ## Testing
 
-Add approximately 25–30 test functions, using parameterization for roughly 50–70 behavioral cases:
+The completed suite is organized by behavior:
 
 ```text
 tests/xhtml/
+├── test_declarative_boundary.py
 ├── test_document.py
 ├── test_paragraph.py
+├── test_round_trip.py
+├── test_security.py
 ├── test_structures.py
-├── test_validation.py
-└── test_round_trip.py
+└── test_validation.py
 ```
 
-Test levels:
-
-1. Focused behavior for text runs, newlines, links, booleans, colors, dimensions, metadata placement, sections, lists, tables, and recursive content.
-2. Exact canonical XML for representative models, including stable namespace and ordering behavior and indentation that does not mutate mixed content.
-3. Explicit normalized round trips using `deserialize_document(serialize_document(document))` and a hand-written expected model. Round-trip equality includes `DocumentTab.lists`, `ListDefinition`, and `ListLevel` values.
-4. Parameterized invalid input covering malformed XML, unknown syntax, duplicates, missing fields, invalid constants, and contradictory combinations.
-5. One kitchen-sink supported document containing nested tabs, regions, sections, list items, list definitions, tables, cells, styles, and every paragraph-element variant.
-
-Tests assert public behavior rather than private delegation. Expected normalized models are written explicitly rather than derived by production helpers. CLI and live Google API tests are excluded.
+It covers focused text, link, style, section, list, table, and recursive-content behavior; exact canonical XML; explicitly normalized round trips; malformed and unsupported input; security limits; and a kitchen-sink supported document. Tests exercise public behavior and declarative contracts rather than private mapper implementation details. Expected normalized models are written independently of production helpers. CLI and live Google API tests remain excluded.
 
 ## Documentation completion
 
-After implementation and behavior are verified, revise `docs/xhtml-syntax.md` from a chronological design record into user-facing reference documentation. Preserve every approved syntax and normalization decision, but reorganize it around:
+`docs/xhtml-syntax.md` is the user-facing reference for the completed codec, rather than a chronological implementation record. It preserves every approved syntax and normalization decision and is organized around:
 
 1. format overview and namespaces;
 2. quick complete example;
@@ -207,4 +195,4 @@ After implementation and behavior are verified, revise `docs/xhtml-syntax.md` fr
 6. metadata, normalization, validation, and omissions;
 7. Python API examples.
 
-This documentation rewrite is the final implementation task so its examples and claims reflect the tested codec rather than anticipated behavior.
+Its examples and claims reflect the tested codec and final declarative architecture rather than anticipated behavior.
