@@ -127,7 +127,6 @@ class Child:
         max_num: int | None = None,
         min_error: str | None = None,
         max_error: str | None = None,
-        positional_path_attribute: str | None = None,
     ) -> None:
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
@@ -138,7 +137,6 @@ class Child:
         self.max_num = max_num
         self.min_error = min_error
         self.max_error = max_error
-        self.positional_path_attribute = positional_path_attribute
 
     @property
     def node_type(self) -> type[Node]:
@@ -172,6 +170,7 @@ class Children(Field[list[Node]]):
         unknown_child_error: str = "unknown child element",
         forbidden_children: dict[str, ForbiddenChild] | None = None,
         min_cardinality_before_text: bool = False,
+        positional_path_attributes: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         if min_num < 0:
@@ -187,6 +186,7 @@ class Children(Field[list[Node]]):
         self.unknown_child_error = unknown_child_error
         self.forbidden_children = forbidden_children or {}
         self.min_cardinality_before_text = min_cardinality_before_text
+        self.positional_path_attributes = positional_path_attributes or {}
 
     def get_default(self) -> list[Node]:
         return []
@@ -617,9 +617,12 @@ class Decoder:
                 with self.at(path_step):
                     child = self._decode_element(child_element, child_type)
             except DecodeError as error:
+                positional_attribute = field.positional_path_attributes.get(
+                    child_element.tag
+                )
                 if (
-                    spec.positional_path_attribute is not None
-                    and error.attribute_name == spec.positional_path_attribute
+                    positional_attribute is not None
+                    and error.attribute_name == positional_attribute
                 ):
                     error.path = (*error.path[:-1], f"*[{position}]")
                 raise

@@ -1,97 +1,73 @@
-# Declarative XHTML Rewrite Task 7 Review
+# Declarative XHTML Rewrite Task 7 Final Re-review
 
 ## Verdicts
 
-- **Specification:** **PASS** for the requested architecture. `ElementTree` access is confined to `gdocs_patch/xhtml/nodes.py` and the explicit decode/render/security boundary functions in `decoder.py` and `encoder.py`; `_Encoder`/`_Decoder` contain no XML-element mechanics, `tags.py` is model-agnostic, and mapper references remain module-qualified (`models`/`tags`). The commit message is also `refactor: complete declarative XHTML codec`.
-- **Behavior:** **FAIL**. The cleanup changes public parse diagnostics for invalid XHTML, despite the brief requiring exact public behavior.
-- **Quality:** **NEEDS FOLLOW-UP**. The implementation is lint/type/test clean, but the new structural tests do not cover every prohibited operation named in the brief.
+- **Specification:** **PASS.** The requested declarative boundaries and model-agnostic tags are present; the Task 7 source/AST implementation-structure tests were removed as required; mapper references remain module-qualified; and the updated line-count categories are accurate.
+- **Behavior:** **FAIL.** The three previously reported cases are fixed, but one remaining AutoText diagnostic regression exists for AutoText nested inside a content anchor.
+- **Quality:** **NEEDS FOLLOW-UP.** The behavior tests cover the requested fixes and no implementation-structure tests remain. Add one behavior regression test for the remaining anchored AutoText case.
 
-## Findings
+## Verified fixes
 
-### P1 — Auto-text diagnostics changed for non-`g:type` failures
+- **AutoText conditional path:** `gdocs_patch/xhtml/nodes.py:616-624` rewrites the path only when the declared `positional_path_attribute` matches the failing attribute. `tags.py:623-627` assigns that metadata only to `g:type`; unknown attributes retain the tag-occurrence path. The paragraph `g:type` and unknown-attribute cases are covered by `tests/xhtml/test_validation.py:100-119`.
+- **TOC priority and exact message:** `nodes.py:549-563` pre-scans prioritized forbidden children before normal child/text validation. `tags.py:1071-1080` marks XHTML `section` as prioritized and suppresses its element-name suffix. Both sibling orders are behavior-tested in `tests/xhtml/test_structures.py:88-108`; differential probes match the pre-Task-7 diagnostic in both orders.
+- **Body minimum before text:** `nodes.py:564-568` applies the body cardinality diagnostic before text handling when there are no element children. `tags.py:1060-1065` opts `DocumentBodyTag` into that behavior. Empty, whitespace-only, and text-only bodies retain the pre-Task-7 `body must contain at least one section` diagnostic; text-only coverage is at `tests/xhtml/test_validation.py:88-98`.
+- **Test policy:** `14bb08d` removes the three source/AST implementation tests and their `ast`/`Path` imports from `tests/xhtml/test_declarative_boundary.py`. The remaining tests exercise declarative behavior/contracts rather than scanning implementation source. New behavior coverage is in `test_validation.py` and `test_structures.py`.
 
-`gdocs_patch/xhtml/tags.py:623` sets `path_by_position=True` for every `AutoTextTag`. `gdocs_patch/xhtml/nodes.py:575-580` therefore rewrites every nested AutoText failure to `/*[position]`.
+## Finding
 
-Before Task 7, `4eb778b:gdocs_patch/xhtml/tags.py:660-683` rewrote the path only for an AutoText `g:type` failure. For example, the same invalid document with `<g:auto-text g:unknown="x" />` produced:
+### P1 — AutoText `g:type` path changes inside content anchors
 
-- before: `.../p[1]/g:auto-text[1]/@g:unknown: unknown attribute g:unknown`
-- after: `.../p[1]/*[1]/@g:unknown: unknown attribute g:unknown`
+`tags.py:621-627` puts `positional_path_attribute=gdocs_name("type")` on the shared `Child(AutoTextTag)` declaration. That shared declaration is used both by `ParagraphVocabularyTag` and by `ContentAnchorTag` (`tags.py:651-658`). The generic decoder applies the rewrite in `nodes.py:616-624` for either owner.
 
-The input is still rejected, but the externally visible path/diagnostic is not preserved. The added regression test covers only ordinary repeated-span paths (`tests/xhtml/test_declarative_boundary.py:134-146`); existing AutoText coverage exercises only missing `g:type` (`tests/xhtml/test_validation.py:67-73`), so this regression is untested.
+Before Task 7, only `_ParagraphChildren.decode_from` performed the positional rewrite (`4eb778b:gdocs_patch/xhtml/tags.py:660-683`); `_ContentAnchorChildren` used the same child declarations but did not override decoding (`4eb778b:gdocs_patch/xhtml/tags.py:654-657`). Consequently, for `<p><a href="https://example.test"><g:auto-text /></a></p>`:
 
-### P1 — Table-of-contents forbidden-section diagnostics and precedence changed
+- before: `.../a[1]/g:auto-text[1]/@g:type: missing required attribute`
+- after: `.../a[1]/*[1]/@g:type: missing required attribute`
 
-`gdocs_patch/xhtml/nodes.py:545-550` now handles the `TableOfContentsTag` forbidden section through the generic unknown-child path and always supplies `element_name`. `_decode_tag` appends that name to the message at `gdocs_patch/xhtml/decoder.py:54-55`.
+The unknown-attribute anchor case remains unchanged, but the `g:type` path is still a public diagnostic regression. No current behavior test exercises AutoText inside a content anchor.
 
-Before Task 7, `4eb778b:gdocs_patch/xhtml/tags.py:1106-1110` performed a pre-scan and called `decoder.fail("section elements are only valid in a body")` without an element name. Differential probes show both changes:
+## Manual boundary audit
 
-- unknown child before `<section />`: before `section elements are only valid in a body`; after `unknown child element g:unknown`
-- `<section />` before an unknown child: before `section elements are only valid in a body`; after `section elements are only valid in a body section`
+- `_Encoder` and `_Decoder` contain no `ElementTree`/`SubElement` names or calls, no XML `.set()`, `.get()`, `.attrib`, `.text`, or `.tail` accesses, and no qualified-tag comparisons. The `.get()` calls remaining in `_Decoder` are ordinary dictionary lookups (`counts` and `border_fields`), not XML operations.
+- `nodes.py` owns the generic ElementTree conversion. In `encoder.py`, ElementTree mutation is limited to indentation/tree validation/serialization boundaries (`_indent_xml`, `_validate_generated_tree`, `_validate_encoded_tree`, `serialize_document`); in `decoder.py`, parsing and error translation are limited to `_preflight_xml`, `deserialize_document`, and `_decode_tag`.
+- `tags.py` has no `ElementTree` or `gdocs_patch.models` import and contains no model mapping or XML decode/encode override. `encoder.py` and `decoder.py` use module-qualified `models` and `tags` references.
+- No dead helper, scalar parser, compatibility branch, or unused constant was found in the changed modules.
 
-This is a public behavior/diagnostic regression, not merely an internal refactor.
+## Line counts
 
-### P1 — Non-empty text in an empty document body loses the body-specific diagnostic
+Measured against `4eb778b` and `14bb08d` using physical file lines and AST class spans:
 
-`gdocs_patch/xhtml/nodes.py:540` validates parent text before applying the `min_num` rule. The old `_DocumentBodyChildren` checked `not list(element)` first (`4eb778b:gdocs_patch/xhtml/tags.py:1093-1097`), so any body with no section children reported `body must contain at least one section`.
+| Area | Before | After | Change |
+|---|---:|---:|---:|
+| Core mapper classes (`_Encoder` + `_Decoder`, AST class spans) | 1,414 | 1,384 | -30 |
+| Reusable infrastructure (`base.py`, `nodes.py`, `attributes.py`, `tags.py`) | 2,368 | 2,236 | -132 |
+| Six codec implementation files | 3,987 | 3,892 | -95 |
 
-For `<g:body>text</g:body>`:
+The core mapper reduction is therefore still distinct from the reusable infrastructure added for declarative diagnostics.
 
-- before: `.../g:body: body must contain at least one section`
-- after: `.../g:body: unexpected text`
+## Verification
 
-The current empty/whitespace-only cases happen to retain the old error because whitespace is ignored, but non-whitespace text does not. This precedence change is not covered by `tests/xhtml/test_validation.py:75-88`, which tests only an empty body.
-
-### P2 — Boundary regression tests do not enforce all listed prohibitions
-
-`tests/xhtml/test_declarative_boundary.py:18-23` only searches three modules for the strings `ElementTree`/`xml.etree`. The mapper test at `:37-49` only rejects AST attributes named `attrib`, `text`, and `tail`. It does not detect `ElementTree` calls/types, `.get()`, `.set()`, `SubElement`, or raw qualified-tag comparisons inside `_Encoder`/`_Decoder`, all of which are explicitly listed in the brief.
-
-The current implementation passes a manual/AST audit for those operations, so this is a test-enforcement gap rather than evidence of a current mapper violation. Extend the AST test to inspect the mapper class bodies for all prohibited names and comparison forms.
-
-## Verified non-findings
-
-- `tags.py` has no `gdocs_patch.models` import and no `decode_from`/`encode_into` override (`gdocs_patch/xhtml/tags.py:1-23`; structural test at `tests/xhtml/test_declarative_boundary.py:25-34`).
-- No direct XML-element operations were found in `_Encoder` or `_Decoder`; generic XML handling remains in `nodes.py` and explicit boundary functions.
-- No dead helper/constant usage was identified in the changed modules; Ruff's unused-name checks pass.
-- The reported physical line counts are accurate when measured against `4eb778b` and `d11bdea`:
-
-  | Area | Before | After | Change |
-  |---|---:|---:|---:|
-  | Core mapper classes (`_Encoder` + `_Decoder`, AST class spans) | 1,414 | 1,384 | -30 |
-  | Reusable infrastructure (`base.py`, `nodes.py`, `attributes.py`, `tags.py`) | 2,368 | 2,186 | -182 |
-  | Six codec implementation files | 3,987 | 3,842 | -145 |
-
-## Verification performed
-
-- `uv run pytest -q` — **289 passed**
+- `uv run pytest -q tests/xhtml` — **190 passed**
+- `uv run pytest -q` — **290 passed**
 - `uv run ruff check .` — passed
 - `uv run ruff format --check .` — 74 files already formatted
 - `uv run fixit lint .` — 57 files clean
 - `uv run pyright` — 0 errors, 0 warnings
 - `uv run pre-commit run --all-files` — all hooks passed
-- Differential probes against `4eb778b` confirmed all three diagnostic regressions above.
+- Differential probes against `4eb778b` confirmed the three requested fixes and the remaining anchored AutoText diagnostic difference.
 
-The only pre-existing worktree change remains `M .superpowers/sdd/declarative-task-2-report.md`; no source files were modified during review.
+The only pre-existing unrelated worktree change is `M .superpowers/sdd/declarative-task-2-report.md`.
 
-## Fix Report
+## Final Fix Report
 
-Addressed all Task 7 review findings with public behavior regressions:
+Fixed the remaining anchored AutoText diagnostic regression. Positional path rewriting metadata now belongs to the owning `Children` context rather than the shared `Child(AutoTextTag)` declaration. `ParagraphVocabularyTag` opts direct AutoText `g:type` failures into historical `/*[n]` paths, while `ContentAnchorTag` retains `/a[n]/g:auto-text[n]/@g:type` paths.
 
-- AutoText uses positional `/*[n]` paths only when the failing attribute is `g:type`; unknown attributes retain `/g:auto-text[n]` paths.
-- Declarative forbidden-child metadata now supports priority and element-name inclusion. TOC sections take precedence over unknown siblings in either order and preserve the exact diagnostic without an appended element name.
-- Declarative child metadata now supports minimum-cardinality validation before text handling. A text-only document body preserves `body must contain at least one section`.
-- Removed the Task 7 source/AST implementation-structure tests. Boundary compliance was re-audited manually instead: `_Encoder` and `_Decoder` contain no XML element mechanics, and `tags.py` remains model-agnostic.
+Added a public anchored AutoText error-path regression. The focused AutoText run failed before the fix with `/*[1]`, then passed after the owner-specific metadata change with all three AutoText path behaviors covered.
 
-Behavior-first red/green evidence:
+Verification:
 
-- Initial focused run: 4 failed and 1 passed; failures reproduced text-only body precedence, AutoText unknown-attribute path, and both TOC sibling orders. The existing/new AutoText `g:type` positional case passed.
-- After the declarative fixes: all 5 focused behavior cases passed.
-
-Final verification:
-
-- `uv run pytest -q tests/xhtml` — 190 passed.
-- `uv run pytest -q` — recorded in the final commit verification.
-- `uv run ruff check .` — passed.
-- `uv run ruff format --check .` — passed.
-- `uv run fixit lint .` — passed.
-- `uv run pyright` — 0 errors, 0 warnings.
-- `uv run pre-commit run --all-files` — recorded in the final commit verification.
+- `uv run pytest -q tests/xhtml/test_validation.py -k 'auto_text'` — 3 passed.
+- `uv run pytest -q tests/xhtml` — 191 passed.
+- `uv run pytest -q` — recorded in final verification.
+- Ruff lint/format, Fixit, and Pyright — passed.
+- `uv run pre-commit run --all-files` — recorded in final verification.

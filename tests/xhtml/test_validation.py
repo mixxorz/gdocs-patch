@@ -106,6 +106,15 @@ def test_auto_text_type_failure_uses_paragraph_child_position() -> None:
     assert "/*[2]/@g:type" in str(error.value)
 
 
+def test_anchored_auto_text_type_failure_uses_tag_occurrence_path() -> None:
+    xhtml = document('<p><a href="https://example.test"><g:auto-text /></a></p>')
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/a[1]/g:auto-text[1]/@g:type" in str(error.value)
+
+
 def test_auto_text_unknown_attribute_uses_tag_occurrence_path() -> None:
     xhtml = document(
         '<p><span>first</span><g:auto-text g:type="PAGE_NUMBER" g:unknown="x" /></p>'
