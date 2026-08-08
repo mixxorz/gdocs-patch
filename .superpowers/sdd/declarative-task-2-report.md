@@ -139,3 +139,14 @@ ruff check, Ruff format, Pyright, Fixit, and hardcoded-secret detection passed
 Review-fix commit:
 
 - `67700e7417a9d8a8ed21ebe00ad802287fd40bc5 fix: preserve declarative XHTML document behavior`
+
+## Inventory Correction
+
+The review-fix work supersedes the earlier statement that no public tests changed. The complete changed-file inventory also includes:
+
+- `gdocs_patch/xhtml/nodes.py` — generalized singular-child cardinality errors using declared XML tag names.
+- `tests/xhtml/test_document.py` — added/extended regressions for canonical `DocumentStyle` attribute order, invalid tab nesting-level runtime values, wrong XHTML namespaces, and duplicate singular document-tab wrappers.
+- `tests/xhtml/test_structures.py` — added regressions for invalid list-level start-number runtime values.
+- `docs/superpowers/plans/2026-08-08-declarative-xhtml-rewrite.md` — added the binding module-qualified mapper import constraint.
+
+The final test inventory is therefore 158 XHTML tests and 258 repository-wide tests. The focused review suite collected 14 passing cases, including parameterized cases for both `False` and `0.0` integer defaults and all seven singular `DocumentTab` wrappers.
