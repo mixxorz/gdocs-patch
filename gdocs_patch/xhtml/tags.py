@@ -683,7 +683,6 @@ class ParagraphVocabularyTag(Tag):
         *_styled_paragraph_element_children(),
         Child(EquationTag),
         Child(ContentAnchorTag),
-        positional_path_attributes={gdocs_name("auto-text"): gdocs_name("type")},
         text_error="unexpected text content",
         tail_error="unexpected text between paragraph elements",
     )

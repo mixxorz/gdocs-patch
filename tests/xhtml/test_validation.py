@@ -59,7 +59,7 @@ def document(structure: str = "", *, metadata: str = "") -> str:
         (document("<p>raw<span>x</span></p>"), "/section[1]"),
         (document("<p><span>x</span>raw</p>"), "/section[1]"),
         (document().replace("<g:section-style />", ""), "/section[1]"),
-        (document("<p><g:auto-text /></p>"), "/*[1]"),
+        (document("<p><g:auto-text /></p>"), "/g:auto-text[1]"),
     ],
 )
 def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) -> None:
@@ -80,15 +80,6 @@ def test_empty_body_preserves_contextual_section_diagnostic() -> None:
         deserialize_document(xhtml)
 
 
-def test_auto_text_type_failure_uses_paragraph_child_position() -> None:
-    xhtml = document("<p><span>first</span><g:auto-text /></p>")
-
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml)
-
-    assert "/*[2]/@g:type" in str(error.value)
-
-
 @pytest.mark.parametrize(
     "attributes",
     ["", 'href="https://example.test" g:bookmark-id="bookmark"'],
@@ -100,26 +91,6 @@ def test_anchor_target_validation_precedes_malformed_content(attributes: str) ->
         XHTMLParseError, match="invalid link target attribute combination"
     ):
         deserialize_document(xhtml)
-
-
-def test_anchored_auto_text_type_failure_uses_tag_occurrence_path() -> None:
-    xhtml = document('<p><a href="https://example.test"><g:auto-text /></a></p>')
-
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml)
-
-    assert "/a[1]/g:auto-text[1]/@g:type" in str(error.value)
-
-
-def test_auto_text_unknown_attribute_uses_tag_occurrence_path() -> None:
-    xhtml = document(
-        '<p><span>first</span><g:auto-text g:type="PAGE_NUMBER" g:unknown="x" /></p>'
-    )
-
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml)
-
-    assert "/g:auto-text[1]/@g:unknown" in str(error.value)
 
 
 def test_duplicate_second_segment_precedes_its_malformed_descendant() -> None:

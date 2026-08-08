@@ -160,7 +160,6 @@ class Children(Field[list[Node]]):
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
         min_error: str | None = None,
-        positional_path_attributes: dict[str, str] | None = None,
         unique_by: Field[Any] | None = None,
         duplicate_error: str = "duplicate child key {key!r}",
     ) -> None:
@@ -175,7 +174,6 @@ class Children(Field[list[Node]]):
         self.text_error = text_error
         self.tail_error = tail_error
         self.min_error = min_error
-        self.positional_path_attributes = positional_path_attributes or {}
         self.unique_by = unique_by
         self.duplicate_error = duplicate_error
 
@@ -651,19 +649,8 @@ class Decoder:
                 not field.permits_text or child_totals[child_element.tag] > 1
             ):
                 path_step += f"[{child_counts[child_element.tag]}]"
-            try:
-                with self.at(path_step):
-                    child = self._decode_element(child_element, child_type)
-            except DecodeError as error:
-                positional_attribute = field.positional_path_attributes.get(
-                    child_element.tag
-                )
-                if (
-                    positional_attribute is not None
-                    and error.attribute_name == positional_attribute
-                ):
-                    error.path = (*error.path[:-1], f"*[{position}]")
-                raise
+            with self.at(path_step):
+                child = self._decode_element(child_element, child_type)
             result.append(child)
             append_text(child_element.tail, field.tail_error)
 
