@@ -151,6 +151,18 @@ def test_duplicate_second_segment_precedes_its_malformed_descendant() -> None:
         deserialize_document(document(metadata=metadata))
 
 
+def test_duplicate_segment_direct_tail_precedes_duplicate_key() -> None:
+    metadata = (
+        "<g:headers>"
+        '<g:header g:key="duplicate" g:segment-id="first" />'
+        '<g:header g:key="duplicate" g:segment-id="second"><p />tail</g:header>'
+        "</g:headers>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="unexpected text after child element"):
+        deserialize_document(document(metadata=metadata))
+
+
 def test_malformed_first_segment_precedes_later_duplicate() -> None:
     metadata = (
         "<g:headers>"
@@ -160,6 +172,25 @@ def test_malformed_first_segment_precedes_later_duplicate() -> None:
     )
 
     with pytest.raises(XHTMLParseError, match="unknown structural element g:unknown"):
+        deserialize_document(document(metadata=metadata))
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ("<g:headers>leading</g:headers>", "unexpected text content"),
+        (
+            "<g:headers>"
+            '<g:header g:key="key" g:segment-id="segment" />tail'
+            "</g:headers>",
+            "unexpected text after child element",
+        ),
+    ],
+)
+def test_segment_wrapper_preserves_whitespace_messages(
+    metadata: str, message: str
+) -> None:
+    with pytest.raises(XHTMLParseError, match=message):
         deserialize_document(document(metadata=metadata))
 
 

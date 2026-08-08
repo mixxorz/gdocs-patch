@@ -471,7 +471,11 @@ class ListDefinitionTag(Tag):
     tag_name = gdocs_name("list-definition")
 
     list_id = StringAttribute(gdocs_name("list-id"), required=True)
-    children = Children(Child(ListLevelTag))
+    children = Children(
+        Child(ListLevelTag),
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+    )
 
 
 class ListDefinitionsTag(Tag):
@@ -479,7 +483,9 @@ class ListDefinitionsTag(Tag):
 
     children = Children(
         Child(ListDefinitionTag),
-        unique_by="list_id",
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+        unique_by=ListDefinitionTag.list_id,
         duplicate_error="duplicate list key {key!r}",
     )
 
@@ -1100,7 +1106,12 @@ class TableOfContentsTag(Tag):
 class SegmentTag(Tag):
     key = StringAttribute(gdocs_name("key"), required=True)
     segment_id = StringAttribute(gdocs_name("segment-id"), required=True)
-    children = _structural_children()
+    children = Children(
+        *_structural_children().specs,
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+        unknown_child_error="unknown structural element",
+    )
 
 
 class HeaderTag(SegmentTag):
@@ -1118,7 +1129,9 @@ class FootnoteTag(SegmentTag):
 def _segment_children(segment_type: type[SegmentTag]) -> Children:
     return Children(
         Child(segment_type),
-        unique_by="key",
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+        unique_by=SegmentTag.key,
         duplicate_error="duplicate segment key {key!r}",
     )
 

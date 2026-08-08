@@ -142,4 +142,103 @@ Result: clean; no whitespace errors.
 
 ## Remaining concerns
 
-No known functional concerns. The new `Children.unique_by` declaration refers to child field names by string, so a future misspelling would fail clearly at decode time rather than class-definition time; current declarations are covered by public behavior tests and Pyright cannot statically validate dynamic descriptor names.
+No known functional concerns.
+
+---
+
+## Follow-up: uniqueness whitespace shell and descriptor safety
+
+### Status
+
+DONE
+
+### Changes
+
+- Sequential uniqueness now performs complete direct whitespace-shell validation before key comparison: the entry's leading `element.text` and every direct child's `tail` are checked first.
+- Uniqueness-enabled collection wrappers also validate their complete direct whitespace shell before child type, required-attribute, duplicate-key, or descendant processing.
+- List-definition entries/wrappers and header/footer/footnote entries/wrappers use the exact legacy diagnostics:
+  - leading text: `unexpected text content`
+  - direct tail: `unexpected text after child element`
+- `Children.unique_by` now accepts an actual bound `Field` descriptor, not a string. `Children.__set_name__` verifies at class declaration time that every declared child tag exposes that exact descriptor. Decode reads through the validated descriptor, eliminating typo-driven `AttributeError` failures.
+- Added public `deserialize_document` tests for duplicate-second-entry plus malformed direct tail for list definitions and headers, and standalone wrapper leading/tail diagnostics.
+
+### TDD evidence
+
+Before implementation:
+
+```bash
+uv run pytest -q \
+  tests/xhtml/test_structures.py::test_duplicate_list_definition_direct_tail_precedes_duplicate_key \
+  tests/xhtml/test_structures.py::test_list_definition_wrapper_preserves_whitespace_messages \
+  tests/xhtml/test_validation.py::test_duplicate_segment_direct_tail_precedes_duplicate_key \
+  tests/xhtml/test_validation.py::test_segment_wrapper_preserves_whitespace_messages
+```
+
+Result: **6 failed**. Duplicate keys incorrectly won over malformed direct tails, and wrappers emitted generic `unexpected text` messages.
+
+After implementation, the same cases plus existing duplicate-descendant precedence tests produced **8 passed**.
+
+### Differential evidence against `97610a8`
+
+Commands:
+
+```bash
+git worktree add --detach /tmp/gdocs-patch-97610a8 97610a8
+uv run python /tmp/xhtml_whitespace_probe.py > /tmp/whitespace-current.txt
+(cd /tmp/gdocs-patch-97610a8 && uv run python /tmp/xhtml_whitespace_probe.py) > /tmp/whitespace-baseline.txt
+paste /tmp/whitespace-baseline.txt /tmp/whitespace-current.txt
+git worktree remove --force /tmp/gdocs-patch-97610a8
+```
+
+All probe winners and messages matched baseline for:
+
+- list-definition wrapper leading text and direct tail;
+- duplicate second list definition with malformed direct tail;
+- duplicate second list definition with malformed descendant;
+- segment wrapper leading text and direct tail;
+- duplicate second segment with malformed direct tail;
+- duplicate second segment with malformed descendant;
+- required entry attributes preceding entry-tail checks.
+
+Existing declarative attribute-qualified paths remain intentionally more precise than baseline paths for missing required attributes; precedence was unchanged.
+
+### Verification
+
+```bash
+uv run pytest -q tests/xhtml
+```
+
+Result: **203 passed**.
+
+```bash
+uv run pytest
+```
+
+Result: **303 passed in 2.78s**.
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run fixit lint .
+uv run pyright
+uv run pre-commit run --all-files
+git diff --check
+```
+
+Results:
+
+- Ruff check: passed.
+- Ruff format: **74 files already formatted**.
+- Fixit: **57 files clean**.
+- Pyright: **0 errors, 0 warnings, 0 informations**.
+- Pre-commit: all Ruff, Pyright, Fixit, and secret-detection hooks passed.
+- Diff check: clean.
+
+### Self-review and concerns
+
+- No ElementTree mechanics were added to mapper methods or `tags.py`.
+- The descriptor validation is model-agnostic and occurs during class declaration, before document decode.
+- Wrapper whitespace checks preserve baseline ordering while duplicate checks remain sequential per entry.
+- All three segment collection wrappers share the validated descriptor declaration and exact messages.
+- No implementation-introspection tests were added.
+- No known remaining concerns.

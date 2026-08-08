@@ -176,7 +176,7 @@ class Children(Field[list[Node]]):
         min_cardinality_before_text: bool = False,
         positional_path_attributes: dict[str, str] | None = None,
         forbidden_child_phase: Literal["before_text", "after_text"] = "before_text",
-        unique_by: str | None = None,
+        unique_by: Field[Any] | None = None,
         duplicate_error: str = "duplicate child key {key!r}",
     ) -> None:
         super().__init__()
@@ -197,6 +197,22 @@ class Children(Field[list[Node]]):
         self.forbidden_child_phase = forbidden_child_phase
         self.unique_by = unique_by
         self.duplicate_error = duplicate_error
+
+    def __set_name__(self, owner: type["Tag"], name: str) -> None:
+        super().__set_name__(owner, name)
+        if self.unique_by is None:
+            return
+        if self.unique_by.name is None:
+            raise TypeError("unique child field must be bound to a Tag")
+        for spec in self.specs:
+            node_type = spec.node_type
+            if not issubclass(node_type, Tag):
+                raise TypeError("unique child declarations must refer to Tag types")
+            if node_type.fields().get(self.unique_by.name) is not self.unique_by:
+                raise TypeError(
+                    f"{node_type.__name__} does not declare unique field "
+                    f"{self.unique_by.name!r}"
+                )
 
     def get_default(self) -> list[Node]:
         return []
@@ -476,7 +492,7 @@ class Tag(Node):
             (field for field in fields.values() if isinstance(field, Children)), None
         )
         if children_field is not None and decoder.child_uniqueness_is_active:
-            decoder.validate_initial_text(element, children_field)
+            decoder.validate_whitespace_shell(element, children_field)
         decoder.validate_child_uniqueness(node)
         if children_field is not None:
             with decoder.children_of(node):
@@ -556,11 +572,15 @@ class Decoder:
     def child_uniqueness_is_active(self) -> bool:
         return bool(self._uniqueness and self._uniqueness[-1][0].unique_by is not None)
 
-    def validate_initial_text(
+    def validate_whitespace_shell(
         self, element: ElementTree.Element, field: Children
     ) -> None:
         if element.text and element.text.strip() and not field.permits_text:
             self.fail(field.text_error)
+        if not field.permits_text:
+            for child in element:
+                if child.tail and child.tail.strip():
+                    self.fail(field.tail_error)
 
     def validate_child_uniqueness(self, child: Tag) -> None:
         if not self._uniqueness:
@@ -568,7 +588,7 @@ class Decoder:
         field, seen = self._uniqueness[-1]
         if field.unique_by is None:
             return
-        key = getattr(child, field.unique_by)
+        key = field.unique_by.__get__(child, type(child))
         if key in seen:
             self.fail(field.duplicate_error.format(key=key))
         seen.add(key)
@@ -600,6 +620,8 @@ class Decoder:
     ) -> list[Node]:
         result: list[Node] = []
         owner = self._child_owners[-1] if self._child_owners else None
+        if field.unique_by is not None:
+            self.validate_whitespace_shell(parent, field)
 
         def append_text(value: str | None, error_message: str) -> None:
             if value is None or not value:

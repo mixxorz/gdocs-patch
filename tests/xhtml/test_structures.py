@@ -688,6 +688,19 @@ def test_duplicate_second_list_definition_precedes_its_malformed_descendant() ->
         deserialize_document(xhtml_with_structure("", definitions))
 
 
+def test_duplicate_list_definition_direct_tail_precedes_duplicate_key() -> None:
+    definitions = (
+        "<g:list-definitions>"
+        '<g:list-definition g:list-id="duplicate" />'
+        '<g:list-definition g:list-id="duplicate"><g:list-level '
+        'g:glyph-format="%0" g:glyph-symbol="x" />tail</g:list-definition>'
+        "</g:list-definitions>"
+    )
+
+    with pytest.raises(XHTMLParseError, match="unexpected text after child element"):
+        deserialize_document(xhtml_with_structure("", definitions))
+
+
 def test_malformed_first_list_definition_precedes_later_duplicate() -> None:
     definitions = (
         "<g:list-definitions>"
@@ -697,6 +710,25 @@ def test_malformed_first_list_definition_precedes_later_duplicate() -> None:
     )
 
     with pytest.raises(XHTMLParseError, match="unknown child element g:unknown"):
+        deserialize_document(xhtml_with_structure("", definitions))
+
+
+@pytest.mark.parametrize(
+    ("definitions", "message"),
+    [
+        ("<g:list-definitions>leading</g:list-definitions>", "unexpected text content"),
+        (
+            "<g:list-definitions>"
+            '<g:list-definition g:list-id="id" />tail'
+            "</g:list-definitions>",
+            "unexpected text after child element",
+        ),
+    ],
+)
+def test_list_definition_wrapper_preserves_whitespace_messages(
+    definitions: str, message: str
+) -> None:
+    with pytest.raises(XHTMLParseError, match=message):
         deserialize_document(xhtml_with_structure("", definitions))
 
 
