@@ -74,6 +74,24 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
+def test_body_rejects_direct_structural_children_as_parse_error() -> None:
+    xhtml = document().replace(
+        "<section><g:section-style /></section>", "<p><span>orphan</span></p>"
+    )
+
+    with pytest.raises(XHTMLParseError, match=r"g:body: unknown child element p"):
+        deserialize_document(xhtml)
+
+
+def test_unknown_table_cell_structure_is_contextual_parse_error() -> None:
+    xhtml = document("<table><tbody><tr><td><g:unknown /></td></tr></tbody></table>")
+
+    with pytest.raises(
+        XHTMLParseError, match=r"/td\[1\].*unknown structural element g:unknown"
+    ):
+        deserialize_document(xhtml)
+
+
 def test_rejects_negative_tab_nesting_level() -> None:
     nesting_level = -1
     xhtml = document().replace(

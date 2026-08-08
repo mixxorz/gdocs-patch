@@ -56,7 +56,6 @@ _NAMED_STYLE_TYPES = {
     "HEADING_5",
     "HEADING_6",
 }
-_DIRECTIONS = {"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 _DATE_FORMATS = {
     "DATE_FORMAT_UNSPECIFIED",
@@ -382,10 +381,10 @@ class _Decoder:
     def decode_body(self, element: tags.DocumentBodyTag, path: str) -> models.Body:
         content: list[models.StructuralElement] = []
         sections = cast(list[Node], element.children)
-        if not sections:
-            parse_error(path, "body must contain at least one section")
         for index, child in enumerate(sections, 1):
-            section = cast(tags.SectionTag, child)
+            if not isinstance(child, tags.SectionTag):
+                parse_error(path, "body content must be section elements")
+            section = child
             section_path = f"{path}/section[{index}]"
             section_children = cast(list[Node], section.children)
             style = next(
@@ -468,8 +467,6 @@ class _Decoder:
             name = display_name(cast(str, element.tag_name))
             counts[name] = counts.get(name, 0) + 1
             child_path = f"{path}/{name}[{counts[name]}]"
-            if isinstance(element, tags.SectionTag):
-                parse_error(child_path, "section elements are only valid in a body")
             if isinstance(element, tags.TableOfContentsTag):
                 decoded.append(
                     models.TableOfContents(
@@ -534,8 +531,8 @@ class _Decoder:
             magnitude=parse_float(value, f"{path}/@g:{name}"), unit="PT"
         )
 
-    def _structural_tag_type(self, name: str) -> type[Tag]:
-        return {
+    def _structural_tag_type(self, name: str, path: str) -> type[Tag]:
+        tag_type = {
             value.tag_name: value
             for value in (
                 tags.GenericParagraphTag,
@@ -553,7 +550,10 @@ class _Decoder:
                 tags.TableTag,
                 tags.TableOfContentsTag,
             )
-        }[name]
+        }.get(name)
+        if tag_type is None:
+            parse_error(path, f"unknown structural element {display_name(name)}")
+        return tag_type
 
     def decode_list(
         self, element: ElementTree.Element, path: str
@@ -768,7 +768,7 @@ class _Decoder:
             [
                 self.decode_tag(
                     child,
-                    self._structural_tag_type(child.tag),
+                    self._structural_tag_type(child.tag, f"{path}/*[{index}]"),
                     f"{path}/*[{index}]",
                 )
                 for index, child in enumerate(

@@ -448,6 +448,20 @@ class Decoder:
         for child_element in parent:
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
 
+        for spec in field.specs:
+            node_type = spec.node_type
+            tag_name = getattr(node_type, "tag_name", None)
+            if not isinstance(tag_name, str) or spec.max_num is None:
+                continue
+            count = child_totals.get(tag_name, 0)
+            if count > spec.max_num:
+                if spec.max_num == 1:
+                    local_name = tag_name.rsplit("}", 1)[-1]
+                    self.fail(f"expected at most one {local_name} child")
+                self.fail(
+                    f"expected at most {spec.max_num} {node_type.__name__} children"
+                )
+
         for child_element in parent:
             spec = field.spec_for_element(child_element)
             if spec is None:

@@ -34,3 +34,18 @@ Implemented Task 3 on `feature/xhtml-document-codec`.
 ## Concerns
 
 No known functional concerns. Paragraph/list/table internals intentionally remain opaque declarative boundary payloads pending their dedicated migration tasks.
+
+## Review Fixes
+
+- Tightened `DocumentBodyTag` to declaratively require one or more `SectionTag` children and removed the decoder's unchecked section cast.
+- Added child-cardinality preflight so duplicate wrappers are reported before malformed nested wrapper content without weakening the body grammar.
+- Changed `TableOfContentsTag` to exclude `SectionTag` from its declared alternatives while preserving the established body-only-section diagnostic.
+- Converted unknown opaque table-cell structures to contextual `XHTMLParseError` failures instead of leaking `KeyError`.
+- Removed obsolete section enum constants from the mapper modules.
+- Added two focused public malformed-input regressions for the prior `AttributeError` and `KeyError` leaks.
+
+Review verification:
+
+- Focused XHTML validation/document/structure suite: 89 passed.
+- Full pytest suite: 260 passed.
+- Ruff lint/format, Fixit, Pyright, and all pre-commit hooks passed.

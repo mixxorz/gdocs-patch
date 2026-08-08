@@ -20,6 +20,7 @@ from .nodes import (
     Decoder,
     Encoder,
     Field,
+    Node,
     Tag,
     Text,
     UnsetType,
@@ -550,7 +551,7 @@ class TableTag(_OpaqueStructuralTag):
     tag_name = xhtml_name("table")
 
 
-def _structural_children(*, permit_sections: bool = False) -> Children:
+def _structural_children() -> Children:
     specs = [
         Child(lambda: GenericParagraphTag),
         Child(lambda: UnspecifiedParagraphTag),
@@ -567,8 +568,6 @@ def _structural_children(*, permit_sections: bool = False) -> Children:
         Child(lambda: TableTag),
         Child(lambda: TableOfContentsTag),
     ]
-    if permit_sections:
-        specs.append(Child(lambda: SectionTag))
     return Children(*specs)
 
 
@@ -632,13 +631,20 @@ class SectionTag(Tag):
 class DocumentBodyTag(Tag):
     tag_name = gdocs_name("body")
 
-    children = _structural_children(permit_sections=True)
+    children = Children(Child(lambda: SectionTag, min_num=1))
+
+
+class _TableOfContentsChildren(Children):
+    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
+        if any(child.tag == xhtml_name("section") for child in element):
+            decoder.fail("section elements are only valid in a body")
+        return super().decode_from(element, decoder)
 
 
 class TableOfContentsTag(Tag):
     tag_name = gdocs_name("table-of-contents")
 
-    children = _structural_children(permit_sections=True)
+    children = _TableOfContentsChildren(*_structural_children().specs)
 
 
 class SegmentTag(Tag):
