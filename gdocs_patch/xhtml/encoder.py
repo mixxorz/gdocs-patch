@@ -5,6 +5,7 @@ from gdocs_patch.models import (
     UNSET,
     AutoText,
     Body,
+    BookmarkLink,
     Bullet,
     BulletPreset,
     Color,
@@ -16,6 +17,7 @@ from gdocs_patch.models import (
     DocumentTab,
     Equation,
     FootnoteReference,
+    HeadingLink,
     HorizontalRule,
     InlineObjectReference,
     Link,
@@ -41,10 +43,12 @@ from gdocs_patch.models import (
     TableColumn,
     TableOfContents,
     TableRow,
+    TabLink,
     TabStop,
     TextRun,
     TextStyle,
     UnsetType,
+    UrlLink,
 )
 
 from .base import (
@@ -72,14 +76,30 @@ from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
 from .nodes import Encoder as XHTMLEncoder
 from .nodes import Tag, Text
 from .tags import (
+    BackgroundColorTag,
+    BodyTag,
     BorderBetweenTag,
     BorderBottomTag,
     BorderLeftTag,
     BorderRightTag,
     BorderTopTag,
     BreakTag,
+    ChildTabsTag,
     ColorTag,
+    DocumentBodyTag,
+    DocumentStyleTag,
+    DocumentTabTag,
+    FootersTag,
+    FootnotesTag,
+    HeadersTag,
+    HtmlTag,
+    ListDefinitionsTag,
+    ListDefinitionTag,
+    ListLevelTag,
+    MetadataAnchorTag,
     NamedParagraphStyleTag,
+    NamedStylesTag,
+    NamedStyleTag,
     ParagraphBorderTag,
     ParagraphStyleTag,
     ParagraphTag,
@@ -87,9 +107,9 @@ from .tags import (
     SpanTag,
     TabStopsTag,
     TabStopTag,
+    TabTag,
 )
 
-_DOCUMENT_MODES = {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"}
 _NAMED_STYLE_TYPES = {
     "NAMED_STYLE_TYPE_UNSPECIFIED",
     "NORMAL_TEXT",
@@ -109,17 +129,6 @@ _SECTION_SEPARATOR_STYLES = {
 }
 _DIRECTIONS = {"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"}
 _SECTION_TYPES = {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"}
-_GLYPH_TYPES = {
-    "GLYPH_TYPE_UNSPECIFIED",
-    "NONE",
-    "DECIMAL",
-    "ZERO_DECIMAL",
-    "UPPER_ALPHA",
-    "ALPHA",
-    "UPPER_ROMAN",
-    "ROMAN",
-}
-_BULLET_ALIGNMENTS = {"BULLET_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
 _CONTENT_ALIGNMENTS = {
     "CONTENT_ALIGNMENT_UNSPECIFIED",
     "CONTENT_ALIGNMENT_UNSUPPORTED",
@@ -163,12 +172,23 @@ _BULLET_PRESETS = {
     "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
 }
 
-_SUGGESTIONS_VIEW_MODES = {
-    "DEFAULT_FOR_CURRENT_ACCESS",
-    "SUGGESTIONS_INLINE",
-    "PREVIEW_SUGGESTIONS_ACCEPTED",
-    "PREVIEW_WITHOUT_SUGGESTIONS",
-}
+
+def _encode_document_body_boundary(encoder: "_Encoder", body: Body) -> DocumentBodyTag:
+    element = encoder.encode_body(body)
+    return DocumentBodyTag(children=list(element))
+
+
+def _encode_segments_boundary(
+    encoder: "_Encoder",
+    value: dict[str, Segment] | UnsetType,
+    wrapper_name: str,
+    item_name: str,
+    wrapper_type: type[HeadersTag] | type[FootersTag] | type[FootnotesTag],
+) -> HeadersTag | FootersTag | FootnotesTag:
+    parent = ElementTree.Element("boundary")
+    encoder.encode_segments(parent, wrapper_name, item_name, value)
+    return wrapper_type(children=list(parent[0]))
+
 
 _PARAGRAPH_TAGS = {
     "NAMED_STYLE_TYPE_UNSPECIFIED": gdocs_name("named-style-unspecified"),
@@ -180,176 +200,145 @@ _PARAGRAPH_TAGS = {
 
 
 class _Encoder:
-    def encode_document(self, document: Document) -> ElementTree.Element:
+    def encode_document(self, document: Document) -> HtmlTag:
         if not isinstance(document, Document):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError("document must be a Document")
-        root = ElementTree.Element(xhtml_name("html"))
-        root.set(
-            gdocs_name("document-id"),
-            require_string(document.document_id, "Document.document_id"),
-        )
-        root.set(gdocs_name("title"), require_string(document.title, "Document.title"))
-        if document.revision_id is not UNSET:
-            root.set(
-                gdocs_name("revision-id"),
-                require_string(document.revision_id, "Document.revision_id"),
-            )
-        if document.suggestions_view_mode is not UNSET:
-            root.set(
-                gdocs_name("suggestions-view-mode"),
-                require_enum(
-                    document.suggestions_view_mode,
-                    _SUGGESTIONS_VIEW_MODES,
-                    "Document.suggestions_view_mode",
-                ),
-            )
-
         require_list(document.tabs, "Document.tabs")
-        body = ElementTree.SubElement(root, xhtml_name("body"))
-        for tab in document.tabs:
-            body.append(self.encode_tab(tab))
-        return root
+        return HtmlTag(
+            document_id=document.document_id,
+            title=document.title,
+            revision_id=document.revision_id,
+            suggestions_view_mode=document.suggestions_view_mode,
+            children=[
+                BodyTag(children=[self.encode_tab(tab) for tab in document.tabs])
+            ],
+        )
 
-    def encode_tab(self, tab: Tab) -> ElementTree.Element:
+    def encode_tab(self, tab: Tab) -> TabTag:
         if not isinstance(tab, Tab):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError("Document.tabs entries must be Tab objects")
-        element = ElementTree.Element(gdocs_name("tab"))
-        element.set(gdocs_name("tab-id"), require_string(tab.tab_id, "Tab.tab_id"))
-        element.set(gdocs_name("title"), require_string(tab.title, "Tab.title"))
-        element.set(gdocs_name("index"), str(require_integer(tab.index, "Tab.index")))
-        nesting_level = require_integer(tab.nesting_level, "Tab.nesting_level")
-        if nesting_level != 0:
-            element.set(gdocs_name("nesting-level"), str(nesting_level))
-        if tab.parent_tab_id is not UNSET:
-            element.set(
-                gdocs_name("parent-tab-id"),
-                require_string(tab.parent_tab_id, "Tab.parent_tab_id"),
-            )
-        if tab.icon_emoji is not UNSET:
-            element.set(
-                gdocs_name("icon-emoji"),
-                require_string(tab.icon_emoji, "Tab.icon_emoji"),
-            )
-
+        children: list[Tag] = []
         if tab.content is not UNSET:
             if not isinstance(tab.content, DocumentTab):
                 raise ValueError("Tab.content must be a DocumentTab or UNSET")
-            element.append(self.encode_document_tab(tab.content))
+            children.append(self.encode_document_tab(tab.content))
         require_list(tab.children, "Tab.children")
         if tab.children:
-            child_tabs = ElementTree.SubElement(element, gdocs_name("child-tabs"))
-            for child in tab.children:
-                child_tabs.append(self.encode_tab(child))
-        return element
+            children.append(
+                ChildTabsTag(
+                    children=[self.encode_tab(child) for child in tab.children]
+                )
+            )
+        return TabTag(
+            tab_id=tab.tab_id,
+            title=tab.title,
+            index=tab.index,
+            nesting_level=(UNSET if tab.nesting_level == 0 else tab.nesting_level),
+            parent_tab_id=tab.parent_tab_id,
+            icon_emoji=tab.icon_emoji,
+            children=children,
+        )
 
-    def encode_document_tab(self, document_tab: DocumentTab) -> ElementTree.Element:
-        element = ElementTree.Element(gdocs_name("document-tab"))
-        if document_tab.named_styles is not UNSET:
-            require_list(document_tab.named_styles, "DocumentTab.named_styles")
-        if document_tab.lists is not UNSET:
-            require_dict(document_tab.lists, "DocumentTab.lists")
+    def encode_document_tab(self, document_tab: DocumentTab) -> DocumentTabTag:
+        children: list[Tag] = []
         if document_tab.document_style is not UNSET:
-            element.append(
+            children.append(
                 self.encode_document_style(
                     cast(DocumentStyle, document_tab.document_style)
                 )
             )
         if document_tab.named_styles is not UNSET:
-            element.append(
+            children.append(
                 self.encode_named_styles(
                     cast(list[NamedStyle], document_tab.named_styles)
                 )
             )
         if document_tab.lists is not UNSET:
-            self.encode_list_definitions(
-                element, cast(dict[str, ListDefinition], document_tab.lists)
+            children.append(
+                self.encode_list_definitions(
+                    cast(dict[str, ListDefinition], document_tab.lists)
+                )
             )
         if document_tab.body is not UNSET:
-            element.append(self.encode_body(cast(Body, document_tab.body)))
-        self.encode_segments(element, "headers", "header", document_tab.headers)
-        self.encode_segments(element, "footers", "footer", document_tab.footers)
-        self.encode_segments(element, "footnotes", "footnote", document_tab.footnotes)
-        return element
-
-    def encode_document_style(self, style: DocumentStyle) -> ElementTree.Element:
-        element = ElementTree.Element(gdocs_name("document-style"))
-        if style.document_mode is not UNSET:
-            element.set(
-                gdocs_name("document-mode"),
-                require_enum(
-                    style.document_mode, _DOCUMENT_MODES, "DocumentStyle.document_mode"
-                ),
+            children.append(
+                _encode_document_body_boundary(self, cast(Body, document_tab.body))
             )
-        for value, name in (
-            (style.default_header_id, "default-header-id"),
-            (style.default_footer_id, "default-footer-id"),
-            (style.even_page_header_id, "even-page-header-id"),
-            (style.even_page_footer_id, "even-page-footer-id"),
-            (style.first_page_header_id, "first-page-header-id"),
-            (style.first_page_footer_id, "first-page-footer-id"),
+        for value, wrapper_name, item_name, wrapper_type in (
+            (document_tab.headers, "headers", "header", HeadersTag),
+            (document_tab.footers, "footers", "footer", FootersTag),
+            (document_tab.footnotes, "footnotes", "footnote", FootnotesTag),
         ):
-            if value is not UNSET:
-                element.set(
-                    gdocs_name(name), require_string(value, f"DocumentStyle.{name}")
+            if value is UNSET:
+                continue
+            children.append(
+                _encode_segments_boundary(
+                    self, value, wrapper_name, item_name, wrapper_type
                 )
-        if style.page_number_start is not UNSET:
-            element.set(
-                gdocs_name("page-number-start"),
-                str(
-                    require_integer(
-                        style.page_number_start, "DocumentStyle.page_number_start"
-                    )
-                ),
             )
-        for value, name in (
-            (style.use_even_page_header_footer, "use-even-page-header-footer"),
-            (style.use_first_page_header_footer, "use-first-page-header-footer"),
-            (
-                style.use_custom_header_footer_margins,
-                "use-custom-header-footer-margins",
-            ),
-            (style.flip_page_orientation, "flip-page-orientation"),
-        ):
-            self.encode_boolean_attribute(element, name, value)
-        for value, name in (
-            (style.page_width, "page-width"),
-            (style.page_height, "page-height"),
-            (style.margin_top, "margin-top"),
-            (style.margin_bottom, "margin-bottom"),
-            (style.margin_left, "margin-left"),
-            (style.margin_right, "margin-right"),
-            (style.margin_header, "margin-header"),
-            (style.margin_footer, "margin-footer"),
-        ):
-            self.encode_point_attribute(element, name, value)
-        if style.background_color is not UNSET:
-            self.encode_optional_color(
-                element, "background-color", cast(Color | None, style.background_color)
-            )
-        return element
+        return DocumentTabTag(children=children)
 
-    def encode_named_styles(self, styles: list[NamedStyle]) -> ElementTree.Element:
-        require_list(styles, "DocumentTab.named_styles")
-        wrapper = ElementTree.Element(gdocs_name("named-styles"))
-        for style in styles:
-            element = ElementTree.SubElement(wrapper, gdocs_name("named-style"))
-            element.set(
-                gdocs_name("type"),
-                require_enum(
-                    style.named_style_type,
-                    _NAMED_STYLE_TYPES,
-                    "NamedStyle.named_style_type",
-                ),
+    def encode_document_style(self, style: DocumentStyle) -> DocumentStyleTag:
+        values = {
+            name: getattr(style, name)
+            for name in DocumentStyleTag.fields()
+            if name != "children"
+        }
+        children: list[Tag] = []
+        if style.background_color is not UNSET:
+            children.append(
+                BackgroundColorTag(color=cast(Color | None, style.background_color))
             )
-            self.encode_metadata_text_style(element, style.text_style)
+        return DocumentStyleTag(children=children, **values)
+
+    def encode_named_styles(self, styles: list[NamedStyle]) -> NamedStylesTag:
+        require_list(styles, "DocumentTab.named_styles")
+        children: list[NamedStyleTag] = []
+        for style in styles:
+            values, metadata = self._encode_metadata_text_style_tag(style.text_style)
             if style.paragraph_style is not UNSET:
                 paragraph = self._encode_paragraph_style_tag(
-                    cast(ParagraphStyle, style.paragraph_style),
-                    named_style=True,
+                    cast(ParagraphStyle, style.paragraph_style), named_style=True
                 )
                 if paragraph is not None:
-                    element.append(XHTMLEncoder().encode_element(paragraph))
-        return wrapper
+                    metadata.append(paragraph)
+            children.append(
+                NamedStyleTag(
+                    named_style_type=style.named_style_type,
+                    children=metadata,
+                    **values,
+                )
+            )
+        return NamedStylesTag(children=children)
+
+    def _encode_metadata_text_style_tag(
+        self, style: TextStyle | UnsetType
+    ) -> tuple[dict[str, object], list[Tag]]:
+        if style is UNSET:
+            return {}, []
+        style = cast(TextStyle, style)
+        values = {
+            name: getattr(style, name)
+            for name in SpanTag.fields()
+            if name != "children"
+        }
+        children: list[Tag] = []
+        if style.link is not UNSET:
+            link = cast(Link, style.link)
+            if isinstance(link, UrlLink):
+                children.append(MetadataAnchorTag(href=link.url))
+            elif isinstance(link, TabLink):
+                children.append(MetadataAnchorTag(tab_id=link.tab_id))
+            elif isinstance(link, BookmarkLink):
+                children.append(
+                    MetadataAnchorTag(bookmark_id=link.bookmark_id, tab_id=link.tab_id)
+                )
+            elif isinstance(link, HeadingLink):
+                children.append(
+                    MetadataAnchorTag(heading_id=link.heading_id, tab_id=link.tab_id)
+                )
+            else:
+                raise ValueError(f"unsupported link type {type(link).__name__}")
+        return values, children
 
     def encode_body(self, body: Body) -> ElementTree.Element:
         require_list(body.content, "Body.content")
@@ -374,50 +363,39 @@ class _Encoder:
         return element
 
     def encode_list_definitions(
-        self, parent: ElementTree.Element, definitions: dict[str, ListDefinition]
-    ) -> None:
+        self, definitions: dict[str, ListDefinition]
+    ) -> ListDefinitionsTag:
         require_dict(definitions, "DocumentTab.lists")
-        wrapper = ElementTree.SubElement(parent, gdocs_name("list-definitions"))
+        children: list[ListDefinitionTag] = []
         for list_id, definition in definitions.items():
             require_list(definition.levels, "ListDefinition.levels")
-            element = ElementTree.SubElement(wrapper, gdocs_name("list-definition"))
-            element.set(
-                gdocs_name("list-id"),
-                require_string(list_id, "DocumentTab.lists key"),
+            children.append(
+                ListDefinitionTag(
+                    list_id=list_id,
+                    children=[
+                        self.encode_list_level(level) for level in definition.levels
+                    ],
+                )
             )
-            for level in definition.levels:
-                element.append(self.encode_list_level(level))
+        return ListDefinitionsTag(children=children)
 
-    def encode_list_level(self, level: ListLevel) -> ElementTree.Element:
-        element = ElementTree.Element(gdocs_name("list-level"))
-        element.set(
-            gdocs_name("glyph-format"),
-            require_string(level.glyph_format, "ListLevel.glyph_format"),
+    def encode_list_level(self, level: ListLevel) -> ListLevelTag:
+        values, children = self._encode_metadata_text_style_tag(level.text_style)
+        return ListLevelTag(
+            glyph_format=level.glyph_format,
+            glyph_type=level.glyph_type,
+            glyph_symbol=level.glyph_symbol,
+            alignment=(
+                UNSET
+                if level.alignment == "BULLET_ALIGNMENT_UNSPECIFIED"
+                else level.alignment
+            ),
+            indent_first_line=level.indent_first_line,
+            indent_start=level.indent_start,
+            start_number=UNSET if level.start_number == 0 else level.start_number,
+            children=children,
+            **values,
         )
-        if level.glyph_type is not UNSET:
-            element.set(
-                gdocs_name("glyph-type"),
-                require_enum(level.glyph_type, _GLYPH_TYPES, "ListLevel.glyph_type"),
-            )
-        if level.glyph_symbol is not UNSET:
-            element.set(
-                gdocs_name("glyph-symbol"),
-                require_string(level.glyph_symbol, "ListLevel.glyph_symbol"),
-            )
-        alignment = require_enum(
-            level.alignment, _BULLET_ALIGNMENTS, "ListLevel.alignment"
-        )
-        if alignment != "BULLET_ALIGNMENT_UNSPECIFIED":
-            element.set(gdocs_name("alignment"), alignment)
-        self.encode_point_attribute(
-            element, "indent-first-line", level.indent_first_line
-        )
-        self.encode_point_attribute(element, "indent-start", level.indent_start)
-        start_number = require_integer(level.start_number, "ListLevel.start_number")
-        if start_number != 0:
-            element.set(gdocs_name("start-number"), str(start_number))
-        self.encode_metadata_text_style(element, level.text_style)
-        return element
 
     def encode_metadata_text_style(
         self, element: ElementTree.Element, style: TextStyle | UnsetType
@@ -1031,7 +1009,8 @@ def _validate_generated_tree(root: ElementTree.Element) -> None:
 
 def _validate_encoded_tree(root: ElementTree.Element) -> None:
     try:
-        _Decoder().decode_document(root)
+        decoder = _Decoder()
+        decoder.decode_document(decoder.decode_tag(root, HtmlTag, "/html"))
     except XHTMLParseError as error:
         raise ValueError(
             f"document model cannot be encoded as valid XHTML: {error}"
@@ -1042,7 +1021,7 @@ def serialize_document(document: Document) -> str:
     ElementTree.register_namespace("", XHTML_NAMESPACE)
     ElementTree.register_namespace("g", GDOCS_NAMESPACE)
     try:
-        root = _Encoder().encode_document(document)
+        root = XHTMLEncoder().encode_element(_Encoder().encode_document(document))
     except (AttributeError, KeyError, RecursionError, TypeError) as error:
         raise ValueError(f"invalid mutated document model: {error}") from error
     _validate_generated_tree(root)

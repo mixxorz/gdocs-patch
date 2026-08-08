@@ -8,6 +8,7 @@ from gdocs_patch.models import (
     UNSET,
     AutoText,
     Body,
+    BookmarkLink,
     Bullet,
     BulletPreset,
     Color,
@@ -19,6 +20,7 @@ from gdocs_patch.models import (
     DocumentTab,
     Equation,
     FootnoteReference,
+    HeadingLink,
     HorizontalRule,
     InlineObjectReference,
     Link,
@@ -45,15 +47,19 @@ from gdocs_patch.models import (
     TableColumn,
     TableOfContents,
     TableRow,
+    TabLink,
     TabStop,
     TextRun,
     TextStyle,
     UnsetType,
+    UrlLink,
 )
 
 from .base import (
+    GDOCS_NAMESPACE,
     MAX_ELEMENT_DEPTH,
     MAX_XHTML_CHARACTERS,
+    XHTML_NAMESPACE,
     XML_DECLARATION,
     XHTMLParseError,
     construct_model,
@@ -76,15 +82,32 @@ from .base import (
 )
 from .nodes import DecodeError, Node, Tag, Text
 from .nodes import Decoder as XHTMLDecoder
+from .nodes import Encoder as XHTMLEncoder
 from .tags import (
+    BackgroundColorTag,
+    BodyTag,
     BorderBetweenTag,
     BorderBottomTag,
     BorderLeftTag,
     BorderRightTag,
     BorderTopTag,
     BreakTag,
+    ChildTabsTag,
     ColorTag,
+    DocumentBodyTag,
+    DocumentStyleTag,
+    DocumentTabTag,
+    FootersTag,
+    FootnotesTag,
+    HeadersTag,
+    HtmlTag,
+    ListDefinitionsTag,
+    ListDefinitionTag,
+    ListLevelTag,
+    MetadataAnchorTag,
     NamedParagraphStyleTag,
+    NamedStylesTag,
+    NamedStyleTag,
     ParagraphBorderTag,
     ParagraphStyleTag,
     ParagraphTag,
@@ -92,6 +115,7 @@ from .tags import (
     SpanTag,
     TabStopsTag,
     TabStopTag,
+    TabTag,
 )
 
 _PARAGRAPH_TAGS = {
@@ -142,17 +166,6 @@ _BULLET_PRESETS = {
     "NUMBERED_UPPERROMAN_UPPERALPHA_DECIMAL",
     "NUMBERED_ZERODECIMAL_ALPHA_ROMAN",
 }
-_GLYPH_TYPES = {
-    "GLYPH_TYPE_UNSPECIFIED",
-    "NONE",
-    "DECIMAL",
-    "ZERO_DECIMAL",
-    "UPPER_ALPHA",
-    "ALPHA",
-    "UPPER_ROMAN",
-    "ROMAN",
-}
-_BULLET_ALIGNMENTS = {"BULLET_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
 _TIME_FORMATS = {
     "TIME_FORMAT_UNSPECIFIED",
     "TIME_FORMAT_DISABLED",
@@ -161,13 +174,6 @@ _TIME_FORMATS = {
 }
 
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
-
-_SUGGESTIONS_VIEW_MODES = {
-    "DEFAULT_FOR_CURRENT_ACCESS",
-    "SUGGESTIONS_INLINE",
-    "PREVIEW_SUGGESTIONS_ACCEPTED",
-    "PREVIEW_WITHOUT_SUGGESTIONS",
-}
 
 
 def _validate_no_children(element: ElementTree.Element, path: str) -> None:
@@ -216,12 +222,10 @@ class _TableCellStyleFields:
         )
 
 
-SuggestionsViewMode = Literal[
-    "DEFAULT_FOR_CURRENT_ACCESS",
-    "SUGGESTIONS_INLINE",
-    "PREVIEW_SUGGESTIONS_ACCEPTED",
-    "PREVIEW_WITHOUT_SUGGESTIONS",
-]
+def _render_unmigrated_boundary_tag(
+    tag: DocumentBodyTag | HeadersTag | FootersTag | FootnotesTag,
+) -> ElementTree.Element:
+    return XHTMLEncoder().encode_element(tag)
 
 
 class _Decoder:
@@ -235,467 +239,25 @@ class _Decoder:
             if error.attribute_name is not None:
                 error_path += f"/@{display_name(error.attribute_name)}"
             message = str(error)
+            if error.attribute_name is not None:
+                if error.attribute_name.startswith(
+                    "{"
+                ) and not error.attribute_name.startswith(
+                    (f"{{{XHTML_NAMESPACE}}}", f"{{{GDOCS_NAMESPACE}}}")
+                ):
+                    message = (
+                        "unsupported namespace in attribute "
+                        f"{display_name(error.attribute_name)}"
+                    )
+                elif message == "unknown attribute":
+                    message += f" {display_name(error.attribute_name)}"
             if error.element_name is not None:
                 message += f" {display_name(error.element_name)}"
+            if message == (
+                "HtmlTag.children: children permits at most 1 BodyTag child(ren); got 2"
+            ):
+                message = "expected at most one body child"
             parse_error(error_path, message, cause=error)
-
-    def decode_document(self, root: ElementTree.Element) -> Document:
-        path = "/html"
-        if root.tag != xhtml_name("html"):
-            if root.tag.endswith("}html") or root.tag == "html":
-                parse_error(path, "unsupported XHTML namespace")
-            parse_error(path, "expected XHTML html root element")
-        validate_attributes(
-            root,
-            {
-                gdocs_name("document-id"),
-                gdocs_name("title"),
-                gdocs_name("revision-id"),
-                gdocs_name("suggestions-view-mode"),
-            },
-            path,
-        )
-        document_id = required_string(root, gdocs_name("document-id"), path)
-        title = required_string(root, gdocs_name("title"), path)
-        revision_id = optional_string(root, gdocs_name("revision-id"))
-        raw_mode = root.get(gdocs_name("suggestions-view-mode"))
-        mode: SuggestionsViewMode | UnsetType
-        if raw_mode is None:
-            mode = UNSET
-        else:
-            mode = cast(
-                "SuggestionsViewMode",
-                parse_allowed(
-                    raw_mode,
-                    _SUGGESTIONS_VIEW_MODES,
-                    f"{path}/@g:suggestions-view-mode",
-                ),
-            )
-
-        validate_whitespace(root, path)
-        children = list(root)
-        body = extract_one_child(children, xhtml_name("body"), path, required=True)
-        assert body is not None
-        for child in children:
-            if child is not body:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-
-        return Document(
-            document_id=document_id,
-            title=title,
-            revision_id=revision_id,
-            suggestions_view_mode=mode,
-            tabs=self.decode_tabs(body, f"{path}/body"),
-        )
-
-    def decode_tabs(self, body: ElementTree.Element, path: str) -> list[Tab]:
-        validate_attributes(body, set(), path)
-        validate_whitespace(body, path)
-        tabs: list[Tab] = []
-        for index, child in enumerate(body):
-            if child.tag != gdocs_name("tab"):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-            tabs.append(self.decode_tab(child, f"{path}/g:tab[{index + 1}]"))
-        return tabs
-
-    def decode_tab(self, element: ElementTree.Element, path: str) -> Tab:
-        validate_attributes(
-            element,
-            {
-                gdocs_name("tab-id"),
-                gdocs_name("title"),
-                gdocs_name("index"),
-                gdocs_name("nesting-level"),
-                gdocs_name("parent-tab-id"),
-                gdocs_name("icon-emoji"),
-            },
-            path,
-        )
-        tab_id = required_string(element, gdocs_name("tab-id"), path)
-        title = required_string(element, gdocs_name("title"), path)
-        index = parse_integer(
-            required_string(element, gdocs_name("index"), path),
-            f"{path}/@g:index",
-        )
-        raw_level = element.get(gdocs_name("nesting-level"))
-        nesting_level = (
-            0
-            if raw_level is None
-            else parse_integer(raw_level, f"{path}/@g:nesting-level")
-        )
-        parent_tab_id = optional_string(element, gdocs_name("parent-tab-id"))
-        icon_emoji = optional_string(element, gdocs_name("icon-emoji"))
-
-        validate_whitespace(element, path)
-        children = list(element)
-        document_tab = extract_one_child(children, gdocs_name("document-tab"), path)
-        decoded_content = (
-            UNSET
-            if document_tab is None
-            else self.decode_document_tab(document_tab, f"{path}/g:document-tab")
-        )
-        child_tabs = extract_one_child(children, gdocs_name("child-tabs"), path)
-        decoded_children: list[Tab] = []
-        if child_tabs is not None:
-            child_path = f"{path}/g:child-tabs"
-            validate_attributes(child_tabs, set(), child_path)
-            validate_whitespace(child_tabs, child_path)
-            for index, child in enumerate(child_tabs):
-                if child.tag != gdocs_name("tab"):
-                    parse_error(
-                        child_path, f"unknown child element {display_name(child.tag)}"
-                    )
-                decoded_children.append(
-                    self.decode_tab(child, f"{child_path}/g:tab[{index + 1}]")
-                )
-        for child in children:
-            if child not in (document_tab, child_tabs):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        if nesting_level < 0:
-            parse_error(
-                f"{path}/@g:nesting-level", "nesting level must be non-negative"
-            )
-        return Tab(
-            tab_id=tab_id,
-            title=title,
-            index=index,
-            nesting_level=nesting_level,
-            parent_tab_id=parent_tab_id,
-            icon_emoji=icon_emoji,
-            content=decoded_content,
-            children=decoded_children,
-        )
-
-    def decode_document_tab(
-        self, element: ElementTree.Element, path: str
-    ) -> DocumentTab:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        children = list(element)
-        body = extract_one_child(children, gdocs_name("body"), path)
-        decoded_body = (
-            UNSET if body is None else self.decode_body(body, f"{path}/g:body")
-        )
-        headers = extract_one_child(children, gdocs_name("headers"), path)
-        decoded_headers = (
-            UNSET
-            if headers is None
-            else self.decode_segments(headers, "header", f"{path}/g:headers")
-        )
-        footers = extract_one_child(children, gdocs_name("footers"), path)
-        decoded_footers = (
-            UNSET
-            if footers is None
-            else self.decode_segments(footers, "footer", f"{path}/g:footers")
-        )
-        footnotes = extract_one_child(children, gdocs_name("footnotes"), path)
-        decoded_footnotes = (
-            UNSET
-            if footnotes is None
-            else self.decode_segments(footnotes, "footnote", f"{path}/g:footnotes")
-        )
-        lists = extract_one_child(children, gdocs_name("list-definitions"), path)
-        decoded_lists = (
-            UNSET
-            if lists is None
-            else self.decode_list_definitions(lists, f"{path}/g:list-definitions")
-        )
-        document_style = extract_one_child(children, gdocs_name("document-style"), path)
-        decoded_document_style = (
-            UNSET
-            if document_style is None
-            else self.decode_document_style(document_style, f"{path}/g:document-style")
-        )
-        named_styles = extract_one_child(children, gdocs_name("named-styles"), path)
-        decoded_named_styles = (
-            UNSET
-            if named_styles is None
-            else self.decode_named_styles(named_styles, f"{path}/g:named-styles")
-        )
-        supported = {
-            gdocs_name("body"),
-            gdocs_name("headers"),
-            gdocs_name("footers"),
-            gdocs_name("footnotes"),
-            gdocs_name("list-definitions"),
-            gdocs_name("document-style"),
-            gdocs_name("named-styles"),
-        }
-        for child in children:
-            if child.tag not in supported:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return DocumentTab(
-            body=decoded_body,
-            headers=decoded_headers,
-            footers=decoded_footers,
-            footnotes=decoded_footnotes,
-            lists=decoded_lists,
-            document_style=decoded_document_style,
-            named_styles=decoded_named_styles,
-        )
-
-    def decode_document_style(
-        self, element: ElementTree.Element, path: str
-    ) -> DocumentStyle:
-        attribute_names = {
-            "document-mode",
-            "page-width",
-            "page-height",
-            "margin-top",
-            "margin-bottom",
-            "margin-left",
-            "margin-right",
-            "margin-header",
-            "margin-footer",
-            "default-header-id",
-            "default-footer-id",
-            "even-page-header-id",
-            "even-page-footer-id",
-            "first-page-header-id",
-            "first-page-footer-id",
-            "use-even-page-header-footer",
-            "use-first-page-header-footer",
-            "use-custom-header-footer-margins",
-            "flip-page-orientation",
-            "page-number-start",
-        }
-        validate_attributes(
-            element, {gdocs_name(name) for name in attribute_names}, path
-        )
-        document_mode = self.optional_allowed(
-            element,
-            "document-mode",
-            {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"},
-            path,
-        )
-        page_width = self.optional_point(element, "page-width", path)
-        page_height = self.optional_point(element, "page-height", path)
-        margin_top = self.optional_point(element, "margin-top", path)
-        margin_bottom = self.optional_point(element, "margin-bottom", path)
-        margin_left = self.optional_point(element, "margin-left", path)
-        margin_right = self.optional_point(element, "margin-right", path)
-        margin_header = self.optional_point(element, "margin-header", path)
-        margin_footer = self.optional_point(element, "margin-footer", path)
-        default_header_id = optional_string(element, gdocs_name("default-header-id"))
-        default_footer_id = optional_string(element, gdocs_name("default-footer-id"))
-        even_page_header_id = optional_string(
-            element, gdocs_name("even-page-header-id")
-        )
-        even_page_footer_id = optional_string(
-            element, gdocs_name("even-page-footer-id")
-        )
-        first_page_header_id = optional_string(
-            element, gdocs_name("first-page-header-id")
-        )
-        first_page_footer_id = optional_string(
-            element, gdocs_name("first-page-footer-id")
-        )
-        use_even_page_header_footer = self.optional_boolean(
-            element, "use-even-page-header-footer", path
-        )
-        use_first_page_header_footer = self.optional_boolean(
-            element, "use-first-page-header-footer", path
-        )
-        use_custom_header_footer_margins = self.optional_boolean(
-            element, "use-custom-header-footer-margins", path
-        )
-        flip_page_orientation = self.optional_boolean(
-            element, "flip-page-orientation", path
-        )
-        page_number_start = self.optional_integer(element, "page-number-start", path)
-
-        validate_whitespace(element, path)
-        children = list(element)
-        background = extract_one_child(children, gdocs_name("background-color"), path)
-        background_color = (
-            UNSET
-            if background is None
-            else self.decode_optional_color(background, f"{path}/g:background-color")
-        )
-        for child in children:
-            if child is not background:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return DocumentStyle(
-            background_color=background_color,
-            document_mode=document_mode,  # type: ignore[arg-type]
-            page_width=page_width,
-            page_height=page_height,
-            margin_top=margin_top,
-            margin_bottom=margin_bottom,
-            margin_left=margin_left,
-            margin_right=margin_right,
-            margin_header=margin_header,
-            margin_footer=margin_footer,
-            default_header_id=default_header_id,
-            default_footer_id=default_footer_id,
-            even_page_header_id=even_page_header_id,
-            even_page_footer_id=even_page_footer_id,
-            first_page_header_id=first_page_header_id,
-            first_page_footer_id=first_page_footer_id,
-            use_even_page_header_footer=use_even_page_header_footer,
-            use_first_page_header_footer=use_first_page_header_footer,
-            use_custom_header_footer_margins=use_custom_header_footer_margins,
-            flip_page_orientation=flip_page_orientation,
-            page_number_start=page_number_start,
-        )
-
-    def decode_named_styles(
-        self, element: ElementTree.Element, path: str
-    ) -> list[NamedStyle]:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        result: list[NamedStyle] = []
-        for index, child in enumerate(element):
-            child_path = f"{path}/g:named-style[{index + 1}]"
-            if child.tag != gdocs_name("named-style"):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-            validate_attributes(
-                child,
-                {gdocs_name("type")} | text_style_attributes(),
-                child_path,
-            )
-            named_style_type = parse_allowed(
-                required_string(child, gdocs_name("type"), child_path),
-                _NAMED_STYLE_TYPES,
-                f"{child_path}/@g:type",
-            )
-            construct_text_style = parse_text_style(child, child_path)
-
-            validate_whitespace(child, child_path)
-            children = list(child)
-            anchor = extract_one_child(children, xhtml_name("a"), child_path)
-            link: Link | UnsetType = UNSET
-            if anchor is not None:
-                anchor_path = f"{child_path}/a"
-                link = decode_link(anchor, anchor_path)
-                validate_whitespace(anchor, anchor_path)
-                _validate_no_children(anchor, anchor_path)
-            text_style = construct_text_style(link)
-            paragraph = extract_one_child(
-                children, gdocs_name("paragraph-style"), child_path
-            )
-            paragraph_style = (
-                UNSET
-                if paragraph is None
-                else self._decode_paragraph_style_tag(
-                    self.decode_tag(
-                        paragraph,
-                        NamedParagraphStyleTag,
-                        f"{child_path}/g:paragraph-style",
-                    ),
-                    f"{child_path}/g:paragraph-style",
-                )
-            )
-            for metadata in children:
-                if metadata not in (anchor, paragraph):
-                    parse_error(
-                        child_path,
-                        f"unknown child element {display_name(metadata.tag)}",
-                    )
-            result.append(
-                NamedStyle(
-                    named_style_type=named_style_type,  # type: ignore[arg-type]
-                    text_style=text_style,
-                    paragraph_style=paragraph_style,
-                )
-            )
-        return result
-
-    def decode_list_definitions(
-        self, element: ElementTree.Element, path: str
-    ) -> dict[str, ListDefinition]:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        result: dict[str, ListDefinition] = {}
-        for index, child in enumerate(element):
-            child_path = f"{path}/g:list-definition[{index + 1}]"
-            if child.tag != gdocs_name("list-definition"):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-            validate_attributes(child, {gdocs_name("list-id")}, child_path)
-            list_id = required_string(child, gdocs_name("list-id"), child_path)
-            validate_whitespace(child, child_path)
-            if list_id in result:
-                parse_error(child_path, f"duplicate list key {list_id!r}")
-            levels: list[ListLevel] = []
-            for level_index, level in enumerate(child):
-                level_path = f"{child_path}/g:list-level[{level_index + 1}]"
-                if level.tag != gdocs_name("list-level"):
-                    parse_error(
-                        child_path, f"unknown child element {display_name(level.tag)}"
-                    )
-                levels.append(self.decode_list_level(level, level_path))
-            result[list_id] = ListDefinition(levels=levels)
-        return result
-
-    def decode_list_level(self, element: ElementTree.Element, path: str) -> ListLevel:
-        scalar_names = {
-            "glyph-format",
-            "glyph-type",
-            "glyph-symbol",
-            "alignment",
-            "indent-first-line",
-            "indent-start",
-            "start-number",
-        }
-        validate_attributes(
-            element,
-            {gdocs_name(name) for name in scalar_names} | text_style_attributes(),
-            path,
-        )
-        glyph_type = element.get(gdocs_name("glyph-type"))
-        glyph_symbol = element.get(gdocs_name("glyph-symbol"))
-        if glyph_type is not None:
-            glyph_type = parse_allowed(
-                glyph_type, _GLYPH_TYPES, f"{path}/@g:glyph-type"
-            )
-        glyph_format = required_string(element, gdocs_name("glyph-format"), path)
-        alignment = self.decode_default_allowed(
-            element,
-            "alignment",
-            _BULLET_ALIGNMENTS,
-            "BULLET_ALIGNMENT_UNSPECIFIED",
-            path,
-        )
-        indent_first_line = self.optional_point(element, "indent-first-line", path)
-        indent_start = self.optional_point(element, "indent-start", path)
-        start_number = self.decode_default_integer(element, "start-number", 0, path)
-        text_style = self.decode_metadata_text_style(element, path)
-        if (glyph_type is None) == (glyph_symbol is None):
-            parse_error(
-                path, "exactly one of g:glyph-type and g:glyph-symbol is required"
-            )
-        return construct_model(
-            path,
-            lambda: ListLevel(
-                glyph_format=glyph_format,
-                glyph_type=UNSET if glyph_type is None else glyph_type,  # type: ignore[arg-type]
-                glyph_symbol=UNSET if glyph_symbol is None else glyph_symbol,
-                alignment=alignment,  # type: ignore[arg-type]
-                indent_first_line=indent_first_line,
-                indent_start=indent_start,
-                start_number=start_number,
-                text_style=text_style,
-            ),
-        )
-
-    def decode_default_allowed(
-        self,
-        element: ElementTree.Element,
-        name: str,
-        allowed: set[str],
-        default: str,
-        path: str,
-    ) -> str:
-        raw = element.get(gdocs_name(name))
-        return (
-            default if raw is None else parse_allowed(raw, allowed, f"{path}/@g:{name}")
-        )
-
-    def decode_default_integer(
-        self, element: ElementTree.Element, name: str, default: int, path: str
-    ) -> int:
-        raw = element.get(gdocs_name(name))
-        return default if raw is None else parse_integer(raw, f"{path}/@g:{name}")
 
     def decode_metadata_text_style(
         self, element: ElementTree.Element, path: str
@@ -715,6 +277,189 @@ class _Decoder:
             if child is not anchor:
                 parse_error(path, f"unknown child element {display_name(child.tag)}")
         return text_style
+
+    def decode_document(self, root: HtmlTag) -> Document:
+        body = cast(BodyTag, cast(list[Node], root.children)[0])
+        return Document(
+            document_id=cast(str, root.document_id),
+            title=cast(str, root.title),
+            revision_id=root.revision_id,
+            suggestions_view_mode=root.suggestions_view_mode,  # type: ignore[arg-type]
+            tabs=[
+                self.decode_tab(cast(TabTag, child), f"/html/body/g:tab[{index}]")
+                for index, child in enumerate(cast(list[Node], body.children), 1)
+            ],
+        )
+
+    def decode_tab(self, element: TabTag, path: str) -> Tab:
+        content: DocumentTab | UnsetType = UNSET
+        children: list[Tab] = []
+        for child in cast(list[Node], element.children):
+            if isinstance(child, DocumentTabTag):
+                content = self.decode_document_tab(child, f"{path}/g:document-tab")
+            else:
+                assert isinstance(child, ChildTabsTag)
+                children = [
+                    self.decode_tab(
+                        cast(TabTag, tab), f"{path}/g:child-tabs/g:tab[{index}]"
+                    )
+                    for index, tab in enumerate(cast(list[Node], child.children), 1)
+                ]
+        return Tab(
+            tab_id=cast(str, element.tab_id),
+            title=cast(str, element.title),
+            index=cast(int, element.index),
+            nesting_level=cast(int, element.nesting_level),
+            parent_tab_id=element.parent_tab_id,
+            icon_emoji=element.icon_emoji,
+            content=content,
+            children=children,
+        )
+
+    def decode_document_tab(self, element: DocumentTabTag, path: str) -> DocumentTab:
+        values: dict[str, object] = {
+            "body": UNSET,
+            "headers": UNSET,
+            "footers": UNSET,
+            "footnotes": UNSET,
+            "lists": UNSET,
+            "document_style": UNSET,
+            "named_styles": UNSET,
+        }
+        for child in cast(list[Node], element.children):
+            if isinstance(child, DocumentStyleTag):
+                values["document_style"] = self.decode_document_style(
+                    child, f"{path}/g:document-style"
+                )
+            elif isinstance(child, NamedStylesTag):
+                values["named_styles"] = self.decode_named_styles(
+                    child, f"{path}/g:named-styles"
+                )
+            elif isinstance(child, ListDefinitionsTag):
+                values["lists"] = self.decode_list_definitions(
+                    child, f"{path}/g:list-definitions"
+                )
+            elif isinstance(child, DocumentBodyTag):
+                values["body"] = self.decode_body(
+                    _render_unmigrated_boundary_tag(child), f"{path}/g:body"
+                )
+            elif isinstance(child, (HeadersTag, FootersTag, FootnotesTag)):
+                name, item = {
+                    HeadersTag: ("headers", "header"),
+                    FootersTag: ("footers", "footer"),
+                    FootnotesTag: ("footnotes", "footnote"),
+                }[type(child)]
+                values[name] = self.decode_segments(
+                    _render_unmigrated_boundary_tag(child), item, f"{path}/g:{name}"
+                )
+        return DocumentTab(**cast(Any, values))
+
+    def decode_document_style(
+        self, element: DocumentStyleTag, path: str
+    ) -> DocumentStyle:
+        values = {
+            name: getattr(element, name)
+            for name in DocumentStyleTag.fields()
+            if name != "children"
+        }
+        background_color: Color | None | UnsetType = UNSET
+        children = cast(list[Node], element.children)
+        if children:
+            background = cast(BackgroundColorTag, children[0])
+            background_color = cast(Color | None, background.color)
+        return construct_model(
+            path,
+            lambda: DocumentStyle(
+                background_color=background_color, **cast(Any, values)
+            ),
+        )
+
+    def _decode_metadata_text_style_tag(
+        self, element: NamedStyleTag | ListLevelTag, path: str
+    ) -> TextStyle | UnsetType:
+        values = {
+            name: getattr(element, name)
+            for name in SpanTag.fields()
+            if name != "children"
+        }
+        link: Link | UnsetType = UNSET
+        for child in cast(list[Node], element.children):
+            if isinstance(child, MetadataAnchorTag):
+                link = self._decode_metadata_link(child)
+        if all(value is UNSET for value in (*values.values(), link)):
+            return UNSET
+        return construct_model(path, lambda: TextStyle(**cast(Any, values), link=link))
+
+    def _decode_metadata_link(self, anchor: MetadataAnchorTag) -> Link:
+        if anchor.href is not UNSET:
+            return UrlLink(url=cast(str, anchor.href))
+        if anchor.bookmark_id is not UNSET:
+            return BookmarkLink(
+                bookmark_id=cast(str, anchor.bookmark_id), tab_id=anchor.tab_id
+            )
+        if anchor.heading_id is not UNSET:
+            return HeadingLink(
+                heading_id=cast(str, anchor.heading_id), tab_id=anchor.tab_id
+            )
+        return TabLink(tab_id=cast(str, anchor.tab_id))
+
+    def decode_named_styles(
+        self, element: NamedStylesTag, path: str
+    ) -> list[NamedStyle]:
+        result: list[NamedStyle] = []
+        for index, child in enumerate(cast(list[Node], element.children), 1):
+            style = cast(NamedStyleTag, child)
+            child_path = f"{path}/g:named-style[{index}]"
+            paragraph_style: ParagraphStyle | UnsetType = UNSET
+            for metadata in cast(list[Node], style.children):
+                if isinstance(metadata, NamedParagraphStyleTag):
+                    paragraph_style = self._decode_paragraph_style_tag(
+                        metadata, f"{child_path}/g:paragraph-style"
+                    )
+            result.append(
+                NamedStyle(
+                    named_style_type=cast(Any, style.named_style_type),
+                    text_style=self._decode_metadata_text_style_tag(style, child_path),
+                    paragraph_style=paragraph_style,
+                )
+            )
+        return result
+
+    def decode_list_definitions(
+        self, element: ListDefinitionsTag, path: str
+    ) -> dict[str, ListDefinition]:
+        result: dict[str, ListDefinition] = {}
+        for index, child in enumerate(cast(list[Node], element.children), 1):
+            definition = cast(ListDefinitionTag, child)
+            child_path = f"{path}/g:list-definition[{index}]"
+            list_id = cast(str, definition.list_id)
+            if list_id in result:
+                parse_error(child_path, f"duplicate list key {list_id!r}")
+            result[list_id] = ListDefinition(
+                levels=[
+                    self.decode_list_level(cast(ListLevelTag, level), level_path)
+                    for level_index, level in enumerate(
+                        cast(list[Node], definition.children), 1
+                    )
+                    for level_path in [f"{child_path}/g:list-level[{level_index}]"]
+                ]
+            )
+        return result
+
+    def decode_list_level(self, element: ListLevelTag, path: str) -> ListLevel:
+        return construct_model(
+            path,
+            lambda: ListLevel(
+                glyph_format=cast(str, element.glyph_format),
+                glyph_type=element.glyph_type,  # type: ignore[arg-type]
+                glyph_symbol=element.glyph_symbol,
+                alignment=cast(Any, element.alignment),
+                indent_first_line=element.indent_first_line,
+                indent_start=element.indent_start,
+                start_number=cast(int, element.start_number),
+                text_style=self._decode_metadata_text_style_tag(element, path),
+            ),
+        )
 
     def decode_body(self, element: ElementTree.Element, path: str) -> Body:
         validate_attributes(element, set(), path)
@@ -1776,7 +1521,8 @@ def deserialize_document(xhtml: str) -> Document:
     _preflight_xml(payload)
     try:
         root = ElementTree.fromstring(payload)
-        return _Decoder().decode_document(root)
+        decoder = _Decoder()
+        return decoder.decode_document(decoder.decode_tag(root, HtmlTag, "/html"))
     except XHTMLParseError:
         raise
     except (ElementTree.ParseError, RecursionError) as error:
