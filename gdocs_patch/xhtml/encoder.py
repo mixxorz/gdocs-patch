@@ -92,27 +92,6 @@ _BULLET_PRESETS = {
 }
 
 
-def _encode_document_body_boundary(
-    encoder: "_Encoder", body: models.Body
-) -> tags.DocumentBodyTag:
-    element = encoder.encode_body(body)
-    return tags.DocumentBodyTag(children=list(element))
-
-
-def _encode_segments_boundary(
-    encoder: "_Encoder",
-    value: dict[str, models.Segment] | models.UnsetType,
-    wrapper_name: str,
-    item_name: str,
-    wrapper_type: type[tags.HeadersTag]
-    | type[tags.FootersTag]
-    | type[tags.FootnotesTag],
-) -> tags.HeadersTag | tags.FootersTag | tags.FootnotesTag:
-    parent = ElementTree.Element("boundary")
-    encoder.encode_segments(parent, wrapper_name, item_name, value)
-    return wrapper_type(children=list(parent[0]))
-
-
 def _omit_integer_default(
     value: object, default: int, field: str
 ) -> int | models.UnsetType:
@@ -194,21 +173,17 @@ class _Encoder:
                 )
             )
         if document_tab.body is not models.UNSET:
-            children.append(
-                _encode_document_body_boundary(
-                    self, cast(models.Body, document_tab.body)
-                )
-            )
-        for value, wrapper_name, item_name, wrapper_type in (
-            (document_tab.headers, "headers", "header", tags.HeadersTag),
-            (document_tab.footers, "footers", "footer", tags.FootersTag),
-            (document_tab.footnotes, "footnotes", "footnote", tags.FootnotesTag),
+            children.append(self.encode_body(cast(models.Body, document_tab.body)))
+        for value, wrapper_name, wrapper_type in (
+            (document_tab.headers, "headers", tags.HeadersTag),
+            (document_tab.footers, "footers", tags.FootersTag),
+            (document_tab.footnotes, "footnotes", tags.FootnotesTag),
         ):
             if value is models.UNSET:
                 continue
             children.append(
-                _encode_segments_boundary(
-                    self, value, wrapper_name, item_name, wrapper_type
+                self.encode_segments(
+                    cast(dict[str, models.Segment], value), wrapper_name, wrapper_type
                 )
             )
         return tags.DocumentTabTag(children=children)
@@ -286,27 +261,36 @@ class _Encoder:
                 raise ValueError(f"unsupported link type {type(link).__name__}")
         return values, children
 
-    def encode_body(self, body: models.Body) -> ElementTree.Element:
+    def encode_body(self, body: models.Body) -> tags.DocumentBodyTag:
         require_list(body.content, "Body.content")
-        element = ElementTree.Element(gdocs_name("body"))
         if not body.content or not isinstance(body.content[0], models.SectionBreak):
             raise ValueError("Body.content must begin with SectionBreak")
-        current: ElementTree.Element | None = None
+        sections: list[tags.SectionTag] = []
+        section_break: models.SectionBreak | None = None
         section_content: list[models.StructuralElement] = []
         for node in body.content:
             if isinstance(node, models.SectionBreak):
-                if current is not None:
-                    current.extend(
-                        self.encode_structural_sequence(section_content, body=True)
-                    )
-                current = ElementTree.SubElement(element, xhtml_name("section"))
-                self.encode_section_style(current, node)
+                if section_break is not None:
+                    sections.append(self.encode_section(section_break, section_content))
+                section_break = node
                 section_content = []
             else:
                 section_content.append(node)
-        assert current is not None
-        current.extend(self.encode_structural_sequence(section_content, body=True))
-        return element
+        assert section_break is not None
+        sections.append(self.encode_section(section_break, section_content))
+        return tags.DocumentBodyTag(children=sections)
+
+    def encode_section(
+        self,
+        section_break: models.SectionBreak,
+        content: list[models.StructuralElement],
+    ) -> tags.SectionTag:
+        return tags.SectionTag(
+            children=[
+                self.encode_section_style(section_break),
+                *self.encode_structural_sequence(content, body=True),
+            ]
+        )
 
     def encode_list_definitions(
         self, definitions: dict[str, models.ListDefinition]
@@ -356,67 +340,29 @@ class _Encoder:
             element.append(encoded)
 
     def encode_section_style(
-        self, section: ElementTree.Element, section_break: models.SectionBreak
-    ) -> None:
+        self, section_break: models.SectionBreak
+    ) -> tags.SectionStyleTag:
         style = section_break.style
-        element = ElementTree.SubElement(section, gdocs_name("section-style"))
-        for value, name, allowed in (
-            (
-                style.column_separator_style,
-                "column-separator-style",
-                _SECTION_SEPARATOR_STYLES,
-            ),
-            (style.content_direction, "content-direction", _DIRECTIONS),
-            (style.section_type, "section-type", _SECTION_TYPES),
-        ):
-            if value is not models.UNSET:
-                element.set(
-                    gdocs_name(name),
-                    require_enum(value, allowed, f"SectionStyle.{name}"),
-                )
-        for value, name in (
-            (style.default_header_id, "default-header-id"),
-            (style.default_footer_id, "default-footer-id"),
-            (style.even_page_header_id, "even-page-header-id"),
-            (style.even_page_footer_id, "even-page-footer-id"),
-            (style.first_page_header_id, "first-page-header-id"),
-            (style.first_page_footer_id, "first-page-footer-id"),
-        ):
-            if value is not models.UNSET:
-                element.set(
-                    gdocs_name(name), require_string(value, f"SectionStyle.{name}")
-                )
-        if style.page_number_start is not models.UNSET:
-            element.set(
-                gdocs_name("page-number-start"),
-                str(
-                    require_integer(
-                        style.page_number_start, "SectionStyle.page_number_start"
-                    )
-                ),
-            )
-        self.encode_boolean_attribute(
-            element, "use-first-page-header-footer", style.use_first_page_header_footer
-        )
-        self.encode_boolean_attribute(
-            element, "flip-page-orientation", style.flip_page_orientation
-        )
-        for value, name in (
-            (style.margin_top, "margin-top"),
-            (style.margin_bottom, "margin-bottom"),
-            (style.margin_left, "margin-left"),
-            (style.margin_right, "margin-right"),
-            (style.margin_header, "margin-header"),
-            (style.margin_footer, "margin-footer"),
-        ):
-            self.encode_point_attribute(element, name, value)
+        values = {
+            name: getattr(style, name)
+            for name in tags.SectionStyleTag.fields()
+            if name != "children"
+        }
+        children: list[Tag] = []
         if style.columns is not models.UNSET:
             require_list(style.columns, "SectionStyle.columns")
-            columns = ElementTree.SubElement(element, gdocs_name("columns"))
-            for column in cast(list[models.SectionColumn], style.columns):
-                child = ElementTree.SubElement(columns, gdocs_name("column"))
-                self.encode_point_attribute(child, "width", column.width)
-                self.encode_point_attribute(child, "padding-end", column.padding_end)
+            children.append(
+                tags.SectionColumnsTag(
+                    children=[
+                        tags.SectionColumnTag(
+                            width=column.width,
+                            padding_end=column.padding_end,
+                        )
+                        for column in cast(list[models.SectionColumn], style.columns)
+                    ]
+                )
+            )
+        return tags.SectionStyleTag(children=children, **values)
 
     def encode_boolean_attribute(
         self, element: ElementTree.Element, name: str, value: bool | models.UnsetType
@@ -463,45 +409,49 @@ class _Encoder:
 
     def encode_segments(
         self,
-        document_tab: ElementTree.Element,
+        segments: dict[str, models.Segment],
         wrapper_name: str,
-        item_name: str,
-        segments: dict[str, models.Segment] | models.UnsetType,
-    ) -> None:
-        if segments is models.UNSET:
-            return
+        wrapper_type: type[tags.HeadersTag]
+        | type[tags.FootersTag]
+        | type[tags.FootnotesTag],
+    ) -> tags.HeadersTag | tags.FootersTag | tags.FootnotesTag:
         require_dict(segments, f"DocumentTab.{wrapper_name}")
-        decoded_segments = cast(dict[str, models.Segment], segments)
-        wrapper = ElementTree.SubElement(document_tab, gdocs_name(wrapper_name))
-        for key, segment in decoded_segments.items():
-            item = ElementTree.SubElement(wrapper, gdocs_name(item_name))
-            item.set(
-                gdocs_name("key"),
-                require_string(key, f"DocumentTab.{wrapper_name} key"),
-            )
-            item.set(
-                gdocs_name("segment-id"),
-                require_string(segment.segment_id, "Segment.segment_id"),
-            )
+        item_type: type[tags.SegmentTag] = {
+            "headers": tags.HeaderTag,
+            "footers": tags.FooterTag,
+            "footnotes": tags.FootnoteTag,
+        }[wrapper_name]
+        children: list[tags.SegmentTag] = []
+        for key, segment in segments.items():
             require_list(segment.content, "Segment.content")
-            item.extend(self.encode_structural_sequence(segment.content))
+            children.append(
+                item_type(
+                    key=require_string(key, f"DocumentTab.{wrapper_name} key"),
+                    segment_id=require_string(segment.segment_id, "Segment.segment_id"),
+                    children=self.encode_structural_sequence(segment.content),
+                )
+            )
+        return wrapper_type(children=children)
 
     def encode_structural_sequence(
         self, elements: list[models.StructuralElement], body: bool = False
-    ) -> list[ElementTree.Element]:
+    ) -> list[Tag]:
         require_list(elements, "structural content")
-        encoded: list[ElementTree.Element] = []
+        encoded: list[Tag] = []
         index = 0
         while index < len(elements):
             element = elements[index]
             if isinstance(element, models.SectionBreak):
-                if body:
-                    raise ValueError("SectionBreak must be projected as a section")
-                raise ValueError("SectionBreak is only valid in a body")
+                message = (
+                    "SectionBreak must be projected as a section"
+                    if body
+                    else "SectionBreak is only valid in a body"
+                )
+                raise ValueError(message)
             if isinstance(element, models.Paragraph):
                 key = self.bullet_group_key(element)
                 if key is None:
-                    encoded.append(self.encode_paragraph(element))
+                    xml = self.encode_paragraph(element)
                 else:
                     end = index + 1
                     while end < len(elements):
@@ -511,23 +461,48 @@ class _Encoder:
                         if self.bullet_group_key(candidate) != key:
                             break
                         end += 1
-                    encoded.append(self.encode_list(elements[index:end], key))  # type: ignore[arg-type]
+                    xml = self.encode_list(elements[index:end], key)  # type: ignore[arg-type]
                     index = end
+                encoded.append(self._structural_boundary_tag(xml))
+                if key is not None:
                     continue
             elif isinstance(element, models.Table):
-                encoded.append(self.encode_table(element))
-            elif isinstance(element, models.TableOfContents):
-                table_of_contents = ElementTree.Element(gdocs_name("table-of-contents"))
-                table_of_contents.extend(
-                    self.encode_structural_sequence(element.content, body=False)
+                encoded.append(
+                    self._structural_boundary_tag(self.encode_table(element))
                 )
-                encoded.append(table_of_contents)
+            elif isinstance(element, models.TableOfContents):
+                encoded.append(
+                    tags.TableOfContentsTag(
+                        children=self.encode_structural_sequence(element.content)
+                    )
+                )
             else:
                 raise ValueError(
                     f"unsupported structural element {type(element).__name__}"
                 )
             index += 1
         return encoded
+
+    def _structural_boundary_tag(self, element: ElementTree.Element) -> Tag:
+        tag_type = {
+            value.tag_name: value
+            for value in (
+                tags.GenericParagraphTag,
+                tags.UnspecifiedParagraphTag,
+                tags.ParagraphTag,
+                tags.TitleTag,
+                tags.SubtitleTag,
+                tags.Heading1Tag,
+                tags.Heading2Tag,
+                tags.Heading3Tag,
+                tags.Heading4Tag,
+                tags.Heading5Tag,
+                tags.Heading6Tag,
+                tags.ListTag,
+                tags.TableTag,
+            )
+        }[element.tag]
+        return tag_type(payload=element)
 
     def bullet_group_key(self, paragraph: models.Paragraph) -> tuple[str, str] | None:
         bullet = paragraph.bullet
@@ -631,7 +606,10 @@ class _Encoder:
             metadata = self.encode_table_cell_style(style)
             if metadata is not None:
                 element.append(metadata)
-        element.extend(self.encode_structural_sequence(cell.content, body=False))
+        element.extend(
+            XHTMLEncoder().encode_element(tag)
+            for tag in self.encode_structural_sequence(cell.content, body=False)
+        )
         return element
 
     def encode_table_cell_style(
@@ -698,28 +676,6 @@ class _Encoder:
 
         require_list(paragraph.elements, "Paragraph.elements")
         elements = paragraph.elements
-        if (
-            tag == tags.ParagraphTag.tag_name
-            and paragraph.positioned_object_ids is models.UNSET
-            and all(isinstance(item, models.TextRun) for item in elements)
-        ):
-            spans: list[tags.SpanTag] = []
-            for item in elements:
-                assert isinstance(item, models.TextRun)
-                span, link = self._encode_text_run_span(item)
-                if link is not models.UNSET:
-                    break
-                spans.append(span)
-            else:
-                style_tag = (
-                    None if style is None else self._encode_paragraph_style_tag(style)
-                )
-                children: list[Tag] = [*spans]
-                if style_tag is not None:
-                    children.insert(0, style_tag)
-                return XHTMLEncoder().encode_element(
-                    tags.ParagraphTag(children=children)
-                )
 
         metadata_tag = (
             None if style is None else self._encode_paragraph_style_tag(style)

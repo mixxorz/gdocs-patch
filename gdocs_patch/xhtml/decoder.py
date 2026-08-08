@@ -1,4 +1,5 @@
 import re
+import sys
 from dataclasses import dataclass
 from typing import Any, Literal, Never, cast
 from xml.etree import ElementTree
@@ -34,7 +35,6 @@ from .base import (
 )
 from .nodes import DecodeError, Node, Tag, Text
 from .nodes import Decoder as XHTMLDecoder
-from .nodes import Encoder as XHTMLEncoder
 
 _PARAGRAPH_TAGS = {
     gdocs_name("paragraph"): models.UNSET,
@@ -140,23 +140,21 @@ class _TableCellStyleFields:
         )
 
 
-def _render_unmigrated_boundary_tag(
-    tag: tags.DocumentBodyTag | tags.HeadersTag | tags.FootersTag | tags.FootnotesTag,
-) -> ElementTree.Element:
-    return XHTMLEncoder().encode_element(tag)
-
-
 class _Decoder:
     def decode_tag[T: Tag](
         self, element: ElementTree.Element, tag_type: type[T], path: str
     ) -> T:
+        recursion_limit = sys.getrecursionlimit()
         try:
+            sys.setrecursionlimit(max(recursion_limit, MAX_ELEMENT_DEPTH * 20))
             return XHTMLDecoder().decode_element(element, tag_type)
         except DecodeError as error:
             error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
             if error.attribute_name is not None:
                 error_path += f"/@{display_name(error.attribute_name)}"
             message = str(error)
+            if message == "required attribute is missing":
+                message = "missing required attribute"
             if error.attribute_name is not None:
                 if error.attribute_name.startswith(
                     "{"
@@ -172,6 +170,8 @@ class _Decoder:
             if error.element_name is not None:
                 message += f" {display_name(error.element_name)}"
             parse_error(error_path, message, cause=error)
+        finally:
+            sys.setrecursionlimit(recursion_limit)
 
     def decode_metadata_text_style(
         self, element: ElementTree.Element, path: str
@@ -256,9 +256,7 @@ class _Decoder:
                     child, f"{path}/g:list-definitions"
                 )
             elif isinstance(child, tags.DocumentBodyTag):
-                values["body"] = self.decode_body(
-                    _render_unmigrated_boundary_tag(child), f"{path}/g:body"
-                )
+                values["body"] = self.decode_body(child, f"{path}/g:body")
             elif isinstance(
                 child, (tags.HeadersTag, tags.FootersTag, tags.FootnotesTag)
             ):
@@ -267,9 +265,7 @@ class _Decoder:
                     tags.FootersTag: ("footers", "footer"),
                     tags.FootnotesTag: ("footnotes", "footnote"),
                 }[type(child)]
-                values[name] = self.decode_segments(
-                    _render_unmigrated_boundary_tag(child), item, f"{path}/g:{name}"
-                )
+                values[name] = self.decode_segments(child, item, f"{path}/g:{name}")
         return models.DocumentTab(**cast(Any, values))
 
     def decode_document_style(
@@ -383,152 +379,116 @@ class _Decoder:
             ),
         )
 
-    def decode_body(self, element: ElementTree.Element, path: str) -> models.Body:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        if not list(element):
-            parse_error(path, "body must contain at least one section")
+    def decode_body(self, element: tags.DocumentBodyTag, path: str) -> models.Body:
         content: list[models.StructuralElement] = []
-        for index, section in enumerate(element):
-            section_path = f"{path}/section[{index + 1}]"
-            if section.tag != xhtml_name("section"):
-                parse_error(path, "body content must be section elements")
-            validate_attributes(section, set(), section_path)
-            validate_whitespace(section, section_path)
-            children = list(section)
-            style = extract_one_child(
-                children, gdocs_name("section-style"), section_path, required=True
+        sections = cast(list[Node], element.children)
+        if not sections:
+            parse_error(path, "body must contain at least one section")
+        for index, child in enumerate(sections, 1):
+            section = cast(tags.SectionTag, child)
+            section_path = f"{path}/section[{index}]"
+            section_children = cast(list[Node], section.children)
+            style = next(
+                item
+                for item in section_children
+                if isinstance(item, tags.SectionStyleTag)
             )
-            assert style is not None
-            style_path = f"{section_path}/g:section-style"
             content.append(
-                models.SectionBreak(style=self.decode_section_style(style, style_path))
+                models.SectionBreak(
+                    style=self.decode_section_style(
+                        style, f"{section_path}/g:section-style"
+                    )
+                )
             )
             content.extend(
                 self.decode_structural_sequence(
-                    [child for child in children if child is not style],
+                    [item for item in section_children if item is not style],
                     section_path,
-                    body=True,
                 )
             )
         return models.Body(content=content)
 
     def decode_section_style(
-        self, element: ElementTree.Element, path: str
+        self, element: tags.SectionStyleTag, path: str
     ) -> models.SectionStyle:
-        scalar_names = {
-            "column-separator-style",
-            "content-direction",
-            "section-type",
-            "default-header-id",
-            "default-footer-id",
-            "even-page-header-id",
-            "even-page-footer-id",
-            "first-page-header-id",
-            "first-page-footer-id",
-            "use-first-page-header-footer",
-            "flip-page-orientation",
-            "page-number-start",
-            "margin-top",
-            "margin-bottom",
-            "margin-left",
-            "margin-right",
-            "margin-header",
-            "margin-footer",
+        values = {
+            name: getattr(element, name)
+            for name in tags.SectionStyleTag.fields()
+            if name != "children"
         }
-        validate_attributes(element, {gdocs_name(name) for name in scalar_names}, path)
-        column_separator_style = self.optional_allowed(
-            element,
-            "column-separator-style",
-            {"COLUMN_SEPARATOR_STYLE_UNSPECIFIED", "NONE", "BETWEEN_EACH_COLUMN"},
-            path,
-        )
-        content_direction = self.optional_allowed(
-            element, "content-direction", _DIRECTIONS, path
-        )
-        section_type = self.optional_allowed(
-            element,
-            "section-type",
-            {"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"},
-            path,
-        )
-        default_header_id = optional_string(element, gdocs_name("default-header-id"))
-        default_footer_id = optional_string(element, gdocs_name("default-footer-id"))
-        even_page_header_id = optional_string(
-            element, gdocs_name("even-page-header-id")
-        )
-        even_page_footer_id = optional_string(
-            element, gdocs_name("even-page-footer-id")
-        )
-        first_page_header_id = optional_string(
-            element, gdocs_name("first-page-header-id")
-        )
-        first_page_footer_id = optional_string(
-            element, gdocs_name("first-page-footer-id")
-        )
-        use_first_page_header_footer = self.optional_boolean(
-            element, "use-first-page-header-footer", path
-        )
-        flip_page_orientation = self.optional_boolean(
-            element, "flip-page-orientation", path
-        )
-        page_number_start = self.optional_integer(element, "page-number-start", path)
-        margin_top = self.optional_point(element, "margin-top", path)
-        margin_bottom = self.optional_point(element, "margin-bottom", path)
-        margin_left = self.optional_point(element, "margin-left", path)
-        margin_right = self.optional_point(element, "margin-right", path)
-        margin_header = self.optional_point(element, "margin-header", path)
-        margin_footer = self.optional_point(element, "margin-footer", path)
-
-        validate_whitespace(element, path)
-        children = list(element)
-        columns_element = extract_one_child(children, gdocs_name("columns"), path)
         columns: list[models.SectionColumn] | models.UnsetType = models.UNSET
-        if columns_element is not None:
-            columns = []
-            columns_path = f"{path}/g:columns"
-            validate_attributes(columns_element, set(), columns_path)
-            validate_whitespace(columns_element, columns_path)
-            for index, child in enumerate(columns_element):
-                child_path = f"{columns_path}/g:column[{index + 1}]"
-                if child.tag != gdocs_name("column"):
-                    parse_error(
-                        columns_path, f"unknown child element {display_name(child.tag)}"
-                    )
-                validate_attributes(
-                    child, {gdocs_name("width"), gdocs_name("padding-end")}, child_path
+        children = cast(list[Node], element.children)
+        if children:
+            wrapper = cast(tags.SectionColumnsTag, children[0])
+            columns = [
+                models.SectionColumn(
+                    width=cast(models.Dimension, column.width),
+                    padding_end=cast(models.Dimension, column.padding_end),
                 )
-                width = self.required_point(child, "width", child_path)
-                padding_end = self.required_point(child, "padding-end", child_path)
-                validate_whitespace(child, child_path)
-                _validate_no_children(child, child_path)
-                columns.append(
-                    models.SectionColumn(width=width, padding_end=padding_end)
-                )
-        for child in children:
-            if child is not columns_element:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return models.SectionStyle(
-            columns=columns,
-            column_separator_style=column_separator_style,  # type: ignore[arg-type]
-            content_direction=content_direction,  # type: ignore[arg-type]
-            section_type=section_type,  # type: ignore[arg-type]
-            default_header_id=default_header_id,
-            default_footer_id=default_footer_id,
-            even_page_header_id=even_page_header_id,
-            even_page_footer_id=even_page_footer_id,
-            first_page_header_id=first_page_header_id,
-            first_page_footer_id=first_page_footer_id,
-            use_first_page_header_footer=use_first_page_header_footer,
-            flip_page_orientation=flip_page_orientation,
-            page_number_start=page_number_start,
-            margin_top=margin_top,
-            margin_bottom=margin_bottom,
-            margin_left=margin_left,
-            margin_right=margin_right,
-            margin_header=margin_header,
-            margin_footer=margin_footer,
+                for child in cast(list[Node], wrapper.children)
+                for column in [cast(tags.SectionColumnTag, child)]
+            ]
+        return construct_model(
+            path,
+            lambda: models.SectionStyle(columns=columns, **cast(Any, values)),
         )
+
+    def decode_segments(
+        self,
+        wrapper: tags.HeadersTag | tags.FootersTag | tags.FootnotesTag,
+        item_name: str,
+        path: str,
+    ) -> dict[str, models.Segment]:
+        result: dict[str, models.Segment] = {}
+        for index, child in enumerate(cast(list[Node], wrapper.children), 1):
+            item = cast(tags.SegmentTag, child)
+            item_path = f"{path}/g:{item_name}[{index}]"
+            key = cast(str, item.key)
+            if key in result:
+                parse_error(item_path, f"duplicate segment key {key!r}")
+            result[key] = models.Segment(
+                segment_id=cast(str, item.segment_id),
+                content=self.decode_structural_sequence(
+                    cast(list[Node], item.children), item_path
+                ),
+            )
+        return result
+
+    def decode_structural_sequence(
+        self,
+        elements: list[Node],
+        path: str,
+        body: bool = False,
+    ) -> list[models.StructuralElement]:
+        del body
+        decoded: list[models.StructuralElement] = []
+        counts: dict[str, int] = {}
+        for element in elements:
+            assert isinstance(element, Tag)
+            name = display_name(cast(str, element.tag_name))
+            counts[name] = counts.get(name, 0) + 1
+            child_path = f"{path}/{name}[{counts[name]}]"
+            if isinstance(element, tags.SectionTag):
+                parse_error(child_path, "section elements are only valid in a body")
+            if isinstance(element, tags.TableOfContentsTag):
+                decoded.append(
+                    models.TableOfContents(
+                        content=self.decode_structural_sequence(
+                            cast(list[Node], element.children), child_path
+                        )
+                    )
+                )
+                continue
+            if not isinstance(element, tags._OpaqueStructuralTag):  # pyright: ignore[reportPrivateUsage]
+                parse_error(child_path, "unknown structural element")
+            payload = cast(ElementTree.Element, element.payload)
+            if isinstance(element, tags.ListTag):
+                decoded.extend(self.decode_list(payload, child_path))
+            elif isinstance(element, tags.TableTag):
+                decoded.append(self.decode_table(payload, child_path))
+            else:
+                decoded.append(self.decode_paragraph(payload, child_path))
+        return decoded
 
     def optional_allowed(
         self, element: ElementTree.Element, name: str, allowed: set[str], path: str
@@ -574,63 +534,26 @@ class _Decoder:
             magnitude=parse_float(value, f"{path}/@g:{name}"), unit="PT"
         )
 
-    def decode_segments(
-        self, wrapper: ElementTree.Element, item_name: str, path: str
-    ) -> dict[str, models.Segment]:
-        validate_attributes(wrapper, set(), path)
-        validate_whitespace(wrapper, path)
-        result: dict[str, models.Segment] = {}
-        for index, item in enumerate(wrapper):
-            item_path = f"{path}/g:{item_name}[{index + 1}]"
-            if item.tag != gdocs_name(item_name):
-                parse_error(path, f"unknown child element {display_name(item.tag)}")
-            validate_attributes(
-                item, {gdocs_name("key"), gdocs_name("segment-id")}, item_path
+    def _structural_tag_type(self, name: str) -> type[Tag]:
+        return {
+            value.tag_name: value
+            for value in (
+                tags.GenericParagraphTag,
+                tags.UnspecifiedParagraphTag,
+                tags.ParagraphTag,
+                tags.TitleTag,
+                tags.SubtitleTag,
+                tags.Heading1Tag,
+                tags.Heading2Tag,
+                tags.Heading3Tag,
+                tags.Heading4Tag,
+                tags.Heading5Tag,
+                tags.Heading6Tag,
+                tags.ListTag,
+                tags.TableTag,
+                tags.TableOfContentsTag,
             )
-            key = required_string(item, gdocs_name("key"), item_path)
-            segment_id = required_string(item, gdocs_name("segment-id"), item_path)
-            validate_whitespace(item, item_path)
-            if key in result:
-                parse_error(item_path, f"duplicate segment key {key!r}")
-            result[key] = models.Segment(
-                segment_id=segment_id,
-                content=self.decode_structural_sequence(list(item), item_path),
-            )
-        return result
-
-    def decode_structural_sequence(
-        self,
-        elements: list[ElementTree.Element],
-        path: str,
-        body: bool = False,
-    ) -> list[models.StructuralElement]:
-        decoded: list[models.StructuralElement] = []
-        for index, element in enumerate(elements):
-            child_path = f"{path}/*[{index + 1}]"
-            if element.tag == xhtml_name("section"):
-                parse_error(child_path, "section elements are only valid in a body")
-            if element.tag in _PARAGRAPH_TAGS:
-                decoded.append(self.decode_paragraph(element, child_path))
-            elif element.tag == gdocs_name("list"):
-                decoded.extend(self.decode_list(element, child_path))
-            elif element.tag == xhtml_name("table"):
-                decoded.append(self.decode_table(element, child_path))
-            elif element.tag == gdocs_name("table-of-contents"):
-                validate_attributes(element, set(), child_path)
-                validate_whitespace(element, child_path)
-                decoded.append(
-                    models.TableOfContents(
-                        content=self.decode_structural_sequence(
-                            list(element), child_path, body=False
-                        )
-                    )
-                )
-            else:
-                parse_error(
-                    child_path,
-                    f"unknown structural element {display_name(element.tag)}",
-                )
-        return decoded
+        }[name]
 
     def decode_list(
         self, element: ElementTree.Element, path: str
@@ -842,7 +765,17 @@ class _Decoder:
             else self.decode_table_cell_style(metadata, f"{path}/g:cell-style")
         )
         content = self.decode_structural_sequence(
-            [child for child in children if child is not metadata], path
+            [
+                self.decode_tag(
+                    child,
+                    self._structural_tag_type(child.tag),
+                    f"{path}/*[{index}]",
+                )
+                for index, child in enumerate(
+                    (child for child in children if child is not metadata), 1
+                )
+            ],
+            path,
         )
         self.validate_cell_span(element, row_span, "rowspan", path)
         self.validate_cell_span(element, column_span, "colspan", path)
@@ -1010,10 +943,10 @@ class _Decoder:
     ) -> models.Paragraph:
         children = list(element)
         declarative_tags = {tags.SpanTag.tag_name, tags.ParagraphStyleTag.tag_name}
-        if element.tag == tags.ParagraphTag.tag_name and all(
+        if element.tag == tags.SimpleParagraphTag.tag_name and all(
             child.tag in declarative_tags for child in children
         ):
-            paragraph_tag = self.decode_tag(element, tags.ParagraphTag, path)
+            paragraph_tag = self.decode_tag(element, tags.SimpleParagraphTag, path)
             paragraph_children = cast(list[Node], paragraph_tag.children)
             style_tag = next(
                 (

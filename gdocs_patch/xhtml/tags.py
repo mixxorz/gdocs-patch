@@ -27,27 +27,32 @@ from .nodes import (
 )
 
 
-class _BoundaryChildren(Field[list[ElementTree.Element]]):
-    """Unmigrated child XML retained only at the generic boundary."""
+class _BoundaryElement(Field[ElementTree.Element]):
+    """Unmigrated element internals retained below a declarative boundary."""
 
-    def get_default(self) -> list[ElementTree.Element]:
-        return []
+    required = True
+
+    def validate(self, value: ElementTree.Element | UnsetType) -> None:
+        if value is UNSET or not isinstance(value, ElementTree.Element):
+            raise ValidationError("boundary element is required")
 
     def decode_from(
         self, element: ElementTree.Element, decoder: Decoder
-    ) -> list[ElementTree.Element]:
-        if element.text is not None and element.text.strip():
-            decoder.fail("unexpected text")
-        return list(element)
+    ) -> ElementTree.Element:
+        del decoder
+        return element
 
     def encode_into(
         self,
-        value: list[ElementTree.Element] | UnsetType,
+        value: ElementTree.Element | UnsetType,
         element: ElementTree.Element,
         encoder: Encoder,
     ) -> None:
         del encoder
-        element.extend(cast(list[ElementTree.Element], value))
+        source = cast(ElementTree.Element, value)
+        element.attrib.update(source.attrib)
+        element.text = source.text
+        element.extend(list(source))
 
 
 def _text_style_attributes() -> tuple[
@@ -470,28 +475,203 @@ class ListDefinitionsTag(Tag):
     children = Children(Child(ListDefinitionTag))
 
 
+class _OpaqueStructuralTag(Tag):
+    payload = _BoundaryElement()
+
+    @classmethod
+    def decode_from(
+        cls, element: ElementTree.Element, decoder: Decoder
+    ) -> "_OpaqueStructuralTag":
+        if element.tag != cls.tag_name:
+            decoder.fail(f"expected <{cls.tag_name}>, got <{element.tag}>")
+        return cls(payload=element)
+
+
+class GenericParagraphTag(_OpaqueStructuralTag):
+    tag_name = gdocs_name("paragraph")
+
+
+class UnspecifiedParagraphTag(_OpaqueStructuralTag):
+    tag_name = gdocs_name("named-style-unspecified")
+
+
+class ParagraphTag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("p")
+
+
+class SimpleParagraphTag(Tag):
+    tag_name = xhtml_name("p")
+
+    children = Children(
+        Child(ParagraphStyleTag, max_num=1),
+        Child(SpanTag),
+        text_error="unexpected text content",
+        tail_error="unexpected text between paragraph elements",
+    )
+
+
+class TitleTag(_OpaqueStructuralTag):
+    tag_name = gdocs_name("title")
+
+
+class SubtitleTag(_OpaqueStructuralTag):
+    tag_name = gdocs_name("subtitle")
+
+
+class Heading1Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h1")
+
+
+class Heading2Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h2")
+
+
+class Heading3Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h3")
+
+
+class Heading4Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h4")
+
+
+class Heading5Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h5")
+
+
+class Heading6Tag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("h6")
+
+
+class ListTag(_OpaqueStructuralTag):
+    tag_name = gdocs_name("list")
+
+
+class TableTag(_OpaqueStructuralTag):
+    tag_name = xhtml_name("table")
+
+
+def _structural_children(*, permit_sections: bool = False) -> Children:
+    specs = [
+        Child(lambda: GenericParagraphTag),
+        Child(lambda: UnspecifiedParagraphTag),
+        Child(lambda: ParagraphTag),
+        Child(lambda: TitleTag),
+        Child(lambda: SubtitleTag),
+        Child(lambda: Heading1Tag),
+        Child(lambda: Heading2Tag),
+        Child(lambda: Heading3Tag),
+        Child(lambda: Heading4Tag),
+        Child(lambda: Heading5Tag),
+        Child(lambda: Heading6Tag),
+        Child(lambda: ListTag),
+        Child(lambda: TableTag),
+        Child(lambda: TableOfContentsTag),
+    ]
+    if permit_sections:
+        specs.append(Child(lambda: SectionTag))
+    return Children(*specs)
+
+
+class SectionColumnTag(Tag):
+    tag_name = gdocs_name("column")
+
+    width = PointAttribute(gdocs_name("width"), required=True)
+    padding_end = PointAttribute(gdocs_name("padding-end"), required=True)
+    children = Children()
+
+
+class SectionColumnsTag(Tag):
+    tag_name = gdocs_name("columns")
+
+    children = Children(Child(SectionColumnTag))
+
+
+class SectionStyleTag(Tag):
+    tag_name = gdocs_name("section-style")
+
+    column_separator_style = ChoiceAttribute(
+        gdocs_name("column-separator-style"),
+        choices={"COLUMN_SEPARATOR_STYLE_UNSPECIFIED", "NONE", "BETWEEN_EACH_COLUMN"},
+    )
+    content_direction = ChoiceAttribute(
+        gdocs_name("content-direction"),
+        choices={"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"},
+    )
+    section_type = ChoiceAttribute(
+        gdocs_name("section-type"),
+        choices={"SECTION_TYPE_UNSPECIFIED", "CONTINUOUS", "NEXT_PAGE"},
+    )
+    default_header_id = StringAttribute(gdocs_name("default-header-id"))
+    default_footer_id = StringAttribute(gdocs_name("default-footer-id"))
+    even_page_header_id = StringAttribute(gdocs_name("even-page-header-id"))
+    even_page_footer_id = StringAttribute(gdocs_name("even-page-footer-id"))
+    first_page_header_id = StringAttribute(gdocs_name("first-page-header-id"))
+    first_page_footer_id = StringAttribute(gdocs_name("first-page-footer-id"))
+    use_first_page_header_footer = BooleanAttribute(
+        gdocs_name("use-first-page-header-footer")
+    )
+    flip_page_orientation = BooleanAttribute(gdocs_name("flip-page-orientation"))
+    page_number_start = IntegerAttribute(gdocs_name("page-number-start"))
+    margin_top = PointAttribute(gdocs_name("margin-top"))
+    margin_bottom = PointAttribute(gdocs_name("margin-bottom"))
+    margin_left = PointAttribute(gdocs_name("margin-left"))
+    margin_right = PointAttribute(gdocs_name("margin-right"))
+    margin_header = PointAttribute(gdocs_name("margin-header"))
+    margin_footer = PointAttribute(gdocs_name("margin-footer"))
+    children = Children(Child(SectionColumnsTag, max_num=1))
+
+
+class SectionTag(Tag):
+    tag_name = xhtml_name("section")
+
+    children = Children(
+        Child(SectionStyleTag, min_num=1, max_num=1), *_structural_children().specs
+    )
+
+
 class DocumentBodyTag(Tag):
     tag_name = gdocs_name("body")
 
-    children = _BoundaryChildren()
+    children = _structural_children(permit_sections=True)
+
+
+class TableOfContentsTag(Tag):
+    tag_name = gdocs_name("table-of-contents")
+
+    children = _structural_children(permit_sections=True)
+
+
+class SegmentTag(Tag):
+    key = StringAttribute(gdocs_name("key"), required=True)
+    segment_id = StringAttribute(gdocs_name("segment-id"), required=True)
+    children = _structural_children()
+
+
+class HeaderTag(SegmentTag):
+    tag_name = gdocs_name("header")
+
+
+class FooterTag(SegmentTag):
+    tag_name = gdocs_name("footer")
+
+
+class FootnoteTag(SegmentTag):
+    tag_name = gdocs_name("footnote")
 
 
 class HeadersTag(Tag):
     tag_name = gdocs_name("headers")
-
-    children = _BoundaryChildren()
+    children = Children(Child(HeaderTag))
 
 
 class FootersTag(Tag):
     tag_name = gdocs_name("footers")
-
-    children = _BoundaryChildren()
+    children = Children(Child(FooterTag))
 
 
 class FootnotesTag(Tag):
     tag_name = gdocs_name("footnotes")
-
-    children = _BoundaryChildren()
+    children = Children(Child(FootnoteTag))
 
 
 class DocumentTabTag(Tag):
@@ -551,14 +731,3 @@ class HtmlTag(Tag):
         },
     )
     children = Children(Child(BodyTag, min_num=1, max_num=1))
-
-
-class ParagraphTag(Tag):
-    tag_name = xhtml_name("p")
-
-    children = Children(
-        Child(ParagraphStyleTag, max_num=1),
-        Child(SpanTag),
-        text_error="unexpected text content",
-        tail_error="unexpected text between paragraph elements",
-    )
