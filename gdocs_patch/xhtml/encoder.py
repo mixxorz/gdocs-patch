@@ -18,6 +18,7 @@ from gdocs_patch.models import (
     FootnoteReference,
     HorizontalRule,
     InlineObjectReference,
+    Link,
     ListDefinition,
     ListLevel,
     NamedStyle,
@@ -54,6 +55,7 @@ from .base import (
     XML_DECLARATION,
     XHTMLParseError,
     _indent_xml,  # pyright: ignore[reportPrivateUsage]
+    encode_link,
     encode_text_style,
     format_number,
     gdocs_name,
@@ -67,6 +69,25 @@ from .base import (
     xhtml_name,
 )
 from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
+from .nodes import Encoder as XHTMLEncoder
+from .nodes import Tag, Text
+from .tags import (
+    BorderBetweenTag,
+    BorderBottomTag,
+    BorderLeftTag,
+    BorderRightTag,
+    BorderTopTag,
+    BreakTag,
+    ColorTag,
+    NamedParagraphStyleTag,
+    ParagraphBorderTag,
+    ParagraphStyleTag,
+    ParagraphTag,
+    ShadingColorTag,
+    SpanTag,
+    TabStopsTag,
+    TabStopTag,
+)
 
 _DOCUMENT_MODES = {"DOCUMENT_MODE_UNSPECIFIED", "PAGES", "PAGELESS"}
 _NAMED_STYLE_TYPES = {
@@ -108,9 +129,6 @@ _CONTENT_ALIGNMENTS = {
 }
 _WIDTH_TYPES = {"WIDTH_TYPE_UNSPECIFIED", "EVENLY_DISTRIBUTED", "FIXED_WIDTH"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
-_ALIGNMENTS = {"ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END", "JUSTIFIED"}
-_SPACING_MODES = {"SPACING_MODE_UNSPECIFIED", "NEVER_COLLAPSE", "COLLAPSE_LISTS"}
-_TAB_ALIGNMENTS = {"TAB_STOP_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
 _AUTO_TEXT_TYPES = {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"}
 _DATE_FORMATS = {
     "DATE_FORMAT_UNSPECIFIED",
@@ -325,12 +343,12 @@ class _Encoder:
             )
             self.encode_metadata_text_style(element, style.text_style)
             if style.paragraph_style is not UNSET:
-                paragraph = self.encode_paragraph_style(
+                paragraph = self._encode_paragraph_style_tag(
                     cast(ParagraphStyle, style.paragraph_style),
-                    include_named_style=True,
+                    named_style=True,
                 )
                 if paragraph is not None:
-                    element.append(paragraph)
+                    element.append(XHTMLEncoder().encode_element(paragraph))
         return wrapper
 
     def encode_body(self, body: Body) -> ElementTree.Element:
@@ -746,11 +764,41 @@ class _Encoder:
                     "ParagraphStyle.named_style_type",
                 )
                 tag = _PARAGRAPH_TAGS[named_style_type]
+
+        require_list(paragraph.elements, "Paragraph.elements")
+        elements = paragraph.elements
+        if (
+            tag == ParagraphTag.tag_name
+            and paragraph.positioned_object_ids is UNSET
+            and all(isinstance(item, TextRun) for item in elements)
+        ):
+            spans: list[SpanTag] = []
+            for item in elements:
+                assert isinstance(item, TextRun)
+                span, link = self._encode_text_run_span(item)
+                if link is not UNSET:
+                    break
+                spans.append(span)
+            else:
+                style_tag = (
+                    None if style is None else self._encode_paragraph_style_tag(style)
+                )
+                children: list[Tag] = [*spans]
+                if style_tag is not None:
+                    children.insert(0, style_tag)
+                return XHTMLEncoder().encode_element(ParagraphTag(children=children))
+
+        metadata_tag = (
+            None if style is None else self._encode_paragraph_style_tag(style)
+        )
+        metadata = (
+            None
+            if metadata_tag is None
+            else XHTMLEncoder().encode_element(metadata_tag)
+        )
         element = ElementTree.Element(tag)
-        if style is not None:
-            metadata = self.encode_paragraph_style(style, include_named_style=False)
-            if metadata is not None:
-                element.append(metadata)
+        if metadata is not None:
+            element.append(metadata)
         if paragraph.positioned_object_ids is not UNSET:
             require_list(
                 paragraph.positioned_object_ids, "Paragraph.positioned_object_ids"
@@ -762,8 +810,7 @@ class _Encoder:
                     gdocs_name("id"),
                     require_string(object_id, "Paragraph.positioned_object_ids entry"),
                 )
-        require_list(paragraph.elements, "Paragraph.elements")
-        for item in paragraph.elements:
+        for item in elements:
             element.append(self.encode_paragraph_element(item))
         return element
 
@@ -870,105 +917,89 @@ class _Encoder:
             raise ValueError(f"unsupported paragraph element {type(item).__name__}")
         return encode_text_style(element, item.text_style)
 
-    def encode_paragraph_style(
-        self, style: ParagraphStyle, *, include_named_style: bool = True
-    ) -> ElementTree.Element | None:
-        element = ElementTree.Element(gdocs_name("paragraph-style"))
-        if include_named_style and style.named_style_type is not UNSET:
-            element.set(
-                gdocs_name("named-style-type"),
-                require_enum(
-                    style.named_style_type,
-                    _NAMED_STYLE_TYPES,
-                    "ParagraphStyle.named_style_type",
-                ),
-            )
-        for value, name, allowed in (
-            (style.alignment, "alignment", _ALIGNMENTS),
-            (style.direction, "direction", _DIRECTIONS),
-            (style.spacing_mode, "spacing-mode", _SPACING_MODES),
-        ):
-            if value is not UNSET:
-                element.set(
-                    gdocs_name(name),
-                    require_enum(value, allowed, f"ParagraphStyle.{name}"),
+    def _encode_paragraph_style_tag(
+        self,
+        style: ParagraphStyle,
+        *,
+        named_style: bool = False,
+    ) -> ParagraphStyleTag | None:
+        paragraph_style_tag_type = (
+            NamedParagraphStyleTag if named_style else ParagraphStyleTag
+        )
+        values = {
+            name: getattr(style, name)
+            for name in paragraph_style_tag_type.fields()
+            if name != "children"
+        }
+        children: list[Tag] = []
+        border_tags: tuple[tuple[str, type[ParagraphBorderTag]], ...] = (
+            ("border_between", BorderBetweenTag),
+            ("border_top", BorderTopTag),
+            ("border_bottom", BorderBottomTag),
+            ("border_left", BorderLeftTag),
+            ("border_right", BorderRightTag),
+        )
+        for name, border_tag_type in border_tags:
+            value = getattr(style, name)
+            if value is UNSET:
+                continue
+            border = cast(ParagraphBorder, value)
+            children.append(
+                border_tag_type(
+                    dash_style=border.dash_style,
+                    width=border.width,
+                    padding=border.padding,
+                    children=[ColorTag(color=border.color)],
                 )
-        if style.line_spacing is not UNSET:
-            element.set(
-                gdocs_name("line-spacing"),
-                format_number(
-                    require_number(style.line_spacing, "ParagraphStyle.line_spacing")
-                ),
             )
-        if style.heading_id is not UNSET:
-            element.set(
-                gdocs_name("heading-id"),
-                require_string(style.heading_id, "ParagraphStyle.heading_id"),
-            )
-        for value, name in (
-            (style.space_above, "space-above"),
-            (style.space_below, "space-below"),
-            (style.indent_first_line, "indent-first-line"),
-            (style.indent_start, "indent-start"),
-            (style.indent_end, "indent-end"),
-        ):
-            self.encode_point_attribute(element, name, value)
-        for value, name in (
-            (style.keep_lines_together, "keep-lines-together"),
-            (style.keep_with_next, "keep-with-next"),
-            (style.avoid_widow_and_orphan, "avoid-widow-and-orphan"),
-            (style.page_break_before, "page-break-before"),
-        ):
-            self.encode_boolean_attribute(element, name, value)
-        for value, name in (
-            (style.border_between, "border-between"),
-            (style.border_top, "border-top"),
-            (style.border_bottom, "border-bottom"),
-            (style.border_left, "border-left"),
-            (style.border_right, "border-right"),
-        ):
-            if value is not UNSET:
-                self.encode_paragraph_border(
-                    element, name, cast(ParagraphBorder, value)
-                )
         if style.shading_color is not UNSET:
-            self.encode_optional_color(
-                element,
-                "shading-color",
-                cast(Color | None, style.shading_color),
+            children.append(
+                ShadingColorTag(color=cast(Color | None, style.shading_color))
             )
         if style.tab_stops is not UNSET:
             require_list(style.tab_stops, "ParagraphStyle.tab_stops")
-            wrapper = ElementTree.SubElement(element, gdocs_name("tab-stops"))
-            for stop in cast(list[TabStop], style.tab_stops):
-                child = ElementTree.SubElement(wrapper, gdocs_name("tab-stop"))
-                child.set(
-                    gdocs_name("alignment"),
-                    require_enum(stop.alignment, _TAB_ALIGNMENTS, "TabStop.alignment"),
+            children.append(
+                TabStopsTag(
+                    children=[
+                        TabStopTag(alignment=stop.alignment, offset=stop.offset)
+                        for stop in cast(list[TabStop], style.tab_stops)
+                    ]
                 )
-                self.encode_point_attribute(child, "offset", stop.offset)
-        return element if element.attrib or list(element) else None
+            )
 
-    def encode_paragraph_border(
-        self, parent: ElementTree.Element, name: str, border: ParagraphBorder
-    ) -> None:
-        element = ElementTree.SubElement(parent, gdocs_name(name))
-        element.set(
-            gdocs_name("dash-style"),
-            require_enum(border.dash_style, _DASH_STYLES, "ParagraphBorder.dash_style"),
-        )
-        self.encode_point_attribute(element, "width", border.width)
-        self.encode_point_attribute(element, "padding", border.padding)
-        self.encode_optional_color(element, "color", border.color)
+        if not children and all(value is UNSET for value in values.values()):
+            return None
+        return paragraph_style_tag_type(children=children, **values)
+
+    def _encode_text_run_span(self, run: TextRun) -> tuple[SpanTag, Link | UnsetType]:
+        children: list[Text | BreakTag] = []
+        parts = run.content.split("\n")
+        if parts[0]:
+            children.append(Text(parts[0]))
+        for part in parts[1:]:
+            children.append(BreakTag())
+            if part:
+                children.append(Text(part))
+
+        link: Link | UnsetType = UNSET
+        style_values: dict[str, object] = {}
+        if run.text_style is not UNSET:
+            style = cast(TextStyle, run.text_style)
+            link = style.link
+            style_values = {
+                name: getattr(style, name)
+                for name in SpanTag.fields()
+                if name != "children"
+            }
+
+        return SpanTag(children=children, **style_values), link
 
     def encode_text_run(self, run: TextRun) -> ElementTree.Element:
-        span = ElementTree.Element(xhtml_name("span"))
-        parts = require_string(run.content, "TextRun.content").split("\n")
-        span.text = parts[0]
-        for part in parts[1:]:
-            br = ElementTree.SubElement(span, xhtml_name("br"))
-            br.tail = part
-        return encode_text_style(span, run.text_style)
+        span, link = self._encode_text_run_span(run)
+        element = XHTMLEncoder().encode_element(span)
+        if link is not UNSET:
+            return encode_link(element, cast(Link, link))
+        return element
 
 
 def _is_xml_10_character(character: str) -> bool:

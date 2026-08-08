@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Literal, Never, cast
+from typing import Any, Literal, Never, cast
 from xml.etree import ElementTree
 from xml.parsers import expat
 
@@ -74,6 +74,25 @@ from .base import (
     validate_whitespace,
     xhtml_name,
 )
+from .nodes import DecodeError, Node, Tag, Text
+from .nodes import Decoder as XHTMLDecoder
+from .tags import (
+    BorderBetweenTag,
+    BorderBottomTag,
+    BorderLeftTag,
+    BorderRightTag,
+    BorderTopTag,
+    BreakTag,
+    ColorTag,
+    NamedParagraphStyleTag,
+    ParagraphBorderTag,
+    ParagraphStyleTag,
+    ParagraphTag,
+    ShadingColorTag,
+    SpanTag,
+    TabStopsTag,
+    TabStopTag,
+)
 
 _PARAGRAPH_TAGS = {
     gdocs_name("paragraph"): UNSET,
@@ -95,11 +114,8 @@ _NAMED_STYLE_TYPES = {
     "HEADING_5",
     "HEADING_6",
 }
-_ALIGNMENTS = {"ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END", "JUSTIFIED"}
 _DIRECTIONS = {"CONTENT_DIRECTION_UNSPECIFIED", "LEFT_TO_RIGHT", "RIGHT_TO_LEFT"}
-_SPACING_MODES = {"SPACING_MODE_UNSPECIFIED", "NEVER_COLLAPSE", "COLLAPSE_LISTS"}
 _DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
-_TAB_ALIGNMENTS = {"TAB_STOP_ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END"}
 _DATE_FORMATS = {
     "DATE_FORMAT_UNSPECIFIED",
     "DATE_FORMAT_CUSTOM",
@@ -209,6 +225,20 @@ SuggestionsViewMode = Literal[
 
 
 class _Decoder:
+    def decode_tag[T: Tag](
+        self, element: ElementTree.Element, tag_type: type[T], path: str
+    ) -> T:
+        try:
+            return XHTMLDecoder().decode_element(element, tag_type)
+        except DecodeError as error:
+            error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
+            if error.attribute_name is not None:
+                error_path += f"/@{display_name(error.attribute_name)}"
+            message = str(error)
+            if error.element_name is not None:
+                message += f" {display_name(error.element_name)}"
+            parse_error(error_path, message, cause=error)
+
     def decode_document(self, root: ElementTree.Element) -> Document:
         path = "/html"
         if root.tag != xhtml_name("html"):
@@ -547,8 +577,13 @@ class _Decoder:
             paragraph_style = (
                 UNSET
                 if paragraph is None
-                else self.decode_paragraph_style(
-                    paragraph, f"{child_path}/g:paragraph-style"
+                else self._decode_paragraph_style_tag(
+                    self.decode_tag(
+                        paragraph,
+                        NamedParagraphStyleTag,
+                        f"{child_path}/g:paragraph-style",
+                    ),
+                    f"{child_path}/g:paragraph-style",
                 )
             )
             for metadata in children:
@@ -1288,19 +1323,57 @@ class _Decoder:
         )
 
     def decode_paragraph(self, element: ElementTree.Element, path: str) -> Paragraph:
+        children = list(element)
+        declarative_tags = {SpanTag.tag_name, ParagraphStyleTag.tag_name}
+        if element.tag == ParagraphTag.tag_name and all(
+            child.tag in declarative_tags for child in children
+        ):
+            paragraph_tag = self.decode_tag(element, ParagraphTag, path)
+            paragraph_children = cast(list[Node], paragraph_tag.children)
+            style_tag = next(
+                (
+                    child
+                    for child in paragraph_children
+                    if isinstance(child, ParagraphStyleTag)
+                ),
+                None,
+            )
+            style = (
+                ParagraphStyle(named_style_type="NORMAL_TEXT")
+                if style_tag is None
+                else self._decode_paragraph_style_tag(
+                    style_tag,
+                    f"{path}/g:paragraph-style",
+                    owning_named_style="NORMAL_TEXT",
+                )
+            )
+            elements: list[ParagraphElement] = []
+            for index, child in enumerate(paragraph_children):
+                if isinstance(child, SpanTag):
+                    elements.append(
+                        self._decode_text_run_span(
+                            child, UNSET, f"{path}/*[{index + 1}]"
+                        )
+                    )
+            return Paragraph(elements=elements, style=style)
+
         validate_attributes(element, set(), path)
         if element.text is not None and element.text.strip():
             parse_error(path, "unexpected text content")
-        children = list(element)
         metadata = extract_one_child(children, gdocs_name("paragraph-style"), path)
         named_style_type = _PARAGRAPH_TAGS[element.tag]
         decoded_style: ParagraphStyle | UnsetType = UNSET
         if metadata is not None:
-            decoded_style = self.decode_paragraph_style(
-                metadata,
-                f"{path}/g:paragraph-style",
+            metadata_path = f"{path}/g:paragraph-style"
+            if metadata.get(gdocs_name("named-style-type")) is not None:
+                parse_error(
+                    metadata_path,
+                    "named style type is owned by the paragraph element",
+                )
+            decoded_style = self._decode_paragraph_style_tag(
+                self.decode_tag(metadata, ParagraphStyleTag, metadata_path),
+                metadata_path,
                 owning_named_style=named_style_type,
-                paragraph_owns_named_style=True,
             )
         elif named_style_type is not UNSET:
             decoded_style = ParagraphStyle(named_style_type=named_style_type)  # type: ignore[arg-type]
@@ -1505,155 +1578,64 @@ class _Decoder:
             result.append(object_id)
         return result
 
-    def decode_paragraph_style(
+    def _decode_paragraph_style_tag(
         self,
-        element: ElementTree.Element,
+        style_tag: ParagraphStyleTag,
         path: str,
         *,
-        owning_named_style: str | UnsetType = UNSET,
-        paragraph_owns_named_style: bool = False,
+        owning_named_style: object = UNSET,
     ) -> ParagraphStyle:
-        attribute_names = {
-            "named-style-type",
-            "alignment",
-            "direction",
-            "line-spacing",
-            "spacing-mode",
-            "space-above",
-            "space-below",
-            "indent-first-line",
-            "indent-start",
-            "indent-end",
-            "keep-lines-together",
-            "keep-with-next",
-            "avoid-widow-and-orphan",
-            "page-break-before",
-            "heading-id",
+        values = {
+            name: getattr(style_tag, name)
+            for name in type(style_tag).fields()
+            if name != "children"
         }
-        validate_attributes(
-            element, {gdocs_name(name) for name in attribute_names}, path
-        )
-        raw_named_style = element.get(gdocs_name("named-style-type"))
-        named_style = owning_named_style
-        if raw_named_style is not None:
-            named_style = parse_allowed(
-                raw_named_style, _NAMED_STYLE_TYPES, f"{path}/@g:named-style-type"
-            )
-        alignment = self.optional_allowed(element, "alignment", _ALIGNMENTS, path)
-        direction = self.optional_allowed(element, "direction", _DIRECTIONS, path)
-        line_spacing_raw = element.get(gdocs_name("line-spacing"))
-        line_spacing = (
-            UNSET
-            if line_spacing_raw is None
-            else parse_float(line_spacing_raw, f"{path}/@g:line-spacing")
-        )
-        spacing_mode = self.optional_allowed(
-            element, "spacing-mode", _SPACING_MODES, path
-        )
-        space_above = self.optional_point(element, "space-above", path)
-        space_below = self.optional_point(element, "space-below", path)
-        indent_first_line = self.optional_point(element, "indent-first-line", path)
-        indent_start = self.optional_point(element, "indent-start", path)
-        indent_end = self.optional_point(element, "indent-end", path)
-        keep_lines_together = self.optional_boolean(
-            element, "keep-lines-together", path
-        )
-        keep_with_next = self.optional_boolean(element, "keep-with-next", path)
-        avoid_widow_and_orphan = self.optional_boolean(
-            element, "avoid-widow-and-orphan", path
-        )
-        page_break_before = self.optional_boolean(element, "page-break-before", path)
-        heading_id = optional_string(element, gdocs_name("heading-id"))
-
-        validate_whitespace(element, path)
-        border_names = (
-            "border-between",
-            "border-top",
-            "border-bottom",
-            "border-left",
-            "border-right",
-        )
-        children = list(element)
-        borders: dict[str, ParagraphBorder | UnsetType] = {}
-        for name in border_names:
-            child = extract_one_child(children, gdocs_name(name), path)
-            borders[name] = (
-                UNSET
-                if child is None
-                else self.decode_paragraph_border(child, f"{path}/g:{name}")
-            )
-        shading = extract_one_child(children, gdocs_name("shading-color"), path)
-        shading_color = (
-            UNSET
-            if shading is None
-            else self.decode_optional_color(shading, f"{path}/g:shading-color")
-        )
-        tab_stops_element = extract_one_child(children, gdocs_name("tab-stops"), path)
-        tab_stops: list[TabStop] | UnsetType = UNSET
-        if tab_stops_element is not None:
-            tab_stops = self.decode_tab_stops(tab_stops_element, f"{path}/g:tab-stops")
-        known = {gdocs_name(name) for name in border_names} | {
-            gdocs_name("shading-color"),
-            gdocs_name("tab-stops"),
+        if not isinstance(style_tag, NamedParagraphStyleTag):
+            values["named_style_type"] = owning_named_style
+        border_fields: dict[type[Node], str] = {
+            BorderBetweenTag: "border_between",
+            BorderTopTag: "border_top",
+            BorderBottomTag: "border_bottom",
+            BorderLeftTag: "border_left",
+            BorderRightTag: "border_right",
         }
+        children = cast(list[Node], style_tag.children)
         for child in children:
-            if child.tag not in known:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        if paragraph_owns_named_style and raw_named_style is not None:
-            parse_error(path, "named style type is owned by the paragraph element")
-        return ParagraphStyle(
-            named_style_type=named_style,  # type: ignore[arg-type]
-            alignment=alignment,  # type: ignore[arg-type]
-            direction=direction,  # type: ignore[arg-type]
-            line_spacing=line_spacing,
-            spacing_mode=spacing_mode,  # type: ignore[arg-type]
-            space_above=space_above,
-            space_below=space_below,
-            indent_first_line=indent_first_line,
-            indent_start=indent_start,
-            indent_end=indent_end,
-            keep_lines_together=keep_lines_together,
-            keep_with_next=keep_with_next,
-            avoid_widow_and_orphan=avoid_widow_and_orphan,
-            page_break_before=page_break_before,
-            heading_id=heading_id,
-            border_between=borders["border-between"],
-            border_top=borders["border-top"],
-            border_bottom=borders["border-bottom"],
-            border_left=borders["border-left"],
-            border_right=borders["border-right"],
-            shading_color=shading_color,
-            tab_stops=tab_stops,
-        )
+            field_name = border_fields.get(type(child))
+            if field_name is not None:
+                assert isinstance(child, ParagraphBorderTag)
+                values[field_name] = self._decode_paragraph_border_tag(
+                    child, f"{path}/{display_name(child.tag_name or '')}"
+                )
+            elif isinstance(child, ShadingColorTag):
+                values["shading_color"] = cast(Color | None, child.color)
+            elif isinstance(child, TabStopsTag):
+                values["tab_stops"] = [
+                    TabStop(
+                        alignment=cast(Any, stop.alignment),
+                        offset=cast(Dimension, stop.offset),
+                    )
+                    for stop in cast(list[TabStopTag], child.children)
+                ]
 
-    def decode_paragraph_border(
-        self, element: ElementTree.Element, path: str
-    ) -> ParagraphBorder:
-        validate_attributes(
-            element,
-            {gdocs_name("dash-style"), gdocs_name("width"), gdocs_name("padding")},
+        return construct_model(
             path,
+            lambda: ParagraphStyle(**cast(Any, values)),
         )
-        width = self.required_point(element, "width", path)
-        padding = self.required_point(element, "padding", path)
-        dash_style = parse_allowed(
-            required_string(element, gdocs_name("dash-style"), path),
-            _DASH_STYLES,
-            f"{path}/@g:dash-style",
-        )
-        validate_whitespace(element, path)
-        children = list(element)
-        color = extract_one_child(children, gdocs_name("color"), path, required=True)
-        assert color is not None
-        decoded_color = self.decode_optional_color(color, f"{path}/g:color")
-        for child in children:
-            if child is not color:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return ParagraphBorder(
-            color=decoded_color,
-            width=width,
-            padding=padding,
-            dash_style=dash_style,  # type: ignore[arg-type]
+
+    def _decode_paragraph_border_tag(
+        self, border_tag: ParagraphBorderTag, path: str
+    ) -> ParagraphBorder:
+        children = cast(list[Node], border_tag.children)
+        color_tag = cast(ColorTag, children[0])
+        return construct_model(
+            path,
+            lambda: ParagraphBorder(
+                color=cast(Color | None, color_tag.color),
+                width=cast(Dimension, border_tag.width),
+                padding=cast(Dimension, border_tag.padding),
+                dash_style=cast(Any, border_tag.dash_style),
+            ),
         )
 
     def decode_optional_color(
@@ -1690,32 +1672,6 @@ class _Decoder:
         except ValueError as error:
             parse_error(path, str(error), cause=error)
 
-    def decode_tab_stops(
-        self, element: ElementTree.Element, path: str
-    ) -> list[TabStop]:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        result: list[TabStop] = []
-        for index, child in enumerate(element):
-            child_path = f"{path}/g:tab-stop[{index + 1}]"
-            if child.tag != gdocs_name("tab-stop"):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-            validate_attributes(
-                child, {gdocs_name("alignment"), gdocs_name("offset")}, child_path
-            )
-            alignment = parse_allowed(
-                required_string(child, gdocs_name("alignment"), child_path),
-                _TAB_ALIGNMENTS,
-                f"{child_path}/@g:alignment",
-            )
-            offset = self.required_point(child, "offset", child_path)
-            validate_whitespace(child, child_path)
-            _validate_no_children(child, child_path)
-            result.append(
-                TabStop(alignment=alignment, offset=offset)  # type: ignore[arg-type]
-            )
-        return result
-
     def decode_linked_text_run(self, anchor: ElementTree.Element, path: str) -> TextRun:
         link = decode_link(anchor, path)
         if anchor.text is not None and anchor.text.strip():
@@ -1731,19 +1687,37 @@ class _Decoder:
     def decode_text_run(
         self, span: ElementTree.Element, link: Link | UnsetType, path: str
     ) -> TextRun:
-        validate_attributes(span, text_style_attributes(), path)
-        construct_text_style = parse_text_style(span, path)
-        content = span.text or ""
-        for child in span:
-            if child.tag != xhtml_name("br"):
-                parse_error(path, f"unknown span child {display_name(child.tag)}")
-            child_path = f"{path}/br"
-            validate_attributes(child, set(), child_path)
-            if child.text:
-                parse_error(child_path, "br must be empty")
-            _validate_no_children(child, child_path)
-            content += "\n" + (child.tail or "")
-        return TextRun(content=content, text_style=construct_text_style(link))
+        return self._decode_text_run_span(
+            self.decode_tag(span, SpanTag, path), link, path
+        )
+
+    def _decode_text_run_span(
+        self, span_tag: SpanTag, link: Link | UnsetType, path: str
+    ) -> TextRun:
+        style_values = {
+            name: getattr(span_tag, name)
+            for name in SpanTag.fields()
+            if name != "children"
+        }
+        text_style: TextStyle | UnsetType = UNSET
+        if (
+            any(value is not UNSET for value in style_values.values())
+            or link is not UNSET
+        ):
+            text_style = construct_model(
+                path,
+                lambda: TextStyle(**cast(Any, style_values), link=link),
+            )
+
+        content = ""
+        children = cast(list[Node], span_tag.children)
+        for child in children:
+            if isinstance(child, Text):
+                content += child.value
+            else:
+                assert isinstance(child, BreakTag)
+                content += "\n"
+        return TextRun(content=content, text_style=text_style)
 
 
 def _preflight_xml(payload: str) -> None:
