@@ -58,8 +58,9 @@ class Field[T](ABC):
 
     required = False
 
-    def __init__(self) -> None:
+    def __init__(self, *, contextualize_validation_errors: bool = True) -> None:
         self.name: str | None = None
+        self.contextualize_validation_errors = contextualize_validation_errors
 
     def __set_name__(self, _owner: type["Tag"], name: str) -> None:
         self.name = name
@@ -157,8 +158,11 @@ class Children(Field[list[Node]]):
         max_num: int | None = None,
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
+        contextualize_validation_errors: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__(
+            contextualize_validation_errors=contextualize_validation_errors
+        )
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
         if max_num is not None and max_num < min_num:
@@ -283,6 +287,7 @@ class Tag(Node):
 
     tag_name: str | None = None
     field_order: tuple[str, ...] = ()
+    clean_before_fields = False
 
     @classmethod
     def fields(cls) -> dict[str, Field[Any]]:
@@ -334,14 +339,19 @@ class Tag(Node):
     def validate(self) -> None:
         if self.tag_name is None:
             raise ValidationError(f"{type(self).__name__} has no tag_name")
+        if self.clean_before_fields:
+            self.clean()
         for name, field in self.fields().items():
             try:
                 field.validate(getattr(self, name))
             except ValidationError as error:
+                if not field.contextualize_validation_errors:
+                    raise
                 raise ValidationError(
                     f"{type(self).__name__}.{name}: {error}"
                 ) from error
-        self.clean()
+        if not self.clean_before_fields:
+            self.clean()
 
     @classmethod
     def decode_from(cls, element: ElementTree.Element, decoder: "Decoder") -> Self:

@@ -525,6 +525,49 @@ def test_rejects_unknown_list_or_item_content(structure: str, message: str) -> N
 
 
 @pytest.mark.parametrize(
+    ("structure", "diagnostic"),
+    [
+        (
+            "<g:list />",
+            "exactly one of g:list-id and g:bullet-preset is required",
+        ),
+        (
+            '<g:list g:list-id="id"><li /></g:list>',
+            "list item must contain exactly one paragraph",
+        ),
+        (
+            '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>',
+            "nesting level must be non-negative",
+        ),
+        (
+            '<g:list g:list-id="id">text<li><p /></li></g:list>',
+            "unexpected text content",
+        ),
+        (
+            '<g:list g:list-id="id"><li>text<p /></li></g:list>',
+            "unexpected text content",
+        ),
+        (
+            '<g:list g:list-id="id"><li><p />tail</li></g:list>',
+            "unexpected text after child element",
+        ),
+        (
+            '<g:list g:list-id="id"><li><p /></li>tail</g:list>',
+            "unexpected text after child element",
+        ),
+    ],
+)
+def test_preserves_exact_list_validation_diagnostics(
+    structure: str, diagnostic: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value).endswith(f": {diagnostic}")
+    assert "ListItemTag.children:" not in str(error.value)
+
+
+@pytest.mark.parametrize(
     ("definitions", "message"),
     [
         ('<g:list-definitions g:unknown="x" />', "unknown attribute g:unknown"),

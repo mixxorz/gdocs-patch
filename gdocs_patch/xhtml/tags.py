@@ -814,7 +814,11 @@ class _ListChildren(Children):
 class ListItemTag(Tag):
     tag_name = xhtml_name("li")
 
-    nesting_level = NonNegativeIntegerAttribute(gdocs_name("nesting-level"), default=0)
+    nesting_level = NonNegativeIntegerAttribute(
+        gdocs_name("nesting-level"),
+        default=0,
+        negative_error="nesting level must be non-negative",
+    )
     children = _ListItemChildren(
         Child(BulletStyleTag, max_num=1),
         Child(GenericParagraphTag),
@@ -829,17 +833,27 @@ class ListItemTag(Tag):
         Child(Heading5Tag),
         Child(Heading6Tag),
         min_num=1,
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+        contextualize_validation_errors=False,
     )
 
 
 class ListTag(Tag):
     tag_name = gdocs_name("list")
+    clean_before_fields = True
 
     list_id = StringAttribute(gdocs_name("list-id"))
     bullet_preset = ChoiceAttribute(
         gdocs_name("bullet-preset"), choices=_BULLET_PRESET_CHOICES
     )
-    children = _ListChildren(Child(ListItemTag, min_num=1), min_num=1)
+    children = _ListChildren(
+        Child(ListItemTag, min_num=1),
+        min_num=1,
+        text_error="unexpected text content",
+        tail_error="unexpected text after child element",
+        contextualize_validation_errors=False,
+    )
 
     def clean(self) -> None:
         if (self.list_id is UNSET) == (self.bullet_preset is UNSET):

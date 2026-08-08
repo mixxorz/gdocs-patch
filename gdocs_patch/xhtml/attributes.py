@@ -136,16 +136,29 @@ class IntegerAttribute(Attribute[int]):
 
 
 class NonNegativeIntegerAttribute(IntegerAttribute):
+    def __init__(
+        self,
+        xml_name: str | None = None,
+        *,
+        required: bool = False,
+        default: int | UnsetType = UNSET,
+        negative_error: str | None = None,
+    ) -> None:
+        super().__init__(xml_name, required=required, default=default)
+        self.negative_error = negative_error
+
     def decode(self, raw: str) -> int:
         value = super().decode(raw)
         if value < 0:
-            raise ValueError(f"expected a non-negative integer, got {raw!r}")
+            raise ValueError(
+                self.negative_error or f"expected a non-negative integer, got {raw!r}"
+            )
         return value
 
     def encode(self, value: int) -> str:
         raw = super().encode(value)
         if value < 0:
-            raise ValueError("expected a non-negative integer")
+            raise ValueError(self.negative_error or "expected a non-negative integer")
         return raw
 
 

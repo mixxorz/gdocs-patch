@@ -407,9 +407,7 @@ class _Encoder:
                 if key is not None:
                     continue
             elif isinstance(element, models.Table):
-                encoded.append(
-                    self._structural_boundary_tag(self.encode_table(element))
-                )
+                encoded.append(self._table_boundary_tag(self.encode_table(element)))
             elif isinstance(element, models.TableOfContents):
                 encoded.append(
                     tags.TableOfContentsTag(
@@ -423,26 +421,8 @@ class _Encoder:
             index += 1
         return encoded
 
-    def _structural_boundary_tag(self, element: ElementTree.Element) -> Tag:
-        tag_type = {
-            value.tag_name: value
-            for value in (
-                tags.GenericParagraphTag,
-                tags.UnspecifiedParagraphTag,
-                tags.ParagraphTag,
-                tags.TitleTag,
-                tags.SubtitleTag,
-                tags.Heading1Tag,
-                tags.Heading2Tag,
-                tags.Heading3Tag,
-                tags.Heading4Tag,
-                tags.Heading5Tag,
-                tags.Heading6Tag,
-                tags.ListTag,
-                tags.TableTag,
-            )
-        }[element.tag]
-        return tag_type(payload=element)
+    def _table_boundary_tag(self, element: ElementTree.Element) -> tags.TableTag:
+        return tags.TableTag(payload=element)
 
     def bullet_group_key(self, paragraph: models.Paragraph) -> tuple[str, str] | None:
         bullet = paragraph.bullet

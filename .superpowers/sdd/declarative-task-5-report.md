@@ -78,3 +78,46 @@ passed
 
 - Tables remain behind the existing opaque structural boundary and still use ElementTree; this is outside Task 5 scope.
 - No list-specific behavioral concerns remain after the full suite and static checks.
+
+## Review Fixes
+
+- Restored list validation precedence so the list identity invariant runs before child cardinality; an empty list with no identity again reports `exactly one of g:list-id and g:bullet-preset is required` rather than emptiness.
+- Added reusable declarative validation controls: tags may run relationship cleanup before field validation, fields may opt out of internal field-name diagnostic prefixes, `Children` exposes parent-text/tail diagnostics, and non-negative integer attributes may declare their domain-specific negative-value diagnostic.
+- Applied those controls to list/list-item tags to preserve exact public diagnostics for item paragraph cardinality, negative nesting, non-whitespace parent text, and non-whitespace child tails without returning to payload XML parsing.
+- Replaced the obsolete multi-structural `_structural_boundary_tag` dispatch with a table-only `_table_boundary_tag`; declarative `ListTag` can no longer receive a `payload` through that path.
+- Added focused public behavior regressions for the reviewed diagnostics without adding declaration-permutation tests.
+
+### Review Fix TDD Evidence
+
+Focused RED:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_preserves_exact_list_validation_diagnostics -q
+7 failed
+```
+
+Focused GREEN:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_preserves_exact_list_validation_diagnostics tests/xhtml/test_structures.py::test_rejects_invalid_structural_lists tests/xhtml/test_declarative_boundary.py -q
+33 passed in 0.06s
+```
+
+### Review Fix Verification
+
+```console
+uv run pytest -q
+272 passed
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+74 files already formatted
+uv run fixit lint .
+57 files clean
+uv run pyright
+0 errors, 0 warnings, 0 informations
+uv run pre-commit run --all-files
+All configured hooks passed
+git diff --check
+passed
+```
