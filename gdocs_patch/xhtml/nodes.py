@@ -160,7 +160,6 @@ class Children(Field[list[Node]]):
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
         min_error: str | None = None,
-        min_cardinality_before_text: bool = False,
         positional_path_attributes: dict[str, str] | None = None,
         unique_by: Field[Any] | None = None,
         duplicate_error: str = "duplicate child key {key!r}",
@@ -176,7 +175,6 @@ class Children(Field[list[Node]]):
         self.text_error = text_error
         self.tail_error = tail_error
         self.min_error = min_error
-        self.min_cardinality_before_text = min_cardinality_before_text
         self.positional_path_attributes = positional_path_attributes or {}
         self.unique_by = unique_by
         self.duplicate_error = duplicate_error
@@ -611,12 +609,6 @@ class Decoder:
                 result.append(Text(value))
             elif value.strip():
                 self.fail(error_message)
-
-        if field.min_cardinality_before_text and len(parent) == 0:
-            try:
-                field.validate_resolved_types(())
-            except ValidationError as error:
-                self.fail(str(error))
 
         append_text(parent.text, field.text_error)
         child_totals: dict[str, int] = {}

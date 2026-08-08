@@ -1076,7 +1076,6 @@ class DocumentBodyTag(Tag):
         Child(lambda: SectionTag, min_num=1),
         min_num=1,
         min_error="body must contain at least one section",
-        min_cardinality_before_text=True,
     )
 
 

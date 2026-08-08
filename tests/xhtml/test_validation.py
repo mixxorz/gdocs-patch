@@ -80,18 +80,6 @@ def test_empty_body_preserves_contextual_section_diagnostic() -> None:
         deserialize_document(xhtml)
 
 
-def test_text_only_body_prioritizes_missing_section_diagnostic() -> None:
-    xhtml = document().replace(
-        "<g:body><section><g:section-style /></section></g:body>",
-        "<g:body>text</g:body>",
-    )
-
-    with pytest.raises(
-        XHTMLParseError, match=r"g:body: body must contain at least one section"
-    ):
-        deserialize_document(xhtml)
-
-
 def test_auto_text_type_failure_uses_paragraph_child_position() -> None:
     xhtml = document("<p><span>first</span><g:auto-text /></p>")
 
