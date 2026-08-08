@@ -10,6 +10,7 @@ from .attributes import (
     LiteralAttribute,
     NonNegativeIntegerAttribute,
     PointAttribute,
+    PositiveIntegerAttribute,
     StringAttribute,
 )
 from .base import gdocs_name, xhtml_name
@@ -19,7 +20,6 @@ from .nodes import (
     Children,
     DecodeError,
     Decoder,
-    Encoder,
     Field,
     Node,
     Tag,
@@ -27,34 +27,6 @@ from .nodes import (
     UnsetType,
     ValidationError,
 )
-
-
-class _BoundaryElement(Field[ElementTree.Element]):
-    """Unmigrated element internals retained below a declarative boundary."""
-
-    required = True
-
-    def validate(self, value: ElementTree.Element | UnsetType) -> None:
-        if value is UNSET or not isinstance(value, ElementTree.Element):
-            raise ValidationError("boundary element is required")
-
-    def decode_from(
-        self, element: ElementTree.Element, decoder: Decoder
-    ) -> ElementTree.Element:
-        del decoder
-        return element
-
-    def encode_into(
-        self,
-        value: ElementTree.Element | UnsetType,
-        element: ElementTree.Element,
-        encoder: Encoder,
-    ) -> None:
-        del encoder
-        source = cast(ElementTree.Element, value)
-        element.attrib.update(source.attrib)
-        element.text = source.text
-        element.extend(list(source))
 
 
 def _text_style_attributes() -> tuple[
@@ -498,18 +470,6 @@ class ListDefinitionsTag(Tag):
     children = Children(Child(ListDefinitionTag))
 
 
-class _OpaqueStructuralTag(Tag):
-    payload = _BoundaryElement()
-
-    @classmethod
-    def decode_from(
-        cls, element: ElementTree.Element, decoder: Decoder
-    ) -> "_OpaqueStructuralTag":
-        if element.tag != cls.tag_name:
-            decoder.fail(f"expected <{cls.tag_name}>, got <{element.tag}>")
-        return cls(payload=element)
-
-
 class PositionedObjectTag(Tag):
     tag_name = gdocs_name("positioned-object")
 
@@ -864,8 +824,168 @@ class ListTag(Tag):
             )
 
 
-class TableTag(_OpaqueStructuralTag):
+_TABLE_WIDTH_TYPES = {
+    "WIDTH_TYPE_UNSPECIFIED",
+    "EVENLY_DISTRIBUTED",
+    "FIXED_WIDTH",
+}
+_TABLE_CONTENT_ALIGNMENTS = {
+    "CONTENT_ALIGNMENT_UNSPECIFIED",
+    "CONTENT_ALIGNMENT_UNSUPPORTED",
+    "TOP",
+    "MIDDLE",
+    "BOTTOM",
+}
+_TABLE_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
+
+
+class _CellSpanAttribute(PositiveIntegerAttribute):
+    def decode(self, raw: str) -> int:
+        value = super().decode(raw)
+        if value == 1:
+            raise ValueError("cell span must be greater than 1")
+        return value
+
+
+class TableColumnTag(Tag):
+    tag_name = xhtml_name("col")
+
+    width_type = ChoiceAttribute(
+        gdocs_name("width-type"), choices=_TABLE_WIDTH_TYPES, required=True
+    )
+    width = PointAttribute(gdocs_name("width"))
+    children = Children()
+
+    def clean(self) -> None:
+        fixed = self.width_type == "FIXED_WIDTH"
+        if fixed and self.width is UNSET:
+            raise ValidationError("FIXED_WIDTH column requires width")
+        if not fixed and self.width is not UNSET:
+            raise ValidationError("width is forbidden unless width type is FIXED_WIDTH")
+
+
+class TableColgroupTag(Tag):
+    tag_name = xhtml_name("colgroup")
+    children = Children(Child(TableColumnTag))
+
+
+class TableCellBackgroundColorTag(Tag):
+    tag_name = gdocs_name("background-color")
+    color = _structured_color_attribute()
+    children = Children()
+
+
+class TableCellBorderTag(Tag):
+    dash_style = ChoiceAttribute(
+        gdocs_name("dash-style"), choices=_TABLE_DASH_STYLES, required=True
+    )
+    width = PointAttribute(gdocs_name("width"), required=True)
+    children = Children(Child(ColorTag, min_num=1, max_num=1))
+
+
+class TableCellBorderLeftTag(TableCellBorderTag):
+    tag_name = gdocs_name("border-left")
+
+
+class TableCellBorderRightTag(TableCellBorderTag):
+    tag_name = gdocs_name("border-right")
+
+
+class TableCellBorderTopTag(TableCellBorderTag):
+    tag_name = gdocs_name("border-top")
+
+
+class TableCellBorderBottomTag(TableCellBorderTag):
+    tag_name = gdocs_name("border-bottom")
+
+
+class TableCellStyleTag(Tag):
+    tag_name = gdocs_name("cell-style")
+
+    content_alignment = ChoiceAttribute(
+        gdocs_name("content-alignment"), choices=_TABLE_CONTENT_ALIGNMENTS
+    )
+    padding_left = PointAttribute(gdocs_name("padding-left"))
+    padding_right = PointAttribute(gdocs_name("padding-right"))
+    padding_top = PointAttribute(gdocs_name("padding-top"))
+    padding_bottom = PointAttribute(gdocs_name("padding-bottom"))
+    children = Children(
+        Child(TableCellBackgroundColorTag, max_num=1),
+        Child(TableCellBorderLeftTag, max_num=1),
+        Child(TableCellBorderRightTag, max_num=1),
+        Child(TableCellBorderTopTag, max_num=1),
+        Child(TableCellBorderBottomTag, max_num=1),
+    )
+
+
+class _TableCellChildren(Children):
+    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
+        for child in element:
+            if self.spec_for_element(child) is None:
+                decoder.fail("unknown structural element", element_name=child.tag)
+        return super().decode_from(element, decoder)
+
+    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
+        if (
+            sum(issubclass(node_type, TableCellStyleTag) for node_type in node_types)
+            > 1
+        ):
+            raise ValidationError("expected at most one g:cell-style child")
+        super().validate_resolved_types(node_types)
+
+
+def _table_cell_children() -> Children:
+    return _TableCellChildren(
+        Child(TableCellStyleTag, max_num=1),
+        Child(lambda: GenericParagraphTag),
+        Child(lambda: UnspecifiedParagraphTag),
+        Child(lambda: ParagraphTag),
+        Child(lambda: TitleTag),
+        Child(lambda: SubtitleTag),
+        Child(lambda: Heading1Tag),
+        Child(lambda: Heading2Tag),
+        Child(lambda: Heading3Tag),
+        Child(lambda: Heading4Tag),
+        Child(lambda: Heading5Tag),
+        Child(lambda: Heading6Tag),
+        Child(lambda: ListTag),
+        Child(lambda: TableTag),
+        Child(lambda: TableOfContentsTag),
+    )
+
+
+class TableCellTag(Tag):
+    tag_name = xhtml_name("td")
+
+    cell_key = StringAttribute(gdocs_name("cell-key"))
+    row_span = _CellSpanAttribute("rowspan")
+    column_span = _CellSpanAttribute("colspan")
+    children = _table_cell_children()
+
+
+class TableRowTag(Tag):
+    tag_name = xhtml_name("tr")
+
+    row_key = StringAttribute(gdocs_name("row-key"))
+    min_height = PointAttribute(gdocs_name("min-height"))
+    prevent_overflow = BooleanAttribute(gdocs_name("prevent-overflow"))
+    is_header = BooleanAttribute(gdocs_name("is-header"))
+    children = Children(Child(TableCellTag))
+
+
+class TableBodyTag(Tag):
+    tag_name = xhtml_name("tbody")
+    children = Children(Child(TableRowTag))
+
+
+class TableTag(Tag):
     tag_name = xhtml_name("table")
+
+    table_key = StringAttribute(gdocs_name("table-key"))
+    children = Children(
+        Child(TableColgroupTag, max_num=1),
+        Child(TableBodyTag, min_num=1, max_num=1),
+    )
 
 
 def _structural_children() -> Children:

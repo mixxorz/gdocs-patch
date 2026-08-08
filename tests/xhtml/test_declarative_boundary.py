@@ -39,7 +39,7 @@ def test_all_paragraph_vocabulary_is_declarative() -> None:
         tags.Heading6Tag,
     )
 
-    assert all(not issubclass(tag, tags._OpaqueStructuralTag) for tag in paragraph_tags)
+    assert all(issubclass(tag, tags.Tag) for tag in paragraph_tags)
     assert "payload" not in tags.ParagraphTag.fields()
     assert (
         tags.PositionedObjectsTag.fields()["children"].specs[0].node_type
@@ -51,7 +51,7 @@ def test_all_paragraph_vocabulary_is_declarative() -> None:
 
 
 def test_lists_are_fully_declarative() -> None:
-    assert not issubclass(tags.ListTag, tags._OpaqueStructuralTag)
+    assert issubclass(tags.ListTag, tags.Tag)
     assert "payload" not in tags.ListTag.fields()
     assert tags.ListTag.fields()["children"].specs[0].node_type is tags.ListItemTag
     assert tags.ListTag.fields()["children"].min_num == 1
@@ -67,6 +67,25 @@ def test_lists_are_fully_declarative() -> None:
     assert item_children.min_num == 1
     assert any(spec.node_type is tags.BulletStyleTag for spec in item_children.specs)
     assert any(spec.node_type is tags.ParagraphTag for spec in item_children.specs)
+
+
+def test_tables_are_fully_declarative() -> None:
+    assert issubclass(tags.TableTag, tags.Tag)
+    assert "payload" not in tags.TableTag.fields()
+
+    table_children = tags.TableTag.fields()["children"]
+    assert any(spec.node_type is tags.TableColgroupTag for spec in table_children.specs)
+    assert any(spec.node_type is tags.TableBodyTag for spec in table_children.specs)
+    assert tags.TableBodyTag.fields()["children"].specs[0].node_type is tags.TableRowTag
+    assert tags.TableRowTag.fields()["children"].specs[0].node_type is tags.TableCellTag
+    assert any(
+        spec.node_type is tags.TableCellStyleTag
+        for spec in tags.TableCellTag.fields()["children"].specs
+    )
+    assert any(
+        spec.node_type is tags.TableTag
+        for spec in tags.TableCellTag.fields()["children"].specs
+    )
 
 
 def test_repeated_child_decode_error_path_includes_one_based_index() -> None:

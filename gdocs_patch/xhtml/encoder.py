@@ -12,16 +12,11 @@ from .base import (
     XML_DECLARATION,
     XHTMLParseError,
     _indent_xml,  # pyright: ignore[reportPrivateUsage]
-    format_number,
-    gdocs_name,
-    require_boolean,
     require_dict,
     require_enum,
     require_integer,
     require_list,
-    require_number,
     require_string,
-    xhtml_name,
 )
 from .decoder import _Decoder  # pyright: ignore[reportPrivateUsage]
 from .nodes import Encoder as XHTMLEncoder
@@ -39,15 +34,6 @@ _NAMED_STYLE_TYPES = {
     "HEADING_5",
     "HEADING_6",
 }
-_CONTENT_ALIGNMENTS = {
-    "CONTENT_ALIGNMENT_UNSPECIFIED",
-    "CONTENT_ALIGNMENT_UNSUPPORTED",
-    "TOP",
-    "MIDDLE",
-    "BOTTOM",
-}
-_WIDTH_TYPES = {"WIDTH_TYPE_UNSPECIFIED", "EVENLY_DISTRIBUTED", "FIXED_WIDTH"}
-_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 
 
 def _omit_integer_default(
@@ -303,49 +289,6 @@ class _Encoder:
             )
         return tags.SectionStyleTag(children=children, **values)
 
-    def encode_boolean_attribute(
-        self, element: ElementTree.Element, name: str, value: bool | models.UnsetType
-    ) -> None:
-        if value is not models.UNSET:
-            boolean = require_boolean(value, name)
-            element.set(gdocs_name(name), "true" if boolean else "false")
-
-    def encode_point_attribute(
-        self,
-        element: ElementTree.Element,
-        name: str,
-        value: models.Dimension | models.UnsetType,
-    ) -> None:
-        if value is not models.UNSET:
-            if not isinstance(value, models.Dimension):
-                raise ValueError(f"{name} must be a Dimension")
-            element.set(
-                gdocs_name(name),
-                format_number(require_number(value.magnitude, f"{name}.magnitude")),
-            )
-
-    def encode_optional_color(
-        self, parent: ElementTree.Element, name: str, color: models.Color | None
-    ) -> None:
-        element = ElementTree.SubElement(parent, gdocs_name(name))
-        if color is None:
-            element.set(gdocs_name("transparent"), "true")
-        else:
-            if not isinstance(color, models.Color):  # pyright: ignore[reportUnnecessaryIsInstance]
-                raise ValueError(f"{name} must be a Color or None")
-            element.set(
-                gdocs_name("red"),
-                format_number(require_number(color.red, f"{name}.red")),
-            )
-            element.set(
-                gdocs_name("green"),
-                format_number(require_number(color.green, f"{name}.green")),
-            )
-            element.set(
-                gdocs_name("blue"),
-                format_number(require_number(color.blue, f"{name}.blue")),
-            )
-
     def encode_segments(
         self,
         segments: dict[str, models.Segment],
@@ -407,7 +350,7 @@ class _Encoder:
                 if key is not None:
                     continue
             elif isinstance(element, models.Table):
-                encoded.append(self._table_boundary_tag(self.encode_table(element)))
+                encoded.append(self.encode_table(element))
             elif isinstance(element, models.TableOfContents):
                 encoded.append(
                     tags.TableOfContentsTag(
@@ -420,9 +363,6 @@ class _Encoder:
                 )
             index += 1
         return encoded
-
-    def _table_boundary_tag(self, element: ElementTree.Element) -> tags.TableTag:
-        return tags.TableTag(payload=element)
 
     def bullet_group_key(self, paragraph: models.Paragraph) -> tuple[str, str] | None:
         bullet = paragraph.bullet
@@ -481,120 +421,107 @@ class _Encoder:
             children=items,
         )
 
-    def encode_table(self, table: models.Table) -> ElementTree.Element:
+    def encode_table(self, table: models.Table) -> tags.TableTag:
         require_list(table.rows, "Table.rows")
-        element = ElementTree.Element(xhtml_name("table"))
-        if table.table_key is not None:
-            element.set(
-                gdocs_name("table-key"),
-                require_string(table.table_key, "Table.table_key"),
-            )
+        children: list[Tag] = []
         if table.column_styles is not models.UNSET:
             require_list(table.column_styles, "Table.column_styles")
-            colgroup = ElementTree.SubElement(element, xhtml_name("colgroup"))
-            for column in cast(list[models.TableColumn], table.column_styles):
-                child = ElementTree.SubElement(colgroup, xhtml_name("col"))
-                child.set(
-                    gdocs_name("width-type"),
-                    require_enum(
-                        column.width_type, _WIDTH_TYPES, "TableColumn.width_type"
-                    ),
+            children.append(
+                tags.TableColgroupTag(
+                    children=[
+                        tags.TableColumnTag(
+                            width_type=column.width_type, width=column.width
+                        )
+                        for column in cast(
+                            list[models.TableColumn], table.column_styles
+                        )
+                    ]
                 )
-                self.encode_point_attribute(child, "width", column.width)
-        tbody = ElementTree.SubElement(element, xhtml_name("tbody"))
-        for row in table.rows:
-            tbody.append(self.encode_table_row(row))
-        return element
+            )
+        children.append(
+            tags.TableBodyTag(
+                children=[self.encode_table_row(row) for row in table.rows]
+            )
+        )
+        return tags.TableTag(
+            table_key=(models.UNSET if table.table_key is None else table.table_key),
+            children=children,
+        )
 
-    def encode_table_row(self, row: models.TableRow) -> ElementTree.Element:
+    def encode_table_row(self, row: models.TableRow) -> tags.TableRowTag:
         require_list(row.cells, "TableRow.cells")
-        element = ElementTree.Element(xhtml_name("tr"))
-        if row.row_key is not None:
-            element.set(
-                gdocs_name("row-key"), require_string(row.row_key, "TableRow.row_key")
-            )
-        self.encode_point_attribute(element, "min-height", row.min_height)
-        self.encode_boolean_attribute(element, "prevent-overflow", row.prevent_overflow)
-        self.encode_boolean_attribute(element, "is-header", row.is_header)
-        for cell in row.cells:
-            element.append(self.encode_table_cell(cell))
-        return element
+        return tags.TableRowTag(
+            row_key=models.UNSET if row.row_key is None else row.row_key,
+            min_height=row.min_height,
+            prevent_overflow=row.prevent_overflow,
+            is_header=row.is_header,
+            children=[self.encode_table_cell(cell) for cell in row.cells],
+        )
 
-    def encode_table_cell(self, cell: models.TableCell) -> ElementTree.Element:
+    def encode_table_cell(self, cell: models.TableCell) -> tags.TableCellTag:
         require_list(cell.content, "TableCell.content")
-        element = ElementTree.Element(xhtml_name("td"))
-        if cell.cell_key is not None:
-            element.set(
-                gdocs_name("cell-key"),
-                require_string(cell.cell_key, "TableCell.cell_key"),
-            )
+        row_span: int | models.UnsetType = models.UNSET
+        column_span: int | models.UnsetType = models.UNSET
+        children: list[Tag] = []
         if cell.style is not models.UNSET:
             style = cast(models.TableCellStyle, cell.style)
-            row_span = require_integer(style.row_span, "TableCellStyle.row_span")
-            column_span = require_integer(
+            validated_row_span = require_integer(
+                style.row_span, "TableCellStyle.row_span"
+            )
+            validated_column_span = require_integer(
                 style.column_span, "TableCellStyle.column_span"
             )
-            if row_span != 1:
-                element.set("rowspan", str(row_span))
-            if column_span != 1:
-                element.set("colspan", str(column_span))
+            row_span = models.UNSET if validated_row_span == 1 else validated_row_span
+            column_span = (
+                models.UNSET if validated_column_span == 1 else validated_column_span
+            )
             metadata = self.encode_table_cell_style(style)
             if metadata is not None:
-                element.append(metadata)
-        element.extend(
-            XHTMLEncoder().encode_element(tag)
-            for tag in self.encode_structural_sequence(cell.content, body=False)
+                children.append(metadata)
+        children.extend(self.encode_structural_sequence(cell.content, body=False))
+        return tags.TableCellTag(
+            cell_key=models.UNSET if cell.cell_key is None else cell.cell_key,
+            row_span=row_span,
+            column_span=column_span,
+            children=children,
         )
-        return element
 
     def encode_table_cell_style(
         self, style: models.TableCellStyle
-    ) -> ElementTree.Element | None:
-        element = ElementTree.Element(gdocs_name("cell-style"))
-        if style.content_alignment is not models.UNSET:
-            element.set(
-                gdocs_name("content-alignment"),
-                require_enum(
-                    style.content_alignment,
-                    _CONTENT_ALIGNMENTS,
-                    "TableCellStyle.content_alignment",
-                ),
-            )
-        for value, name in (
-            (style.padding_left, "padding-left"),
-            (style.padding_right, "padding-right"),
-            (style.padding_top, "padding-top"),
-            (style.padding_bottom, "padding-bottom"),
-        ):
-            self.encode_point_attribute(element, name, value)
+    ) -> tags.TableCellStyleTag | None:
+        values = {
+            name: getattr(style, name)
+            for name in tags.TableCellStyleTag.fields()
+            if name != "children"
+        }
+        children: list[Tag] = []
         if style.background_color is not models.UNSET:
-            self.encode_optional_color(
-                element,
-                "background-color",
-                cast(models.Color | None, style.background_color),
-            )
-        for value, name in (
-            (style.border_left, "border-left"),
-            (style.border_right, "border-right"),
-            (style.border_top, "border-top"),
-            (style.border_bottom, "border-bottom"),
-        ):
-            if value is not models.UNSET:
-                self.encode_table_cell_border(
-                    element, name, cast(models.TableCellBorder, value)
+            children.append(
+                tags.TableCellBackgroundColorTag(
+                    color=cast(models.Color | None, style.background_color)
                 )
-        return element if element.attrib or list(element) else None
-
-    def encode_table_cell_border(
-        self, parent: ElementTree.Element, name: str, border: models.TableCellBorder
-    ) -> None:
-        element = ElementTree.SubElement(parent, gdocs_name(name))
-        element.set(
-            gdocs_name("dash-style"),
-            require_enum(border.dash_style, _DASH_STYLES, "TableCellBorder.dash_style"),
+            )
+        border_tags: tuple[tuple[str, type[tags.TableCellBorderTag]], ...] = (
+            ("border_left", tags.TableCellBorderLeftTag),
+            ("border_right", tags.TableCellBorderRightTag),
+            ("border_top", tags.TableCellBorderTopTag),
+            ("border_bottom", tags.TableCellBorderBottomTag),
         )
-        self.encode_point_attribute(element, "width", border.width)
-        self.encode_optional_color(element, "color", border.color)
+        for name, tag_type in border_tags:
+            value = getattr(style, name)
+            if value is models.UNSET:
+                continue
+            border = cast(models.TableCellBorder, value)
+            children.append(
+                tag_type(
+                    dash_style=border.dash_style,
+                    width=border.width,
+                    children=[tags.ColorTag(color=border.color)],
+                )
+            )
+        if not children and all(value is models.UNSET for value in values.values()):
+            return None
+        return tags.TableCellStyleTag(children=children, **values)
 
     def encode_paragraph(
         self, paragraph: models.Paragraph
