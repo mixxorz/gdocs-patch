@@ -130,7 +130,7 @@ class IntegerAttribute(Attribute[int]):
         return int(raw)
 
     def encode(self, value: int) -> str:
-        if isinstance(value, bool):
+        if isinstance(value, bool) or not isinstance(value, int):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError("expected int")
         return str(value)
 
