@@ -109,6 +109,13 @@ class Field[T](ABC):
         raise TypeError("field is not represented by XML attributes")
 
 
+@dataclass(frozen=True)
+class ForbiddenChild:
+    message: str
+    priority: bool = False
+    include_element_name: bool = True
+
+
 class Child:
     """One permitted direct child type and its cardinality."""
 
@@ -120,7 +127,7 @@ class Child:
         max_num: int | None = None,
         min_error: str | None = None,
         max_error: str | None = None,
-        path_by_position: bool = False,
+        positional_path_attribute: str | None = None,
     ) -> None:
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
@@ -131,7 +138,7 @@ class Child:
         self.max_num = max_num
         self.min_error = min_error
         self.max_error = max_error
-        self.path_by_position = path_by_position
+        self.positional_path_attribute = positional_path_attribute
 
     @property
     def node_type(self) -> type[Node]:
@@ -163,7 +170,8 @@ class Children(Field[list[Node]]):
         tail_error: str = "unexpected text",
         min_error: str | None = None,
         unknown_child_error: str = "unknown child element",
-        forbidden_children: dict[str, str] | None = None,
+        forbidden_children: dict[str, ForbiddenChild] | None = None,
+        min_cardinality_before_text: bool = False,
     ) -> None:
         super().__init__()
         if min_num < 0:
@@ -178,6 +186,7 @@ class Children(Field[list[Node]]):
         self.min_error = min_error
         self.unknown_child_error = unknown_child_error
         self.forbidden_children = forbidden_children or {}
+        self.min_cardinality_before_text = min_cardinality_before_text
 
     def get_default(self) -> list[Node]:
         return []
@@ -537,6 +546,27 @@ class Decoder:
             elif value.strip():
                 self.fail(error_message)
 
+        prioritized_forbidden = next(
+            (
+                (child, forbidden)
+                for child in parent
+                if (forbidden := field.forbidden_children.get(child.tag)) is not None
+                and forbidden.priority
+            ),
+            None,
+        )
+        if prioritized_forbidden is not None:
+            child, forbidden = prioritized_forbidden
+            self.fail(
+                forbidden.message,
+                element_name=child.tag if forbidden.include_element_name else None,
+            )
+        if field.min_cardinality_before_text and len(parent) == 0:
+            try:
+                field.validate_resolved_types(())
+            except ValidationError as error:
+                self.fail(str(error))
+
         append_text(parent.text, field.text_error)
         child_totals: dict[str, int] = {}
         resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
@@ -544,10 +574,15 @@ class Decoder:
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
             spec = field.spec_for_element(child_element)
             if spec is None:
-                message = field.forbidden_children.get(
-                    child_element.tag, field.unknown_child_error
+                forbidden = field.forbidden_children.get(child_element.tag)
+                if forbidden is None:
+                    self.fail(field.unknown_child_error, element_name=child_element.tag)
+                self.fail(
+                    forbidden.message,
+                    element_name=(
+                        child_element.tag if forbidden.include_element_name else None
+                    ),
                 )
-                self.fail(message, element_name=child_element.tag)
             child_type = spec.node_type
             if not issubclass(child_type, Tag):
                 raise TypeError("element child declaration must refer to a Tag")
@@ -572,16 +607,22 @@ class Decoder:
         child_counts: dict[str, int] = {}
         for position, child_element, spec, child_type in resolved:
             child_counts[child_element.tag] = child_counts.get(child_element.tag, 0) + 1
-            path_step = f"*[{position}]" if spec.path_by_position else child_element.tag
+            path_step = child_element.tag
             repeated = spec.max_num is None or spec.max_num > 1
-            if (
-                not spec.path_by_position
-                and repeated
-                and (not field.permits_text or child_totals[child_element.tag] > 1)
+            if repeated and (
+                not field.permits_text or child_totals[child_element.tag] > 1
             ):
                 path_step += f"[{child_counts[child_element.tag]}]"
-            with self.at(path_step):
-                child = self._decode_element(child_element, child_type)
+            try:
+                with self.at(path_step):
+                    child = self._decode_element(child_element, child_type)
+            except DecodeError as error:
+                if (
+                    spec.positional_path_attribute is not None
+                    and error.attribute_name == spec.positional_path_attribute
+                ):
+                    error.path = (*error.path[:-1], f"*[{position}]")
+                raise
             result.append(child)
             append_text(child_element.tail, field.tail_error)
 

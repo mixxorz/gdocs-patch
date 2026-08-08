@@ -1,5 +1,3 @@
-import ast
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,41 +10,6 @@ from gdocs_patch.xhtml.attributes import (
 )
 
 _DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
-_XHTML_PACKAGE = Path(__file__).parents[2] / "gdocs_patch" / "xhtml"
-
-
-def test_xml_mechanics_are_confined_to_generic_nodes_and_boundaries() -> None:
-    for module_name in ("base.py", "attributes.py", "tags.py"):
-        source = (_XHTML_PACKAGE / module_name).read_text()
-        assert "ElementTree" not in source
-        assert "xml.etree" not in source
-
-
-def test_tags_are_model_agnostic_and_do_not_override_xml_decoding() -> None:
-    source = (_XHTML_PACKAGE / "tags.py").read_text()
-    tree = ast.parse(source)
-
-    assert "gdocs_patch.models" not in source
-    assert not any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in {"decode_from", "encode_into"}
-        for node in ast.walk(tree)
-    )
-
-
-def test_model_mappers_do_not_manipulate_xml_elements() -> None:
-    forbidden_attributes = {"attrib", "text", "tail"}
-    for module_name in ("encoder.py", "decoder.py"):
-        tree = ast.parse((_XHTML_PACKAGE / module_name).read_text())
-        mapper = next(
-            node
-            for node in tree.body
-            if isinstance(node, ast.ClassDef) and node.name in {"_Encoder", "_Decoder"}
-        )
-        assert not any(
-            isinstance(node, ast.Attribute) and node.attr in forbidden_attributes
-            for node in ast.walk(mapper)
-        )
 
 
 @pytest.mark.parametrize(

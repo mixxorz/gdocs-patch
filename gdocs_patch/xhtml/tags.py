@@ -18,6 +18,7 @@ from .nodes import (
     Child,
     Children,
     Field,
+    ForbiddenChild,
     Node,
     Tag,
     Text,
@@ -620,7 +621,10 @@ class RichLinkTag(StyledParagraphElementTag):
 def _styled_paragraph_element_children() -> tuple[Child, ...]:
     return (
         Child(SpanTag),
-        Child(AutoTextTag, path_by_position=True),
+        Child(
+            AutoTextTag,
+            positional_path_attribute=gdocs_name("type"),
+        ),
         Child(ColumnBreakTag),
         Child(DateElementTag),
         Child(FootnoteReferenceTag),
@@ -1057,6 +1061,7 @@ class DocumentBodyTag(Tag):
         Child(lambda: SectionTag, min_num=1),
         min_num=1,
         min_error="body must contain at least one section",
+        min_cardinality_before_text=True,
     )
 
 
@@ -1066,7 +1071,11 @@ class TableOfContentsTag(Tag):
     children = Children(
         *_structural_children().specs,
         forbidden_children={
-            xhtml_name("section"): "section elements are only valid in a body"
+            xhtml_name("section"): ForbiddenChild(
+                "section elements are only valid in a body",
+                priority=True,
+                include_element_name=False,
+            )
         },
     )
 

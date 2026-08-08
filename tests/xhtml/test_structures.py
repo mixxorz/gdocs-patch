@@ -83,7 +83,16 @@ def test_round_trips_recursive_table_of_contents_in_body() -> None:
     assert decoded_content.body.content[1] == table_of_contents
 
 
-def test_rejects_body_section_inside_table_of_contents() -> None:
+@pytest.mark.parametrize(
+    "children",
+    [
+        "<g:unknown /><section><g:section-style /></section>",
+        "<section><g:section-style /></section><g:unknown />",
+    ],
+)
+def test_toc_prioritizes_forbidden_section_over_unknown_siblings(
+    children: str,
+) -> None:
     document = document_with_section(SectionStyle())
     content = document.tabs[0].content
     assert isinstance(content, DocumentTab)
@@ -91,13 +100,13 @@ def test_rejects_body_section_inside_table_of_contents() -> None:
     content.body.add_child(TableOfContents(content=[]))
     xhtml = serialize_document(document).replace(
         "<g:table-of-contents />",
-        "<g:table-of-contents><section><g:section-style /></section></g:table-of-contents>",
+        f"<g:table-of-contents>{children}</g:table-of-contents>",
     )
 
-    with pytest.raises(
-        XHTMLParseError, match="section elements are only valid in a body"
-    ):
+    with pytest.raises(XHTMLParseError) as error:
         deserialize_document(xhtml)
+
+    assert str(error.value).endswith("section elements are only valid in a body")
 
 
 def test_round_trips_complete_section_style() -> None:

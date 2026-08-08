@@ -85,6 +85,38 @@ def test_empty_body_preserves_contextual_section_diagnostic() -> None:
         deserialize_document(xhtml)
 
 
+def test_text_only_body_prioritizes_missing_section_diagnostic() -> None:
+    xhtml = document().replace(
+        "<g:body><section><g:section-style /></section></g:body>",
+        "<g:body>text</g:body>",
+    )
+
+    with pytest.raises(
+        XHTMLParseError, match=r"g:body: body must contain at least one section"
+    ):
+        deserialize_document(xhtml)
+
+
+def test_auto_text_type_failure_uses_paragraph_child_position() -> None:
+    xhtml = document("<p><span>first</span><g:auto-text /></p>")
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/*[2]/@g:type" in str(error.value)
+
+
+def test_auto_text_unknown_attribute_uses_tag_occurrence_path() -> None:
+    xhtml = document(
+        '<p><span>first</span><g:auto-text g:type="PAGE_NUMBER" g:unknown="x" /></p>'
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml)
+
+    assert "/g:auto-text[1]/@g:unknown" in str(error.value)
+
+
 def test_body_rejects_direct_structural_children_as_parse_error() -> None:
     xhtml = document().replace(
         "<section><g:section-style /></section>", "<p><span>orphan</span></p>"
