@@ -840,11 +840,24 @@ _TABLE_DASH_STYLES = {"DASH_STYLE_UNSPECIFIED", "SOLID", "DOT", "DASH"}
 
 
 class _CellSpanAttribute(PositiveIntegerAttribute):
-    def decode(self, raw: str) -> int:
-        value = super().decode(raw)
+    def _validate_canonical(self, value: int) -> None:
         if value == 1:
             raise ValueError("cell span must be greater than 1")
+
+    def decode(self, raw: str) -> int:
+        value = super().decode(raw)
+        self._validate_canonical(value)
         return value
+
+    def encode(self, value: int) -> str:
+        raw = super().encode(value)
+        self._validate_canonical(value)
+        return raw
+
+    def validate(self, value: int | UnsetType) -> None:
+        super().validate(value)
+        if value is not UNSET:
+            self._validate_canonical(cast(int, value))
 
 
 class TableColumnTag(Tag):
@@ -880,7 +893,14 @@ class TableCellBorderTag(Tag):
         gdocs_name("dash-style"), choices=_TABLE_DASH_STYLES, required=True
     )
     width = PointAttribute(gdocs_name("width"), required=True)
-    children = Children(Child(ColorTag, min_num=1, max_num=1))
+    children = Children(
+        Child(
+            ColorTag,
+            min_num=1,
+            max_num=1,
+            min_error="missing required g:color child",
+        )
+    )
 
 
 class TableCellBorderLeftTag(TableCellBorderTag):
@@ -984,7 +1004,12 @@ class TableTag(Tag):
     table_key = StringAttribute(gdocs_name("table-key"))
     children = Children(
         Child(TableColgroupTag, max_num=1),
-        Child(TableBodyTag, min_num=1, max_num=1),
+        Child(
+            TableBodyTag,
+            min_num=1,
+            max_num=1,
+            min_error="missing required tbody child",
+        ),
     )
 
 

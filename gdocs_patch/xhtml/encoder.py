@@ -444,14 +444,22 @@ class _Encoder:
             )
         )
         return tags.TableTag(
-            table_key=(models.UNSET if table.table_key is None else table.table_key),
+            table_key=(
+                models.UNSET
+                if table.table_key is None
+                else require_string(table.table_key, "Table.table_key")
+            ),
             children=children,
         )
 
     def encode_table_row(self, row: models.TableRow) -> tags.TableRowTag:
         require_list(row.cells, "TableRow.cells")
         return tags.TableRowTag(
-            row_key=models.UNSET if row.row_key is None else row.row_key,
+            row_key=(
+                models.UNSET
+                if row.row_key is None
+                else require_string(row.row_key, "TableRow.row_key")
+            ),
             min_height=row.min_height,
             prevent_overflow=row.prevent_overflow,
             is_header=row.is_header,
@@ -480,7 +488,11 @@ class _Encoder:
                 children.append(metadata)
         children.extend(self.encode_structural_sequence(cell.content, body=False))
         return tags.TableCellTag(
-            cell_key=models.UNSET if cell.cell_key is None else cell.cell_key,
+            cell_key=(
+                models.UNSET
+                if cell.cell_key is None
+                else require_string(cell.cell_key, "TableCell.cell_key")
+            ),
             row_span=row_span,
             column_span=column_span,
             children=children,

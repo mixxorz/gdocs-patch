@@ -120,6 +120,7 @@ class Child:
         *,
         min_num: int = 0,
         max_num: int | None = None,
+        min_error: str | None = None,
     ) -> None:
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
@@ -128,6 +129,7 @@ class Child:
         self._node_type = node_type
         self.min_num = min_num
         self.max_num = max_num
+        self.min_error = min_error
 
     @property
     def node_type(self) -> type[Node]:
@@ -252,6 +254,8 @@ class Children(Field[list[Node]]):
         for spec in self.specs:
             count = sum(spec.matches_node(node) for node in value)
             if count < spec.min_num:
+                if spec.min_error is not None:
+                    raise ValidationError(spec.min_error)
                 raise ValidationError(
                     f"{self.name} requires at least {spec.min_num} "
                     f"{spec.node_type.__name__} child(ren); got {count}"
@@ -284,6 +288,8 @@ class Children(Field[list[Node]]):
                 issubclass(node_type, spec.node_type) for node_type in node_types
             )
             if count < spec.min_num:
+                if spec.min_error is not None:
+                    raise ValidationError(spec.min_error)
                 raise ValidationError(
                     f"{self.name} requires at least {spec.min_num} "
                     f"{spec.node_type.__name__} child(ren); got {count}"

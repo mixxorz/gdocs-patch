@@ -717,6 +717,18 @@ def decoded_table(document: Document) -> Table:
     return table
 
 
+@pytest.mark.parametrize("key_field", ["table_key", "row_key", "cell_key"])
+def test_rejects_invalid_mutated_table_keys(key_field: str) -> None:
+    cell = TableCell(content=[])
+    row = TableRow(cells=[cell])
+    table = Table(rows=[row])
+    owner = {"table_key": table, "row_key": row, "cell_key": cell}[key_field]
+    setattr(owner, key_field, UNSET)
+
+    with pytest.raises(ValueError, match="must be a string"):
+        serialize_document(document_with_table(table))
+
+
 def test_round_trips_complete_recursive_table() -> None:
     border = TableCellBorder(
         color=Color(red=0.1, green=0.2, blue=0.3),
@@ -846,6 +858,27 @@ def test_rejects_duplicate_singular_metadata_separated_by_content() -> None:
 
     with pytest.raises(XHTMLParseError, match="at most one g:cell-style"):
         deserialize_document(xhtml_with_table_tree(table))
+
+
+@pytest.mark.parametrize(
+    ("table_tree", "diagnostic"),
+    [
+        ("<table><colgroup /></table>", "missing required tbody child"),
+        (
+            "<table><tbody><tr><td><g:cell-style><g:border-left "
+            'g:dash-style="SOLID" g:width="1" /></g:cell-style></td></tr></tbody>'
+            "</table>",
+            "missing required g:color child",
+        ),
+    ],
+)
+def test_preserves_missing_required_table_child_diagnostics(
+    table_tree: str, diagnostic: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_table_tree(table_tree))
+
+    assert str(error.value).endswith(f": {diagnostic}")
 
 
 def test_rejects_unknown_table_child() -> None:

@@ -88,6 +88,11 @@ def test_tables_are_fully_declarative() -> None:
     )
 
 
+def test_direct_table_cell_tag_rejects_explicit_span_one() -> None:
+    with pytest.raises(ValueError, match="cell span must be greater than 1"):
+        tags.TableCellTag(row_span=1).dumps()
+
+
 def test_repeated_child_decode_error_path_includes_one_based_index() -> None:
     xhtml = (
         _DECLARATION + '<html xmlns="http://www.w3.org/1999/xhtml" '
