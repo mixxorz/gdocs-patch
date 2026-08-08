@@ -76,7 +76,7 @@ Ruff format initially identified the three edited modules, which were formatted 
 
 ## Commit
 
-Pending final verification and commit as `refactor: map XHTML document metadata through tags`.
+- `f4f0293618b35f5b44b63da54abf5204e8208e09 refactor: map XHTML document metadata through tags`
 
 ## Concerns
 
