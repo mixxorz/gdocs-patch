@@ -58,9 +58,8 @@ class Field[T](ABC):
 
     required = False
 
-    def __init__(self, *, contextualize_validation_errors: bool = True) -> None:
+    def __init__(self) -> None:
         self.name: str | None = None
-        self.contextualize_validation_errors = contextualize_validation_errors
 
     def __set_name__(self, _owner: type["Tag"], name: str) -> None:
         self.name = name
@@ -158,11 +157,9 @@ class Children(Field[list[Node]]):
         max_num: int | None = None,
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
-        contextualize_validation_errors: bool = True,
+        min_error: str | None = None,
     ) -> None:
-        super().__init__(
-            contextualize_validation_errors=contextualize_validation_errors
-        )
+        super().__init__()
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
         if max_num is not None and max_num < min_num:
@@ -172,6 +169,7 @@ class Children(Field[list[Node]]):
         self.max_num = max_num
         self.text_error = text_error
         self.tail_error = tail_error
+        self.min_error = min_error
 
     def get_default(self) -> list[Node]:
         return []
@@ -228,6 +226,8 @@ class Children(Field[list[Node]]):
             raise ValidationError("children must be a list")
 
         if len(value) < self.min_num:
+            if self.min_error is not None:
+                raise ValidationError(self.min_error)
             raise ValidationError(
                 f"{self.name} requires at least {self.min_num} child(ren); "
                 f"got {len(value)}"
@@ -266,6 +266,38 @@ class Children(Field[list[Node]]):
                     f"{spec.node_type.__name__} child(ren); got {count}"
                 )
 
+    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
+        if len(node_types) < self.min_num:
+            if self.min_error is not None:
+                raise ValidationError(self.min_error)
+            raise ValidationError(
+                f"{self.name} requires at least {self.min_num} child(ren); "
+                f"got {len(node_types)}"
+            )
+        if self.max_num is not None and len(node_types) > self.max_num:
+            raise ValidationError(
+                f"{self.name} permits at most {self.max_num} child(ren); "
+                f"got {len(node_types)}"
+            )
+        for spec in self.specs:
+            count = sum(
+                issubclass(node_type, spec.node_type) for node_type in node_types
+            )
+            if count < spec.min_num:
+                raise ValidationError(
+                    f"{self.name} requires at least {spec.min_num} "
+                    f"{spec.node_type.__name__} child(ren); got {count}"
+                )
+            if spec.max_num is not None and count > spec.max_num:
+                tag_name = getattr(spec.node_type, "tag_name", None)
+                if spec.max_num == 1 and isinstance(tag_name, str):
+                    local_name = tag_name.rsplit("}", 1)[-1]
+                    raise ValidationError(f"expected at most one {local_name} child")
+                raise ValidationError(
+                    f"{self.name} permits at most {spec.max_num} "
+                    f"{spec.node_type.__name__} child(ren); got {count}"
+                )
+
     def decode_from(
         self, element: ElementTree.Element, decoder: "Decoder"
     ) -> list[Node]:
@@ -287,7 +319,6 @@ class Tag(Node):
 
     tag_name: str | None = None
     field_order: tuple[str, ...] = ()
-    clean_before_fields = False
 
     @classmethod
     def fields(cls) -> dict[str, Field[Any]]:
@@ -334,24 +365,38 @@ class Tag(Node):
             setattr(self, name, value)
 
     def clean(self) -> None:
-        """Validate relationships between fields on this tag."""
+        """Validate relationships between fully decoded fields on this tag."""
+
+    def validate_before_children(self) -> None:
+        """Validate decoded non-child fields before child preflight and recursion."""
+
+    def validate_resolved_child_types(
+        self, child_types: tuple[type[Node], ...]
+    ) -> None:
+        """Validate relationships across resolved direct child alternatives."""
+
+    def _validate_field(self, name: str, field: Field[Any]) -> None:
+        try:
+            field.validate(getattr(self, name))
+        except ValidationError as error:
+            raise ValidationError(f"{type(self).__name__}.{name}: {error}") from error
 
     def validate(self) -> None:
         if self.tag_name is None:
             raise ValidationError(f"{type(self).__name__} has no tag_name")
-        if self.clean_before_fields:
-            self.clean()
-        for name, field in self.fields().items():
-            try:
-                field.validate(getattr(self, name))
-            except ValidationError as error:
-                if not field.contextualize_validation_errors:
-                    raise
-                raise ValidationError(
-                    f"{type(self).__name__}.{name}: {error}"
-                ) from error
-        if not self.clean_before_fields:
-            self.clean()
+        fields = self.fields()
+        for name, field in fields.items():
+            if not isinstance(field, Children):
+                self._validate_field(name, field)
+        self.validate_before_children()
+        for name, field in fields.items():
+            if isinstance(field, Children):
+                self._validate_field(name, field)
+                children = cast(list[Node], getattr(self, name))
+                self.validate_resolved_child_types(
+                    tuple(type(child) for child in children)
+                )
+        self.clean()
 
     @classmethod
     def decode_from(cls, element: ElementTree.Element, decoder: "Decoder") -> Self:
@@ -368,11 +413,26 @@ class Tag(Node):
             attribute_name = min(unknown_attributes)
             decoder.fail("unknown attribute", attribute_name=attribute_name)
 
+        fields = cls.fields()
         values = {
             name: field.decode_from(element, decoder)
-            for name, field in cls.fields().items()
+            for name, field in fields.items()
+            if not isinstance(field, Children)
         }
-        return cls(**values)
+        node = cls(**values)
+        try:
+            for name, field in fields.items():
+                if not isinstance(field, Children):
+                    node._validate_field(name, field)
+            node.validate_before_children()
+        except ValidationError as error:
+            decoder.fail(str(error))
+
+        for name, field in fields.items():
+            if isinstance(field, Children):
+                with decoder.children_of(node):
+                    setattr(node, name, field.decode_from(element, decoder))
+        return node
 
     @classmethod
     def loads(cls, source: str) -> Self:
@@ -394,6 +454,7 @@ class Tag(Node):
 class Decoder:
     def __init__(self) -> None:
         self._path: list[str] = []
+        self._child_owners: list[Tag] = []
 
     def fail(
         self,
@@ -416,6 +477,14 @@ class Decoder:
             yield
         finally:
             self._path.pop()
+
+    @contextmanager
+    def children_of(self, owner: Tag) -> Generator[None]:
+        self._child_owners.append(owner)
+        try:
+            yield
+        finally:
+            self._child_owners.pop()
 
     def loads[T: Tag](self, source: str, root_type: type[T]) -> T:
         try:
@@ -443,6 +512,7 @@ class Decoder:
         self, parent: ElementTree.Element, field: Children
     ) -> list[Node]:
         result: list[Node] = []
+        owner = self._child_owners[-1] if self._child_owners else None
 
         def append_text(value: str | None, error_message: str) -> None:
             if value is None or not value:
@@ -453,33 +523,28 @@ class Decoder:
                 self.fail(error_message)
 
         append_text(parent.text, field.text_error)
-        child_counts: dict[str, int] = {}
         child_totals: dict[str, int] = {}
+        resolved: list[tuple[ElementTree.Element, Child, type[Tag]]] = []
         for child_element in parent:
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
-
-        for spec in field.specs:
-            node_type = spec.node_type
-            tag_name = getattr(node_type, "tag_name", None)
-            if not isinstance(tag_name, str) or spec.max_num is None:
-                continue
-            count = child_totals.get(tag_name, 0)
-            if count > spec.max_num:
-                if spec.max_num == 1:
-                    local_name = tag_name.rsplit("}", 1)[-1]
-                    self.fail(f"expected at most one {local_name} child")
-                self.fail(
-                    f"expected at most {spec.max_num} {node_type.__name__} children"
-                )
-
-        for child_element in parent:
             spec = field.spec_for_element(child_element)
             if spec is None:
                 self.fail("unknown child element", element_name=child_element.tag)
             child_type = spec.node_type
             if not issubclass(child_type, Tag):
                 raise TypeError("element child declaration must refer to a Tag")
+            resolved.append((child_element, spec, child_type))
 
+        child_types = tuple(child_type for _, _, child_type in resolved)
+        try:
+            field.validate_resolved_types(child_types)
+            if owner is not None:
+                owner.validate_resolved_child_types(child_types)
+        except ValidationError as error:
+            self.fail(str(error))
+
+        child_counts: dict[str, int] = {}
+        for child_element, spec, child_type in resolved:
             child_counts[child_element.tag] = child_counts.get(child_element.tag, 0) + 1
             path_step = child_element.tag
             repeated = spec.max_num is None or spec.max_num > 1

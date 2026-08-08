@@ -568,6 +568,43 @@ def test_preserves_exact_list_validation_diagnostics(
 
 
 @pytest.mark.parametrize(
+    ("structure", "diagnostic"),
+    [
+        (
+            "<g:list><li><p><g:unknown /></p></li></g:list>",
+            "exactly one of g:list-id and g:bullet-preset is required",
+        ),
+        (
+            '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
+            "<li><p><g:unknown /></p></li></g:list>",
+            "exactly one of g:list-id and g:bullet-preset is required",
+        ),
+        (
+            '<g:list g:list-id="id"><li><p><g:unknown /></p><p /></li></g:list>',
+            "list item must contain exactly one paragraph",
+        ),
+    ],
+)
+def test_list_preflight_errors_win_over_malformed_descendants(
+    structure: str, diagnostic: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value).endswith(f": {diagnostic}")
+
+
+def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
+    structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value).endswith("/li[1]: nesting level must be non-negative")
+    assert "/@g:nesting-level" not in str(error.value)
+
+
+@pytest.mark.parametrize(
     ("definitions", "message"),
     [
         ('<g:list-definitions g:unknown="x" />', "unknown attribute g:unknown"),

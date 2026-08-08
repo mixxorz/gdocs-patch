@@ -683,6 +683,13 @@ class _ContentAnchorChildren(Children):
             )
         super().validate(value)
 
+    def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
+        if len(node_types) != 1:
+            raise ValidationError(
+                "link target must contain exactly one paragraph element"
+            )
+        super().validate_resolved_types(node_types)
+
 
 class ContentAnchorTag(MetadataAnchorTag):
     children = _ContentAnchorChildren(
@@ -792,34 +799,11 @@ _BULLET_PRESET_CHOICES = {
 }
 
 
-class _ListItemChildren(Children):
-    def validate(self, value: list[Node] | UnsetType) -> None:
-        paragraphs = (
-            sum(isinstance(child, ParagraphVocabularyTag) for child in value)
-            if isinstance(value, list)
-            else 0
-        )
-        if paragraphs != 1:
-            raise ValidationError("list item must contain exactly one paragraph")
-        super().validate(value)
-
-
-class _ListChildren(Children):
-    def validate(self, value: list[Node] | UnsetType) -> None:
-        if isinstance(value, list) and not value:
-            raise ValidationError("list must contain at least one item")
-        super().validate(value)
-
-
 class ListItemTag(Tag):
     tag_name = xhtml_name("li")
 
-    nesting_level = NonNegativeIntegerAttribute(
-        gdocs_name("nesting-level"),
-        default=0,
-        negative_error="nesting level must be non-negative",
-    )
-    children = _ListItemChildren(
+    nesting_level = IntegerAttribute(gdocs_name("nesting-level"), default=0)
+    children = Children(
         Child(BulletStyleTag, max_num=1),
         Child(GenericParagraphTag),
         Child(UnspecifiedParagraphTag),
@@ -833,29 +817,47 @@ class ListItemTag(Tag):
         Child(Heading5Tag),
         Child(Heading6Tag),
         min_num=1,
+        min_error="list item must contain exactly one paragraph",
         text_error="unexpected text content",
         tail_error="unexpected text after child element",
-        contextualize_validation_errors=False,
     )
+
+    def validate_before_children(self) -> None:
+        if self.nesting_level is not UNSET and cast(int, self.nesting_level) < 0:
+            raise ValidationError("nesting level must be non-negative")
+
+    def validate_resolved_child_types(
+        self, child_types: tuple[type[Node], ...]
+    ) -> None:
+        paragraphs = sum(
+            issubclass(child_type, ParagraphVocabularyTag) for child_type in child_types
+        )
+        if paragraphs != 1:
+            raise ValidationError("list item must contain exactly one paragraph")
 
 
 class ListTag(Tag):
     tag_name = gdocs_name("list")
-    clean_before_fields = True
 
     list_id = StringAttribute(gdocs_name("list-id"))
     bullet_preset = ChoiceAttribute(
         gdocs_name("bullet-preset"), choices=_BULLET_PRESET_CHOICES
     )
-    children = _ListChildren(
+    children = Children(
         Child(ListItemTag, min_num=1),
         min_num=1,
+        min_error="list must contain at least one item",
         text_error="unexpected text content",
         tail_error="unexpected text after child element",
-        contextualize_validation_errors=False,
     )
 
+    def validate_before_children(self) -> None:
+        self._validate_identity()
+
     def clean(self) -> None:
+        self._validate_identity()
+
+    def _validate_identity(self) -> None:
         if (self.list_id is UNSET) == (self.bullet_preset is UNSET):
             raise ValidationError(
                 "exactly one of g:list-id and g:bullet-preset is required"

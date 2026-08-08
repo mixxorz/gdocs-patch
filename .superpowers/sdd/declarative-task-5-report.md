@@ -121,3 +121,50 @@ All configured hooks passed
 git diff --check
 passed
 ```
+
+## Re-review Fixes: Generic Pre-child Validation
+
+- Replaced validation-order/message adaptations with a generic two-phase declarative decode lifecycle.
+- `Tag.decode_from()` now decodes and validates every non-`Children` field, then invokes `validate_before_children()`, before asking a child field to inspect or recurse into descendants.
+- `Decoder.decode_children()` now resolves the complete direct-child type sequence, preflights aggregate/spec cardinalities, and invokes the owning tag's `validate_resolved_child_types()` hook before recursively decoding the first child.
+- Preserved specialized generic child decoders through an owner context, including paragraph error-path adaptation, body diagnostics, and table-of-contents section rejection.
+- `ListTag.validate_before_children()` enforces identity exclusivity before any list item validation.
+- `ListItemTag.validate_resolved_child_types()` enforces exactly one paragraph across all complete paragraph alternatives before malformed paragraph contents can be decoded.
+- List nesting now uses an unconstrained declarative `IntegerAttribute`; `ListItemTag.validate_before_children()` rejects negative values at the `li` path. The same hook rejects invalid negative model state during encoding.
+- Removed the superseded list-specific child field subclasses, field-prefix suppression, early-clean flag, and custom non-negative attribute diagnostic shim.
+- Added compound-invalid public regressions for missing/both identities with malformed items, two paragraphs with a malformed first paragraph, and the exact li-level negative-nesting path.
+
+### Re-review TDD Evidence
+
+Focused RED:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_list_preflight_errors_win_over_malformed_descendants tests/xhtml/test_structures.py::test_negative_list_nesting_error_is_reported_at_item_path -q
+4 failed
+```
+
+Focused GREEN and established diagnostics:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_list_preflight_errors_win_over_malformed_descendants tests/xhtml/test_structures.py::test_negative_list_nesting_error_is_reported_at_item_path tests/xhtml/test_structures.py::test_preserves_exact_list_validation_diagnostics tests/xhtml/test_structures.py::test_rejects_invalid_structural_lists -q
+19 passed
+```
+
+### Re-review Verification
+
+```console
+uv run pytest -q
+276 passed in 2.89s
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+74 files already formatted
+uv run fixit lint .
+57 files clean
+uv run pyright
+0 errors, 0 warnings, 0 informations
+uv run pre-commit run --all-files
+All configured hooks passed
+git diff --check
+passed
+```
