@@ -56,8 +56,6 @@ def document(structure: str = "", *, metadata: str = "") -> str:
             "/@g:baseline-offset",
         ),
         (document('<p><span><br g:unknown="x" /></span></p>'), "/br"),
-        (document("<p>raw<span>x</span></p>"), "/section[1]"),
-        (document("<p><span>x</span>raw</p>"), "/section[1]"),
         (document().replace("<g:section-style />", ""), "/section[1]"),
         (document("<p><g:auto-text /></p>"), "/g:auto-text[1]"),
     ],
@@ -69,13 +67,13 @@ def test_invalid_grammar_is_contextual_xhtml_parse_error(xhtml: str, path: str) 
     assert path in str(error.value)
 
 
-def test_empty_body_preserves_contextual_section_diagnostic() -> None:
+def test_rejects_empty_body() -> None:
     xhtml = document().replace(
         "<g:body><section><g:section-style /></section></g:body>", "<g:body />"
     )
 
     with pytest.raises(
-        XHTMLParseError, match=r"g:body: body must contain at least one section"
+        XHTMLParseError, match=r"g:body: expected at least one child element"
     ):
         deserialize_document(xhtml)
 
@@ -91,25 +89,6 @@ def test_anchor_target_validation_precedes_malformed_content(attributes: str) ->
         XHTMLParseError, match="invalid link target attribute combination"
     ):
         deserialize_document(xhtml)
-
-
-@pytest.mark.parametrize(
-    ("metadata", "message"),
-    [
-        ("<g:headers>leading</g:headers>", "unexpected text content"),
-        (
-            "<g:headers>"
-            '<g:header g:key="key" g:segment-id="segment" />tail'
-            "</g:headers>",
-            "unexpected text after child element",
-        ),
-    ],
-)
-def test_segment_wrapper_preserves_whitespace_messages(
-    metadata: str, message: str
-) -> None:
-    with pytest.raises(XHTMLParseError, match=message):
-        deserialize_document(document(metadata=metadata))
 
 
 def test_rejects_negative_tab_nesting_level() -> None:

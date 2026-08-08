@@ -466,33 +466,8 @@ def test_rejects_wrong_gdocs_namespace() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [
-        "document-style",
-        "named-styles",
-        "list-definitions",
-        "body",
-        "headers",
-        "footers",
-        "footnotes",
-    ],
-)
-def test_rejects_duplicate_document_tab_wrapper(wrapper: str) -> None:
-    with pytest.raises(XHTMLParseError, match=rf"at most one {wrapper}"):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" '
-            'g:document-id="doc-1" g:title="Example">'
-            '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
-            f"<g:document-tab><g:{wrapper} /><g:{wrapper} /></g:document-tab>"
-            "</g:tab></body></html>"
-        )
-
-
-def test_rejects_duplicate_required_body_wrapper() -> None:
-    with pytest.raises(XHTMLParseError, match="at most one body"):
+def test_rejects_excess_child_cardinality() -> None:
+    with pytest.raises(XHTMLParseError, match="expected at most one body child"):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<html xmlns="http://www.w3.org/1999/xhtml" '

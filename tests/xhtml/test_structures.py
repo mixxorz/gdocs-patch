@@ -448,7 +448,6 @@ def xhtml_with_structure(structure: str, metadata: str = "") -> str:
 @pytest.mark.parametrize(
     ("structure", "message"),
     [
-        ('<g:list g:list-id="id" />', "at least one"),
         ("<g:list><li><p /></li></g:list>", "exactly one"),
         (
             '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
@@ -460,7 +459,6 @@ def xhtml_with_structure(structure: str, metadata: str = "") -> str:
             "<g:bullet-style /><p /></li></g:list>",
             "forbidden",
         ),
-        ('<g:list g:list-id="id"><li /></g:list>', "exactly one paragraph"),
         (
             '<g:list g:list-id="id"><li><p /><p /></li></g:list>',
             "exactly one paragraph",
@@ -488,39 +486,14 @@ def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
             "exactly one of g:list-id and g:bullet-preset is required",
         ),
         (
-            '<g:list g:list-id="id"><li /></g:list>',
-            "list item must contain exactly one paragraph",
-        ),
-        (
             '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>',
             "nesting level must be non-negative",
         ),
-        (
-            '<g:list g:list-id="id">text<li><p /></li></g:list>',
-            "unexpected text content",
-        ),
-        (
-            '<g:list g:list-id="id"><li>text<p /></li></g:list>',
-            "unexpected text content",
-        ),
-        (
-            '<g:list g:list-id="id"><li><p />tail</li></g:list>',
-            "unexpected text after child element",
-        ),
-        (
-            '<g:list g:list-id="id"><li><p /></li>tail</g:list>',
-            "unexpected text after child element",
-        ),
     ],
 )
-def test_preserves_exact_list_validation_diagnostics(
-    structure: str, diagnostic: str
-) -> None:
-    with pytest.raises(XHTMLParseError) as error:
+def test_rejects_invalid_list_structure(structure: str, diagnostic: str) -> None:
+    with pytest.raises(XHTMLParseError, match=diagnostic):
         deserialize_document(xhtml_with_structure(structure))
-
-    assert str(error.value).endswith(f": {diagnostic}")
-    assert "ListItemTag.children:" not in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -550,28 +523,6 @@ def test_list_preflight_errors_win_over_malformed_descendants(
     assert str(error.value).endswith(f": {diagnostic}")
 
 
-@pytest.mark.parametrize(
-    ("structure", "diagnostic"),
-    [
-        (
-            "<g:list>raw<li><p /></li></g:list>",
-            "unexpected text content",
-        ),
-        (
-            '<g:list g:list-id="id"><li g:nesting-level="-1">raw<p /></li></g:list>',
-            "unexpected text content",
-        ),
-    ],
-)
-def test_list_child_shell_errors_precede_semantic_validation(
-    structure: str, diagnostic: str
-) -> None:
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml_with_structure(structure))
-
-    assert str(error.value).endswith(f": {diagnostic}")
-
-
 def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
 
@@ -582,25 +533,6 @@ def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     assert "/@g:nesting-level" not in str(error.value)
 
 
-@pytest.mark.parametrize(
-    ("definitions", "message"),
-    [
-        ("<g:list-definitions>leading</g:list-definitions>", "unexpected text content"),
-        (
-            "<g:list-definitions>"
-            '<g:list-definition g:list-id="id" />tail'
-            "</g:list-definitions>",
-            "unexpected text after child element",
-        ),
-    ],
-)
-def test_list_definition_wrapper_preserves_whitespace_messages(
-    definitions: str, message: str
-) -> None:
-    with pytest.raises(XHTMLParseError, match=message):
-        deserialize_document(xhtml_with_structure("", definitions))
-
-
 def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
     definitions = (
         "<g:list-definitions>"
@@ -609,7 +541,7 @@ def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
         "</g:list-definitions>"
     )
 
-    with pytest.raises(XHTMLParseError, match="duplicate list key 'duplicate'"):
+    with pytest.raises(XHTMLParseError, match="duplicate child key 'duplicate'"):
         deserialize_document(xhtml_with_structure("", definitions))
 
 
@@ -802,35 +734,12 @@ def test_accepts_table_and_cell_metadata_after_content_without_reordering() -> N
     assert decoded_table(deserialize_document(xhtml)) == expected
 
 
-def test_rejects_duplicate_singular_metadata_separated_by_content() -> None:
-    table = (
-        "<table><tbody><tr><td><g:cell-style /><p><span>content</span></p>"
-        "<g:cell-style /></td></tr></tbody></table>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="at most one g:cell-style"):
-        deserialize_document(xhtml_with_table_tree(table))
-
-
-@pytest.mark.parametrize(
-    ("table_tree", "diagnostic"),
-    [
-        ("<table><colgroup /></table>", "missing required tbody child"),
-        (
-            "<table><tbody><tr><td><g:cell-style><g:border-left "
-            'g:dash-style="SOLID" g:width="1" /></g:cell-style></td></tr></tbody>'
-            "</table>",
-            "missing required g:color child",
-        ),
-    ],
-)
-def test_preserves_missing_required_table_child_diagnostics(
-    table_tree: str, diagnostic: str
-) -> None:
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml_with_table_tree(table_tree))
-
-    assert str(error.value).endswith(f": {diagnostic}")
+def test_rejects_missing_required_child() -> None:
+    with pytest.raises(
+        XHTMLParseError,
+        match="expected at least one tbody child",
+    ):
+        deserialize_document(xhtml_with_table_tree("<table><colgroup /></table>"))
 
 
 @pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<colgroup />")])

@@ -7,6 +7,21 @@ from xml.etree import ElementTree
 
 from gdocs_patch.models import UNSET, UnsetType
 
+from .base import display_name
+
+
+def _quantity(value: int) -> str:
+    return "one" if value == 1 else str(value)
+
+
+def _children(value: int) -> str:
+    return "child" if value == 1 else "children"
+
+
+def _node_name(node_type: type["Node"]) -> str:
+    tag_name = getattr(node_type, "tag_name", None)
+    return display_name(tag_name) if isinstance(tag_name, str) else node_type.__name__
+
 
 class XHTMLModelError(ValueError):
     """Base error for the declarative XHTML model."""
@@ -118,8 +133,6 @@ class Child:
         *,
         min_num: int = 0,
         max_num: int | None = None,
-        min_error: str | None = None,
-        max_error: str | None = None,
     ) -> None:
         if min_num < 0:
             raise ValueError("min_num cannot be negative")
@@ -128,8 +141,6 @@ class Child:
         self._node_type = node_type
         self.min_num = min_num
         self.max_num = max_num
-        self.min_error = min_error
-        self.max_error = max_error
 
     @property
     def node_type(self) -> type[Node]:
@@ -157,11 +168,7 @@ class Children(Field[list[Node]]):
         *specs: Child,
         min_num: int = 0,
         max_num: int | None = None,
-        text_error: str = "unexpected text",
-        tail_error: str = "unexpected text",
-        min_error: str | None = None,
         unique_by: Field[Any] | None = None,
-        duplicate_error: str = "duplicate child key {key!r}",
     ) -> None:
         super().__init__()
         if min_num < 0:
@@ -171,11 +178,7 @@ class Children(Field[list[Node]]):
         self.specs = specs
         self.min_num = min_num
         self.max_num = max_num
-        self.text_error = text_error
-        self.tail_error = tail_error
-        self.min_error = min_error
         self.unique_by = unique_by
-        self.duplicate_error = duplicate_error
 
     def __set_name__(self, owner: type["Tag"], name: str) -> None:
         super().__set_name__(owner, name)
@@ -248,16 +251,14 @@ class Children(Field[list[Node]]):
             raise ValidationError("children must be a list")
 
         if len(value) < self.min_num:
-            if self.min_error is not None:
-                raise ValidationError(self.min_error)
             raise ValidationError(
-                f"{self.name} requires at least {self.min_num} child(ren); "
-                f"got {len(value)}"
+                f"expected at least {_quantity(self.min_num)} child element"
+                f"{'' if self.min_num == 1 else 's'}"
             )
         if self.max_num is not None and len(value) > self.max_num:
             raise ValidationError(
-                f"{self.name} permits at most {self.max_num} child(ren); "
-                f"got {len(value)}"
+                f"expected at most {_quantity(self.max_num)} child element"
+                f"{'' if self.max_num == 1 else 's'}"
             )
 
         for node in value:
@@ -273,23 +274,16 @@ class Children(Field[list[Node]]):
 
         for spec in self.specs:
             count = sum(spec.matches_node(node) for node in value)
+            child_name = _node_name(spec.node_type)
             if count < spec.min_num:
-                if spec.min_error is not None:
-                    raise ValidationError(spec.min_error)
                 raise ValidationError(
-                    f"{self.name} requires at least {spec.min_num} "
-                    f"{spec.node_type.__name__} child(ren); got {count}"
+                    f"expected at least {_quantity(spec.min_num)} {child_name} "
+                    f"{_children(spec.min_num)}"
                 )
             if spec.max_num is not None and count > spec.max_num:
-                if spec.max_error is not None:
-                    raise ValidationError(spec.max_error)
-                tag_name = getattr(spec.node_type, "tag_name", None)
-                if spec.max_num == 1 and isinstance(tag_name, str):
-                    local_name = tag_name.rsplit("}", 1)[-1]
-                    raise ValidationError(f"expected at most one {local_name} child")
                 raise ValidationError(
-                    f"{self.name} permits at most {spec.max_num} "
-                    f"{spec.node_type.__name__} child(ren); got {count}"
+                    f"expected at most {_quantity(spec.max_num)} {child_name} "
+                    f"{_children(spec.max_num)}"
                 )
 
         if self.unique_by is not None:
@@ -298,43 +292,34 @@ class Children(Field[list[Node]]):
                 tag = cast(Tag, node)
                 key: object = self.unique_by.__get__(tag, type(tag))
                 if key in seen:
-                    raise ValidationError(self.duplicate_error.format(key=key))
+                    raise ValidationError(f"duplicate child key {key!r}")
                 seen.add(key)
 
     def validate_resolved_types(self, node_types: tuple[type[Node], ...]) -> None:
         if len(node_types) < self.min_num:
-            if self.min_error is not None:
-                raise ValidationError(self.min_error)
             raise ValidationError(
-                f"{self.name} requires at least {self.min_num} child(ren); "
-                f"got {len(node_types)}"
+                f"expected at least {_quantity(self.min_num)} child element"
+                f"{'' if self.min_num == 1 else 's'}"
             )
         if self.max_num is not None and len(node_types) > self.max_num:
             raise ValidationError(
-                f"{self.name} permits at most {self.max_num} child(ren); "
-                f"got {len(node_types)}"
+                f"expected at most {_quantity(self.max_num)} child element"
+                f"{'' if self.max_num == 1 else 's'}"
             )
         for spec in self.specs:
             count = sum(
                 issubclass(node_type, spec.node_type) for node_type in node_types
             )
+            child_name = _node_name(spec.node_type)
             if count < spec.min_num:
-                if spec.min_error is not None:
-                    raise ValidationError(spec.min_error)
                 raise ValidationError(
-                    f"{self.name} requires at least {spec.min_num} "
-                    f"{spec.node_type.__name__} child(ren); got {count}"
+                    f"expected at least {_quantity(spec.min_num)} {child_name} "
+                    f"{_children(spec.min_num)}"
                 )
             if spec.max_num is not None and count > spec.max_num:
-                if spec.max_error is not None:
-                    raise ValidationError(spec.max_error)
-                tag_name = getattr(spec.node_type, "tag_name", None)
-                if spec.max_num == 1 and isinstance(tag_name, str):
-                    local_name = tag_name.rsplit("}", 1)[-1]
-                    raise ValidationError(f"expected at most one {local_name} child")
                 raise ValidationError(
-                    f"{self.name} permits at most {spec.max_num} "
-                    f"{spec.node_type.__name__} child(ren); got {count}"
+                    f"expected at most {_quantity(spec.max_num)} {child_name} "
+                    f"{_children(spec.max_num)}"
                 )
 
     def decode_from(
@@ -570,15 +555,15 @@ class Decoder:
         result: list[Node] = []
         owner = self._child_owners[-1] if self._child_owners else None
 
-        def append_text(value: str | None, error_message: str) -> None:
+        def append_text(value: str | None) -> None:
             if value is None or not value:
                 return
             if field.permits_text:
                 result.append(Text(value))
             elif value.strip():
-                self.fail(error_message)
+                self.fail("text is not permitted under this parent")
 
-        append_text(parent.text, field.text_error)
+        append_text(parent.text)
         child_totals: dict[str, int] = {}
         resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
         for position, child_element in enumerate(parent, 1):
@@ -597,7 +582,7 @@ class Decoder:
                 and child_element.tail.strip()
                 and not field.permits_text
             ):
-                self.fail(field.tail_error)
+                self.fail("text is not permitted under this parent")
             resolved.append((position, child_element, spec, child_type))
 
         child_types = tuple(child_type for _, _, _, child_type in resolved)
@@ -622,7 +607,7 @@ class Decoder:
             with self.at(path_step):
                 child = self._decode_element(child_element, child_type)
             result.append(child)
-            append_text(child_element.tail, field.tail_error)
+            append_text(child_element.tail)
 
         return field.normalize(result)
 

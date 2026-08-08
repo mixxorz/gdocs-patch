@@ -545,10 +545,10 @@ def test_rejects_out_of_range_structured_color_with_parse_context() -> None:
         )
 
 
-def test_rejects_non_whitespace_tail_after_paragraph_metadata() -> None:
+def test_rejects_text_between_child_elements() -> None:
     with pytest.raises(
         XHTMLParseError,
-        match=r"/html/body/g:tab\[1\].*unexpected text between paragraph elements",
+        match=r"/html/body/g:tab\[1\].*text is not permitted under this parent",
     ):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'

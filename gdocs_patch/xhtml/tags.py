@@ -470,11 +470,7 @@ class ListDefinitionTag(Tag):
     tag_name = gdocs_name("list-definition")
 
     list_id = StringAttribute(gdocs_name("list-id"), required=True)
-    children = Children(
-        Child(ListLevelTag),
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
-    )
+    children = Children(Child(ListLevelTag))
 
 
 class ListDefinitionsTag(Tag):
@@ -482,10 +478,7 @@ class ListDefinitionsTag(Tag):
 
     children = Children(
         Child(ListDefinitionTag),
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
         unique_by=ListDefinitionTag.list_id,
-        duplicate_error="duplicate list key {key!r}",
     )
 
 
@@ -683,8 +676,6 @@ class ParagraphVocabularyTag(Tag):
         *_styled_paragraph_element_children(),
         Child(EquationTag),
         Child(ContentAnchorTag),
-        text_error="unexpected text content",
-        tail_error="unexpected text between paragraph elements",
     )
 
 
@@ -770,9 +761,6 @@ class ListItemTag(Tag):
         Child(Heading5Tag),
         Child(Heading6Tag),
         min_num=1,
-        min_error="list item must contain exactly one paragraph",
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
     )
 
     def validate_resolved_child_types(
@@ -799,9 +787,6 @@ class ListTag(Tag):
     children = Children(
         Child(ListItemTag, min_num=1),
         min_num=1,
-        min_error="list must contain at least one item",
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
     )
 
     def validate_after_child_shell(self) -> None:
@@ -874,7 +859,6 @@ class TableCellBorderTag(Tag):
             ColorTag,
             min_num=1,
             max_num=1,
-            min_error="missing required g:color child",
         )
     )
 
@@ -916,11 +900,7 @@ class TableCellStyleTag(Tag):
 
 def _table_cell_children() -> Children:
     return Children(
-        Child(
-            TableCellStyleTag,
-            max_num=1,
-            max_error="expected at most one g:cell-style child",
-        ),
+        Child(TableCellStyleTag, max_num=1),
         Child(lambda: GenericParagraphTag),
         Child(lambda: UnspecifiedParagraphTag),
         Child(lambda: ParagraphTag),
@@ -986,7 +966,6 @@ class TableTag(Tag):
             TableBodyTag,
             min_num=1,
             max_num=1,
-            min_error="missing required tbody child",
         ),
     )
 
@@ -1074,27 +1053,19 @@ class DocumentBodyTag(Tag):
     children = Children(
         Child(lambda: SectionTag, min_num=1),
         min_num=1,
-        min_error="body must contain at least one section",
     )
 
 
 class TableOfContentsTag(Tag):
     tag_name = gdocs_name("table-of-contents")
 
-    children = Children(
-        *_structural_children().specs,
-        text_error="unexpected text content",
-    )
+    children = Children(*_structural_children().specs)
 
 
 class SegmentTag(Tag):
     key = StringAttribute(gdocs_name("key"), required=True)
     segment_id = StringAttribute(gdocs_name("segment-id"), required=True)
-    children = Children(
-        *_structural_children().specs,
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
-    )
+    children = Children(*_structural_children().specs)
 
 
 class HeaderTag(SegmentTag):
@@ -1112,10 +1083,7 @@ class FootnoteTag(SegmentTag):
 def _segment_children(segment_type: type[SegmentTag]) -> Children:
     return Children(
         Child(segment_type),
-        text_error="unexpected text content",
-        tail_error="unexpected text after child element",
         unique_by=SegmentTag.key,
-        duplicate_error="duplicate segment key {key!r}",
     )
 
 
