@@ -18,6 +18,7 @@
 - Add tests only for a newly discovered behavioral gap; do not test declarations or implementation structure.
 - Use `UNSET`, not a second missing-value sentinel.
 - Tag declarations remain agnostic to Google Docs model classes.
+- Avoid giant symbol imports in mapper modules: use `from gdocs_patch import models` with names such as `models.AutoText` and `models.Body`, and use `from . import tags` with names such as `tags.BodyTag` and `tags.ColorTag`.
 - Model mappers must not create, inspect, or mutate `ElementTree.Element`; `ElementTree` is allowed only at parse/render/security boundaries.
 - Do not modify `document-14FFBRJOhSbx0cXM8EwlKMQDdnalKjPeelLTr6rZD9EE.documents.get.json`.
 - Commit each completed migration slice only after the complete test suite and static checks pass.

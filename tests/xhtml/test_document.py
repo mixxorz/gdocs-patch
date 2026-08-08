@@ -241,6 +241,32 @@ def test_round_trips_complete_document_style_and_preserves_empty_presence() -> N
 
     assert actual == document
     assert xhtml.count("<g:document-style") == 2
+    style_tag = xhtml.split("<g:document-style", 1)[1].split(">", 1)[0]
+    ordered_attributes = (
+        'g:document-mode="PAGES"',
+        'g:default-header-id="header-default"',
+        'g:default-footer-id="footer-default"',
+        'g:even-page-header-id="header-even"',
+        'g:even-page-footer-id="footer-even"',
+        'g:first-page-header-id="header-first"',
+        'g:first-page-footer-id="footer-first"',
+        'g:use-even-page-header-footer="true"',
+        'g:use-first-page-header-footer="false"',
+        'g:use-custom-header-footer-margins="true"',
+        'g:flip-page-orientation="false"',
+        'g:page-number-start="7"',
+        'g:page-width="612"',
+        'g:page-height="792"',
+        'g:margin-top="1"',
+        'g:margin-bottom="2"',
+        'g:margin-left="3"',
+        'g:margin-right="4"',
+        'g:margin-header="5"',
+        'g:margin-footer="6"',
+    )
+    assert [style_tag.index(attribute) for attribute in ordered_attributes] == sorted(
+        style_tag.index(attribute) for attribute in ordered_attributes
+    )
     complete_style = actual.tabs[0].content.document_style
     assert isinstance(complete_style, DocumentStyle)
     for name in (
@@ -258,6 +284,19 @@ def test_round_trips_complete_document_style_and_preserves_empty_presence() -> N
         assert dimension.unit == "PT"
     assert actual.tabs[1].content.document_style == DocumentStyle()
     assert actual.tabs[2].content.document_style is UNSET
+
+
+@pytest.mark.parametrize("invalid_level", [False, 0.0])
+def test_rejects_non_integer_default_tab_nesting_level(invalid_level: object) -> None:
+    document = Document(
+        document_id="doc",
+        title="Invalid tab",
+        tabs=[Tab(tab_id="tab", title="Tab", index=0, children=[])],
+    )
+    document.tabs[0].nesting_level = invalid_level  # type: ignore[assignment]
+
+    with pytest.raises(ValueError, match="integer"):
+        serialize_document(document)
 
 
 def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
@@ -439,6 +478,15 @@ def test_rejects_malformed_xml() -> None:
         )
 
 
+def test_rejects_wrong_xhtml_namespace() -> None:
+    with pytest.raises(XHTMLParseError, match="unsupported XHTML namespace"):
+        deserialize_document(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="urn:wrong" xmlns:g="urn:gdocs-patch:xhtml:1" '
+            'g:document-id="doc-1" g:title="Example"><body /></html>'
+        )
+
+
 def test_rejects_wrong_gdocs_namespace() -> None:
     with pytest.raises(XHTMLParseError, match="namespace"):
         deserialize_document(
@@ -447,6 +495,31 @@ def test_rejects_wrong_gdocs_namespace() -> None:
             'xmlns:g="urn:wrong" g:document-id="doc-1" g:title="Example">'
             "<body />"
             "</html>"
+        )
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "document-style",
+        "named-styles",
+        "list-definitions",
+        "body",
+        "headers",
+        "footers",
+        "footnotes",
+    ],
+)
+def test_rejects_duplicate_document_tab_wrapper(wrapper: str) -> None:
+    with pytest.raises(XHTMLParseError, match=rf"at most one {wrapper}"):
+        deserialize_document(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:g="urn:gdocs-patch:xhtml:1" '
+            'g:document-id="doc-1" g:title="Example">'
+            '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
+            f"<g:document-tab><g:{wrapper} /><g:{wrapper} /></g:document-tab>"
+            "</g:tab></body></html>"
         )
 
 

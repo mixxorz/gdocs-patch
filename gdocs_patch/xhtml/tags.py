@@ -309,6 +309,29 @@ class BackgroundColorTag(Tag):
 
 class DocumentStyleTag(Tag):
     tag_name = gdocs_name("document-style")
+    field_order = (
+        "document_mode",
+        "default_header_id",
+        "default_footer_id",
+        "even_page_header_id",
+        "even_page_footer_id",
+        "first_page_header_id",
+        "first_page_footer_id",
+        "use_even_page_header_footer",
+        "use_first_page_header_footer",
+        "use_custom_header_footer_margins",
+        "flip_page_orientation",
+        "page_number_start",
+        "page_width",
+        "page_height",
+        "margin_top",
+        "margin_bottom",
+        "margin_left",
+        "margin_right",
+        "margin_header",
+        "margin_footer",
+        "children",
+    )
 
     document_mode = ChoiceAttribute(
         gdocs_name("document-mode"),

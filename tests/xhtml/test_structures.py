@@ -360,6 +360,19 @@ def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
     assert decoded_paragraph.bullet.text_style is UNSET
 
 
+@pytest.mark.parametrize("invalid_start", [False, 0.0])
+def test_rejects_non_integer_default_list_start_number(invalid_start: object) -> None:
+    document = document_with_section(SectionStyle())
+    content = document.tabs[0].content
+    assert isinstance(content, DocumentTab)
+    level = ListLevel(glyph_format="%0", glyph_type="DECIMAL")
+    level.start_number = invalid_start  # type: ignore[assignment]
+    content.lists = {"list": ListDefinition(levels=[level])}
+
+    with pytest.raises(ValueError, match="integer"):
+        serialize_document(document)
+
+
 def test_round_trips_complete_list_definitions_and_levels() -> None:
     lists = {
         "empty": ListDefinition(levels=[]),

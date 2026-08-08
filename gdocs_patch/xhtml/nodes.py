@@ -253,6 +253,10 @@ class Children(Field[list[Node]]):
                     f"{spec.node_type.__name__} child(ren); got {count}"
                 )
             if spec.max_num is not None and count > spec.max_num:
+                tag_name = getattr(spec.node_type, "tag_name", None)
+                if spec.max_num == 1 and isinstance(tag_name, str):
+                    local_name = tag_name.rsplit("}", 1)[-1]
+                    raise ValidationError(f"expected at most one {local_name} child")
                 raise ValidationError(
                     f"{self.name} permits at most {spec.max_num} "
                     f"{spec.node_type.__name__} child(ren); got {count}"
