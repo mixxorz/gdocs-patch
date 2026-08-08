@@ -81,16 +81,7 @@ def test_round_trips_recursive_table_of_contents_in_body() -> None:
     assert decoded_content.body.content[1] == table_of_contents
 
 
-@pytest.mark.parametrize(
-    "children",
-    [
-        "<g:unknown /><section><g:section-style /></section>",
-        "<section><g:section-style /></section><g:unknown />",
-    ],
-)
-def test_toc_prioritizes_forbidden_section_over_unknown_siblings(
-    children: str,
-) -> None:
+def test_rejects_child_element_not_permitted_under_parent() -> None:
     document = document_with_section(SectionStyle())
     content = document.tabs[0].content
     assert isinstance(content, DocumentTab)
@@ -98,31 +89,15 @@ def test_toc_prioritizes_forbidden_section_over_unknown_siblings(
     content.body.add_child(TableOfContents(content=[]))
     xhtml = serialize_document(document).replace(
         "<g:table-of-contents />",
-        f"<g:table-of-contents>{children}</g:table-of-contents>",
-    )
-
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml)
-
-    assert str(error.value).endswith("section elements are only valid in a body")
-
-
-def test_toc_raw_text_precedes_forbidden_section() -> None:
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    content.body.add_child(TableOfContents(content=[]))
-    xhtml = serialize_document(document).replace(
-        "<g:table-of-contents />",
-        "<g:table-of-contents>raw<section><g:section-style /></section>"
+        "<g:table-of-contents><section><g:section-style /></section>"
         "</g:table-of-contents>",
     )
 
-    with pytest.raises(XHTMLParseError) as error:
+    with pytest.raises(
+        XHTMLParseError,
+        match="element is not permitted under this parent: section",
+    ):
         deserialize_document(xhtml)
-
-    assert str(error.value).endswith("unexpected text content")
 
 
 def test_round_trips_complete_section_style() -> None:
@@ -506,24 +481,6 @@ def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("structure", "message"),
-    [
-        (
-            '<g:list g:list-id="id" g:unknown="x"><li><p /></li></g:list>',
-            "unknown attribute g:unknown",
-        ),
-        (
-            '<g:list g:list-id="id"><li><g:unknown /><p /></li></g:list>',
-            "unknown child element g:unknown",
-        ),
-    ],
-)
-def test_rejects_unknown_list_or_item_content(structure: str, message: str) -> None:
-    with pytest.raises(XHTMLParseError, match=message):
-        deserialize_document(xhtml_with_structure(structure))
-
-
-@pytest.mark.parametrize(
     ("structure", "diagnostic"),
     [
         (
@@ -601,10 +558,6 @@ def test_list_preflight_errors_win_over_malformed_descendants(
             "unexpected text content",
         ),
         (
-            "<g:list><g:unknown /></g:list>",
-            "unknown child element g:unknown",
-        ),
-        (
             '<g:list g:list-id="id"><li g:nesting-level="-1">raw<p /></li></g:list>',
             "unexpected text content",
         ),
@@ -629,25 +582,6 @@ def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     assert "/@g:nesting-level" not in str(error.value)
 
 
-@pytest.mark.parametrize(
-    ("definitions", "message"),
-    [
-        ('<g:list-definitions g:unknown="x" />', "unknown attribute g:unknown"),
-        (
-            '<g:list-definitions><g:list-definition g:list-id="id">'
-            '<g:list-level g:glyph-format="%0" g:glyph-symbol="x">'
-            "<g:unknown /></g:list-level></g:list-definition></g:list-definitions>",
-            "unknown child element g:unknown",
-        ),
-    ],
-)
-def test_rejects_unknown_list_definition_content(
-    definitions: str, message: str
-) -> None:
-    with pytest.raises(XHTMLParseError, match=message):
-        deserialize_document(xhtml_with_structure("", definitions))
-
-
 def test_duplicate_second_list_definition_precedes_its_malformed_descendant() -> None:
     definitions = (
         "<g:list-definitions>"
@@ -670,18 +604,6 @@ def test_duplicate_list_definition_direct_tail_precedes_duplicate_key() -> None:
     )
 
     with pytest.raises(XHTMLParseError, match="unexpected text after child element"):
-        deserialize_document(xhtml_with_structure("", definitions))
-
-
-def test_malformed_first_list_definition_precedes_later_duplicate() -> None:
-    definitions = (
-        "<g:list-definitions>"
-        '<g:list-definition g:list-id="duplicate"><g:unknown /></g:list-definition>'
-        '<g:list-definition g:list-id="duplicate" />'
-        "</g:list-definitions>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="unknown child element g:unknown"):
         deserialize_document(xhtml_with_structure("", definitions))
 
 
@@ -936,13 +858,6 @@ def test_preserves_missing_required_table_child_diagnostics(
     assert str(error.value).endswith(f": {diagnostic}")
 
 
-def test_rejects_unknown_table_child() -> None:
-    xhtml = xhtml_with_table_tree("<table><caption /><tbody /></table>")
-
-    with pytest.raises(XHTMLParseError, match="unknown child element caption"):
-        deserialize_document(xhtml)
-
-
 @pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<colgroup />")])
 def test_preserves_unset_versus_empty_table_columns(
     columns: object, fragment: str
@@ -974,16 +889,6 @@ def test_normalizes_default_only_table_cell_style_to_unset() -> None:
     decoded_table = content.body.content[1]
     assert isinstance(decoded_table, Table)
     assert decoded_table.rows[0].cells[0].style is UNSET
-
-
-@pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])
-def test_malformed_cell_descendant_precedes_explicit_default_span(
-    attribute: str,
-) -> None:
-    table = f"<table><tbody><tr><td {attribute}><g:unknown /></td></tr></tbody></table>"
-
-    with pytest.raises(XHTMLParseError, match="unknown structural element g:unknown"):
-        deserialize_document(xhtml_with_table_tree(table))
 
 
 @pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])

@@ -2,7 +2,7 @@ from abc import ABC
 from collections.abc import Callable, Generator, Mapping, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Literal, Never, Self, cast, overload
+from typing import Any, Never, Self, cast, overload
 from xml.etree import ElementTree
 
 from gdocs_patch.models import UNSET, UnsetType
@@ -109,13 +109,6 @@ class Field[T](ABC):
         raise TypeError("field is not represented by XML attributes")
 
 
-@dataclass(frozen=True)
-class ForbiddenChild:
-    message: str
-    priority: bool = False
-    include_element_name: bool = True
-
-
 class Child:
     """One permitted direct child type and its cardinality."""
 
@@ -167,11 +160,8 @@ class Children(Field[list[Node]]):
         text_error: str = "unexpected text",
         tail_error: str = "unexpected text",
         min_error: str | None = None,
-        unknown_child_error: str = "unknown child element",
-        forbidden_children: dict[str, ForbiddenChild] | None = None,
         min_cardinality_before_text: bool = False,
         positional_path_attributes: dict[str, str] | None = None,
-        forbidden_child_phase: Literal["before_text", "after_text"] = "before_text",
         unique_by: Field[Any] | None = None,
         duplicate_error: str = "duplicate child key {key!r}",
     ) -> None:
@@ -186,11 +176,8 @@ class Children(Field[list[Node]]):
         self.text_error = text_error
         self.tail_error = tail_error
         self.min_error = min_error
-        self.unknown_child_error = unknown_child_error
-        self.forbidden_children = forbidden_children or {}
         self.min_cardinality_before_text = min_cardinality_before_text
         self.positional_path_attributes = positional_path_attributes or {}
-        self.forbidden_child_phase = forbidden_child_phase
         self.unique_by = unique_by
         self.duplicate_error = duplicate_error
 
@@ -625,24 +612,6 @@ class Decoder:
             elif value.strip():
                 self.fail(error_message)
 
-        prioritized_forbidden = next(
-            (
-                (child, forbidden)
-                for child in parent
-                if (forbidden := field.forbidden_children.get(child.tag)) is not None
-                and forbidden.priority
-            ),
-            None,
-        )
-        if (
-            prioritized_forbidden is not None
-            and field.forbidden_child_phase == "before_text"
-        ):
-            child, forbidden = prioritized_forbidden
-            self.fail(
-                forbidden.message,
-                element_name=child.tag if forbidden.include_element_name else None,
-            )
         if field.min_cardinality_before_text and len(parent) == 0:
             try:
                 field.validate_resolved_types(())
@@ -650,29 +619,15 @@ class Decoder:
                 self.fail(str(error))
 
         append_text(parent.text, field.text_error)
-        if (
-            prioritized_forbidden is not None
-            and field.forbidden_child_phase == "after_text"
-        ):
-            child, forbidden = prioritized_forbidden
-            self.fail(
-                forbidden.message,
-                element_name=child.tag if forbidden.include_element_name else None,
-            )
         child_totals: dict[str, int] = {}
         resolved: list[tuple[int, ElementTree.Element, Child, type[Tag]]] = []
         for position, child_element in enumerate(parent, 1):
             child_totals[child_element.tag] = child_totals.get(child_element.tag, 0) + 1
             spec = field.spec_for_element(child_element)
             if spec is None:
-                forbidden = field.forbidden_children.get(child_element.tag)
-                if forbidden is None:
-                    self.fail(field.unknown_child_error, element_name=child_element.tag)
                 self.fail(
-                    forbidden.message,
-                    element_name=(
-                        child_element.tag if forbidden.include_element_name else None
-                    ),
+                    "element is not permitted under this parent:",
+                    element_name=child_element.tag,
                 )
             child_type = spec.node_type
             if not issubclass(child_type, Tag):

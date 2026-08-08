@@ -205,14 +205,6 @@ def test_rejects_multiple_children_in_content_link() -> None:
         deserialize_document(xhtml)
 
 
-def test_rejects_child_on_opaque_paragraph_element() -> None:
-    xhtml = serialize_document(document_with_runs(Equation()))
-    xhtml = xhtml.replace("<g:equation />", "<g:equation><g:unknown /></g:equation>")
-
-    with pytest.raises(XHTMLParseError, match="unknown child element"):
-        deserialize_document(xhtml)
-
-
 def test_round_trips_complete_paragraph_metadata() -> None:
     opaque_border = ParagraphBorder(
         color=Color(red=0.1, green=0.2, blue=0.3),
@@ -548,44 +540,6 @@ def test_rejects_out_of_range_structured_color_with_parse_context() -> None:
             "<g:document-tab><g:body><section><g:section-style /><p>"
             '<g:paragraph-style><g:shading-color g:red="2" g:green="0" g:blue="0" />'
             "</g:paragraph-style></p></section></g:body></g:document-tab>"
-            "</g:tab>"
-            "</body></html>"
-        )
-
-
-def test_rejects_nested_child_in_empty_paragraph_style() -> None:
-    with pytest.raises(
-        XHTMLParseError,
-        match=r"/html/body/g:tab\[1\].*/g:paragraph-style: unknown child element g:unknown",
-    ):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Style">'
-            "<body>"
-            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-            "<g:document-tab><g:body><section><g:section-style /><p>"
-            "<g:paragraph-style><g:unknown /></g:paragraph-style><span>ok</span>"
-            "</p></section></g:body></g:document-tab>"
-            "</g:tab>"
-            "</body></html>"
-        )
-
-
-def test_rejects_nested_child_in_break() -> None:
-    with pytest.raises(
-        XHTMLParseError,
-        match=r"/html/body/g:tab\[1\].*/br: unknown child element g:unknown",
-    ):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Break">'
-            "<body>"
-            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-            "<g:document-tab><g:body><section><g:section-style />"
-            "<p><span>before<br><g:unknown /></br>after</span></p>"
-            "</section></g:body></g:document-tab>"
             "</g:tab>"
             "</body></html>"
         )

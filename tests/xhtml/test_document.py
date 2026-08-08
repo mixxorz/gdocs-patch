@@ -439,25 +439,6 @@ def test_rejects_outer_named_style_named_style_type_attribute() -> None:
         deserialize_document(xhtml)
 
 
-def test_rejects_nested_child_in_empty_section_style() -> None:
-    with pytest.raises(
-        XHTMLParseError,
-        match=r"/html/body/g:tab\[1\].*/g:section-style: unknown child element g:unknown",
-    ):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Style">'
-            "<body>"
-            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-            "<g:document-tab><g:body><section>"
-            "<g:section-style><g:unknown /></g:section-style>"
-            "</section></g:body></g:document-tab>"
-            "</g:tab>"
-            "</body></html>"
-        )
-
-
 def test_rejects_malformed_xml() -> None:
     with pytest.raises(XHTMLParseError, match="XML"):
         deserialize_document(

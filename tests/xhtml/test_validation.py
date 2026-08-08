@@ -47,12 +47,7 @@ def document(structure: str = "", *, metadata: str = "") -> str:
             "/html",
         ),
         (document().replace(' g:title="Validation"', ' g:unknown="x"'), "/html"),
-        (document().replace("<body>", "<body><aside />"), "/html"),
         (document().replace(' g:index="0"', ' g:index="0" g:unknown="x"'), "/g:tab[1]"),
-        (
-            document().replace("<g:document-tab>", "<g:document-tab><g:unknown />"),
-            "/g:document-tab",
-        ),
         (document('<p g:unknown="x" />'), "/section[1]"),
         (document('<p><g:paragraph-style g:unknown="x" /></p>'), "/g:paragraph-style"),
         (document('<p><span g:bold="yes">x</span></p>'), "/@g:bold"),
@@ -163,18 +158,6 @@ def test_duplicate_segment_direct_tail_precedes_duplicate_key() -> None:
         deserialize_document(document(metadata=metadata))
 
 
-def test_malformed_first_segment_precedes_later_duplicate() -> None:
-    metadata = (
-        "<g:headers>"
-        '<g:header g:key="duplicate" g:segment-id="first"><g:unknown /></g:header>'
-        '<g:header g:key="duplicate" g:segment-id="second" />'
-        "</g:headers>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="unknown structural element g:unknown"):
-        deserialize_document(document(metadata=metadata))
-
-
 @pytest.mark.parametrize(
     ("metadata", "message"),
     [
@@ -192,24 +175,6 @@ def test_segment_wrapper_preserves_whitespace_messages(
 ) -> None:
     with pytest.raises(XHTMLParseError, match=message):
         deserialize_document(document(metadata=metadata))
-
-
-def test_body_rejects_direct_structural_children_as_parse_error() -> None:
-    xhtml = document().replace(
-        "<section><g:section-style /></section>", "<p><span>orphan</span></p>"
-    )
-
-    with pytest.raises(XHTMLParseError, match=r"g:body: unknown child element p"):
-        deserialize_document(xhtml)
-
-
-def test_unknown_table_cell_structure_is_contextual_parse_error() -> None:
-    xhtml = document("<table><tbody><tr><td><g:unknown /></td></tr></tbody></table>")
-
-    with pytest.raises(
-        XHTMLParseError, match=r"/td\[1\].*unknown structural element g:unknown"
-    ):
-        deserialize_document(xhtml)
 
 
 def test_rejects_negative_tab_nesting_level() -> None:

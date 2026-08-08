@@ -18,7 +18,6 @@ from .nodes import (
     Child,
     Children,
     Field,
-    ForbiddenChild,
     Node,
     Tag,
     Text,
@@ -937,7 +936,6 @@ def _table_cell_children() -> Children:
         Child(lambda: ListTag),
         Child(lambda: TableTag),
         Child(lambda: TableOfContentsTag),
-        unknown_child_error="unknown structural element",
     )
 
 
@@ -1011,7 +1009,7 @@ def _structural_children() -> Children:
         Child(lambda: TableTag),
         Child(lambda: TableOfContentsTag),
     ]
-    return Children(*specs, unknown_child_error="unknown structural element")
+    return Children(*specs)
 
 
 class SectionColumnTag(Tag):
@@ -1087,15 +1085,7 @@ class TableOfContentsTag(Tag):
 
     children = Children(
         *_structural_children().specs,
-        forbidden_children={
-            xhtml_name("section"): ForbiddenChild(
-                "section elements are only valid in a body",
-                priority=True,
-                include_element_name=False,
-            )
-        },
         text_error="unexpected text content",
-        forbidden_child_phase="after_text",
     )
 
 
@@ -1106,7 +1096,6 @@ class SegmentTag(Tag):
         *_structural_children().specs,
         text_error="unexpected text content",
         tail_error="unexpected text after child element",
-        unknown_child_error="unknown structural element",
     )
 
 
