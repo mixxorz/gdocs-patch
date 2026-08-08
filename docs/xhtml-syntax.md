@@ -360,9 +360,9 @@ Every `TextRun` is represented by exactly one `<span>`, including an unstyled ru
 
 ```xml
 <span g:bold="true"
+      g:font-size="12"
       g:font-family="Arial"
-      g:font-weight="700"
-      g:font-size="12">Styled text</span>
+      g:font-weight="700">Styled text</span>
 ```
 
 Empty text runs use an empty span. A linked run wraps its single span in `<a>`; no other text-style wrappers are used.
@@ -402,9 +402,9 @@ Font family and weight are independently optional string and integer attributes.
 
 ```xml
 <span g:small-caps="true"
+      g:font-size="12"
       g:font-family="Arial"
       g:font-weight="700"
-      g:font-size="12"
       g:foreground-red="0.1"
       g:foreground-green="0.2"
       g:foreground-blue="0.3">Styled text</span>
@@ -454,12 +454,12 @@ A content-level `<a>` contains exactly one style-bearing paragraph element: a ru
 
 ```xml
 <time g:date-id="date-1"
-      datetime="2026-08-08T12:00:00Z"
       g:date-format="DATE_FORMAT_ISO8601"
+      g:time-format="TIME_FORMAT_HOUR_MINUTE"
       g:display-text="2026-08-08"
       g:locale="en-US"
-      g:time-format="TIME_FORMAT_HOUR_MINUTE"
       g:time-zone-id="UTC"
+      datetime="2026-08-08T12:00:00Z"
       g:bold="true" />
 ```
 
@@ -571,7 +571,7 @@ Merged-cell spans use standard XHTML attributes on `<td>`:
 **XML fragment:**
 
 ```xml
-<td rowspan="2" colspan="3" g:cell-key="cell-1">...</td>
+<td g:cell-key="cell-1" rowspan="2" colspan="3">...</td>
 ```
 
 `rowspan` and `colspan` map to `TableCellStyle.row_span` and `column_span`. Omission means the model default `1`; values must be positive integers. Explicit `rowspan="1"` or `colspan="1"` is non-canonical and rejected. A `TableCellStyle` containing only default spans and otherwise `UNSET` normalizes to no cell style.

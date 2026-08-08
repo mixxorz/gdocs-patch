@@ -46,3 +46,24 @@ All required checks passed:
 ## Concerns
 
 None for Task 8. Two pre-existing modified reports, `.superpowers/sdd/declarative-task-2-report.md` and `.superpowers/sdd/declarative-task-7-report.md`, were intentionally left untouched and excluded from this task's commit.
+
+## Review follow-up
+
+Task 8 review identified documentation accuracy issues, all corrected without production or test changes:
+
+- The design now assigns lexical, composite-attribute, child, cardinality, mixed-text, and syntax-level cross-field validation to declarative attributes, tags, and `Children`. Private model mappers are limited to semantic projections and model construction.
+- Text-style fragments now place `g:font-size` before `g:font-family` and `g:font-weight`.
+- The `DateElement` fragment now follows serializer order, with `datetime` after `g:time-zone-id`.
+- The merged-cell fragment now places `g:cell-key` before `rowspan` and `colspan`.
+- The design file map now assigns generated-tree checks, indentation, and rendering to `encoder.py`, and XML preflight, parsing, and public error-path adaptation to `decoder.py`.
+- Mapper sketches are explicitly abridged and now preserve actual parameter order, including the decoder's required `path` parameter.
+
+Focused serializer probes printed and checked these canonical forms:
+
+```xml
+<span g:font-size="12" g:font-family="Arial" g:font-weight="700">Styled text</span>
+<time g:date-id="date-1" g:date-format="DATE_FORMAT_ISO8601" g:time-format="TIME_FORMAT_HOUR_MINUTE" g:display-text="2026-08-08" g:locale="en-US" g:time-zone-id="UTC" datetime="2026-08-08T12:00:00Z" g:bold="true" />
+<td g:cell-key="cell-1" rowspan="2" colspan="3" />
+```
+
+The corresponding focused tests passed (3 passed): canonical text-style order, canonical styled-date order, and complete recursive-table serialization. Follow-up full verification also passed: 291 tests, Ruff lint/format, Fixit, Pyright, every pre-commit hook, and `git diff --check`.

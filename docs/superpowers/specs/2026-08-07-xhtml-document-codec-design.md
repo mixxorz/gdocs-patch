@@ -76,12 +76,12 @@ Use a small package with a declarative XHTML syntax tree between the Google Docs
 ```text
 gdocs_patch/xhtml/
 ├── __init__.py    # public functions and XHTMLParseError
-├── base.py        # namespaces, security limits, rendering, and public error adaptation
+├── base.py        # namespaces, security limits, shared helpers, and public errors
 ├── nodes.py       # generic Node, Text, Field, Children, Tag, Encoder, and Decoder
 ├── attributes.py  # reusable scalar, point, choice, literal, and composite attributes
 ├── tags.py        # declarative XHTML vocabulary and child grammar
-├── encoder.py     # Document models → XHTML Tag tree
-└── decoder.py     # XHTML Tag tree → Document models
+├── encoder.py     # model mapping, generated-tree checks, indentation, and rendering
+└── decoder.py     # XML security/parsing boundary, error paths, and model mapping
 ```
 
 ### Declarative XHTML model
@@ -98,11 +98,13 @@ The generic decoder rejects undeclared attributes and children, accepts declared
 
 A private model mapper converts each supported `Document` model object into its declared `Tag` representation. It sets typed tag fields and assembles ordered tag children; it never sets `ElementTree` attributes, `.text`, or `.tail` directly.
 
+The following abridged signatures show the relevant data flow (module qualifiers are omitted, but parameter order matches the implementation):
+
 ```python
 class _Encoder:
     def encode_document(self, document: Document) -> HtmlTag: ...
     def encode_structural_sequence(
-        self, nodes: list[StructuralElement], *, body: bool = False
+        self, elements: list[StructuralElement], body: bool = False
     ) -> list[Tag]: ...
 ```
 
@@ -112,7 +114,7 @@ class _Encoder:
 Document models
 └── _Encoder → declared Tag/Text tree
     └── nodes.Encoder → ElementTree
-        └── security validation, indentation, and XML rendering
+        └── encoder.py → generated-tree checks, indentation, and XML rendering
 ```
 
 The model mapper retains the two unavoidable sibling projections: body sections and adjacent compatible list paragraphs. All XML lexical conversion, unknown vocabulary, cardinality, mixed text, and attribute mechanics are hidden below the tag declarations.
@@ -121,19 +123,22 @@ The model mapper retains the two unavoidable sibling projections: body sections 
 
 After XML security preflight and `ElementTree.fromstring()`, the generic XHTML `Decoder` parses the entire tree from the expected `HtmlTag` root. A private model mapper then converts typed tags into `Document` models:
 
+These are likewise abridged signatures with implementation-accurate parameter order and path propagation:
+
 ```python
 class _Decoder:
     def decode_document(self, root: HtmlTag) -> Document: ...
     def decode_structural_sequence(
-        self, tags: list[Tag], *, body: bool = False
+        self, elements: list[Node], path: str, body: bool = False
     ) -> list[StructuralElement]: ...
 ```
 
 ```text
 XML text
-├── security preflight and ElementTree.fromstring
+├── decoder.py → security preflight and ElementTree.fromstring
 ├── nodes.Decoder → validated Tag/Text tree
-└── _Decoder → Document models
+├── decoder.py → public error-path adaptation
+└── _Decoder → semantic projections and Document model construction
 ```
 
 The mapper handles only semantic projections and model construction: flattening sections, flattening list containers into bullet paragraphs, selecting semantic paragraph styles, reconstructing links and text styles, and preserving `UNSET`/empty collection distinctions. Model constructors receive completed child lists and establish ordinary parent links. Parent references and absolute indices are never represented in the XHTML tree.
@@ -160,11 +165,11 @@ All non-link `TextStyle` fields are explicit `gdocs` attributes. A linked conten
 
 ## Error handling
 
-XML well-formedness errors are wrapped with their parser location. The generic declarative decoder validates qualified names, declared attributes and children, mixed-text policy, and child cardinalities while constructing the typed `Tag` tree. Declarative attribute codecs validate lexical forms and composite values. The private model mapper then enforces semantic cross-field invariants and reports model-oriented paths before construction.
+XML well-formedness errors are wrapped with their parser location. Declarative attribute fields validate lexical forms and scalar or composite attribute invariants. Declarative tag validation and `Children` declarations enforce qualified names, allowed attributes and children, mixed-text policy, cardinalities, and syntax-level cross-field or child-shell invariants while constructing the typed `Tag` tree.
 
-Examples of cross-field validation include mutually exclusive link targets, opaque versus transparent colors, table width type versus width, positive row/column spans, one list identity form, and required section/body structure.
+Examples of declarative syntax invariants include mutually exclusive link targets, opaque versus transparent colors, table width type versus width, positive row/column spans, one list identity form, and required section/body structure. The private model mappers do not own those syntax checks; they handle semantic projections and model construction after declarative validation.
 
-Metadata placement remains flexible because tag declarations identify metadata independently of child order. Unknown input is never silently ignored.
+Metadata placement remains flexible because tag declarations identify metadata independently of child order. Unknown input is never silently ignored. Decoder boundary helpers adapt generic declarative failures to public model-oriented error paths.
 
 ## Testing
 
