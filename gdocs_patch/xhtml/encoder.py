@@ -12,8 +12,6 @@ from .base import (
     XML_DECLARATION,
     XHTMLParseError,
     _indent_xml,  # pyright: ignore[reportPrivateUsage]
-    encode_link,
-    encode_text_style,
     format_number,
     gdocs_name,
     require_boolean,
@@ -322,16 +320,6 @@ class _Encoder:
             **values,
         )
 
-    def encode_metadata_text_style(
-        self, element: ElementTree.Element, style: models.TextStyle | models.UnsetType
-    ) -> None:
-        if style is models.UNSET:
-            return
-        encoded = encode_text_style(element, style)
-        if encoded is not element:
-            encoded.remove(element)
-            element.append(encoded)
-
     def encode_section_style(
         self, section_break: models.SectionBreak
     ) -> tags.SectionStyleTag:
@@ -444,7 +432,7 @@ class _Encoder:
             if isinstance(element, models.Paragraph):
                 key = self.bullet_group_key(element)
                 if key is None:
-                    xml = self.encode_paragraph(element)
+                    encoded.append(self.encode_paragraph(element))
                 else:
                     end = index + 1
                     while end < len(elements):
@@ -456,7 +444,7 @@ class _Encoder:
                         end += 1
                     xml = self.encode_list(elements[index:end], key)  # type: ignore[arg-type]
                     index = end
-                encoded.append(self._structural_boundary_tag(xml))
+                    encoded.append(self._structural_boundary_tag(xml))
                 if key is not None:
                     continue
             elif isinstance(element, models.Table):
@@ -532,11 +520,15 @@ class _Encoder:
                 isinstance(bullet, models.Bullet)
                 and bullet.text_style is not models.UNSET
             ):
-                metadata = ElementTree.Element(gdocs_name("bullet-style"))
-                self.encode_metadata_text_style(metadata, bullet.text_style)
-                if metadata.attrib or list(metadata):
-                    item.append(metadata)
-            item.append(self.encode_paragraph(paragraph))
+                values, metadata_children = self._encode_metadata_text_style_tag(
+                    bullet.text_style
+                )
+                metadata = tags.BulletStyleTag(children=metadata_children, **values)
+                if metadata_children or any(
+                    value is not models.UNSET for value in values.values()
+                ):
+                    item.append(XHTMLEncoder().encode_element(metadata))
+            item.append(XHTMLEncoder().encode_element(self.encode_paragraph(paragraph)))
         return element
 
     def encode_table(self, table: models.Table) -> ElementTree.Element:
@@ -654,8 +646,10 @@ class _Encoder:
         self.encode_point_attribute(element, "width", border.width)
         self.encode_optional_color(element, "color", border.color)
 
-    def encode_paragraph(self, paragraph: models.Paragraph) -> ElementTree.Element:
-        tag = gdocs_name("paragraph")
+    def encode_paragraph(
+        self, paragraph: models.Paragraph
+    ) -> tags.ParagraphVocabularyTag:
+        tag_type: type[tags.ParagraphVocabularyTag] = tags.GenericParagraphTag
         style: models.ParagraphStyle | None = None
         if paragraph.style is not models.UNSET:
             style = cast(models.ParagraphStyle, paragraph.style)
@@ -665,141 +659,128 @@ class _Encoder:
                     _NAMED_STYLE_TYPES,
                     "ParagraphStyle.named_style_type",
                 )
-                tag = _PARAGRAPH_TAGS[named_style_type]
+                tag_type = {
+                    "NAMED_STYLE_TYPE_UNSPECIFIED": tags.UnspecifiedParagraphTag,
+                    "NORMAL_TEXT": tags.ParagraphTag,
+                    "TITLE": tags.TitleTag,
+                    "SUBTITLE": tags.SubtitleTag,
+                    "HEADING_1": tags.Heading1Tag,
+                    "HEADING_2": tags.Heading2Tag,
+                    "HEADING_3": tags.Heading3Tag,
+                    "HEADING_4": tags.Heading4Tag,
+                    "HEADING_5": tags.Heading5Tag,
+                    "HEADING_6": tags.Heading6Tag,
+                }[named_style_type]
 
         require_list(paragraph.elements, "Paragraph.elements")
-        elements = paragraph.elements
-
-        metadata_tag = (
-            None if style is None else self._encode_paragraph_style_tag(style)
-        )
-        metadata = (
-            None
-            if metadata_tag is None
-            else XHTMLEncoder().encode_element(metadata_tag)
-        )
-        element = ElementTree.Element(tag)
+        children: list[Tag] = []
+        metadata = None if style is None else self._encode_paragraph_style_tag(style)
         if metadata is not None:
-            element.append(metadata)
+            children.append(metadata)
         if paragraph.positioned_object_ids is not models.UNSET:
             require_list(
                 paragraph.positioned_object_ids, "Paragraph.positioned_object_ids"
             )
-            wrapper = ElementTree.SubElement(element, gdocs_name("positioned-objects"))
-            for object_id in cast(list[str], paragraph.positioned_object_ids):
-                item = ElementTree.SubElement(wrapper, gdocs_name("positioned-object"))
-                item.set(
-                    gdocs_name("id"),
-                    require_string(object_id, "Paragraph.positioned_object_ids entry"),
+            children.append(
+                tags.PositionedObjectsTag(
+                    children=[
+                        tags.PositionedObjectTag(
+                            object_id=require_string(
+                                object_id, "Paragraph.positioned_object_ids entry"
+                            )
+                        )
+                        for object_id in cast(
+                            list[str], paragraph.positioned_object_ids
+                        )
+                    ]
                 )
-        for item in elements:
-            element.append(self.encode_paragraph_element(item))
-        return element
+            )
+        children.extend(
+            self.encode_paragraph_element(item) for item in paragraph.elements
+        )
+        return tag_type(children=children)
 
-    def encode_paragraph_element(
-        self, item: models.ParagraphElement
-    ) -> ElementTree.Element:
+    def _encode_content_link(
+        self, child: Tag, link: models.Link | models.UnsetType
+    ) -> Tag:
+        if link is models.UNSET:
+            return child
+        link = cast(models.Link, link)
+        if isinstance(link, models.UrlLink):
+            return tags.ContentAnchorTag(href=link.url, children=[child])
+        if isinstance(link, models.TabLink):
+            return tags.ContentAnchorTag(tab_id=link.tab_id, children=[child])
+        if isinstance(link, models.BookmarkLink):
+            return tags.ContentAnchorTag(
+                bookmark_id=link.bookmark_id, tab_id=link.tab_id, children=[child]
+            )
+        if isinstance(link, models.HeadingLink):
+            return tags.ContentAnchorTag(
+                heading_id=link.heading_id, tab_id=link.tab_id, children=[child]
+            )
+        raise ValueError(f"unsupported link type {type(link).__name__}")
+
+    def encode_paragraph_element(self, item: models.ParagraphElement) -> Tag:
         if isinstance(item, models.TextRun):
-            return self.encode_text_run(item)
+            span, link = self._encode_text_run_span(item)
+            return self._encode_content_link(span, link)
+        if isinstance(item, models.Equation):
+            return tags.EquationTag()
+
+        tag_type: type[tags.StyledParagraphElementTag]
+        values: dict[str, object] = {}
         if isinstance(item, models.AutoText):
-            element = ElementTree.Element(gdocs_name("auto-text"))
-            element.set(
-                gdocs_name("type"),
-                require_enum(
-                    item.auto_text_type, _AUTO_TEXT_TYPES, "AutoText.auto_text_type"
-                ),
-            )
+            tag_type = tags.AutoTextTag
+            values["auto_text_type"] = item.auto_text_type
         elif isinstance(item, models.ColumnBreak):
-            element = ElementTree.Element(gdocs_name("column-break"))
+            tag_type = tags.ColumnBreakTag
         elif isinstance(item, models.DateElement):
-            element = ElementTree.Element(xhtml_name("time"))
-            element.set(
-                gdocs_name("date-id"),
-                require_string(item.date_id, "DateElement.date_id"),
+            tag_type = tags.DateElementTag
+            values.update(
+                date_id=item.date_id,
+                date_format=item.date_format,
+                display_text=item.display_text,
+                locale=item.locale,
+                time_format=item.time_format,
+                time_zone_id=item.time_zone_id,
+                timestamp=item.timestamp,
             )
-            if item.date_format is not models.UNSET:
-                element.set(
-                    gdocs_name("date-format"),
-                    require_enum(
-                        item.date_format, _DATE_FORMATS, "DateElement.date_format"
-                    ),
-                )
-            if item.time_format is not models.UNSET:
-                element.set(
-                    gdocs_name("time-format"),
-                    require_enum(
-                        item.time_format, _TIME_FORMATS, "DateElement.time_format"
-                    ),
-                )
-            for value, name, field in (
-                (item.display_text, gdocs_name("display-text"), "display_text"),
-                (item.locale, gdocs_name("locale"), "locale"),
-                (item.time_zone_id, gdocs_name("time-zone-id"), "time_zone_id"),
-                (item.timestamp, "datetime", "timestamp"),
-            ):
-                if value is not models.UNSET:
-                    element.set(name, require_string(value, f"DateElement.{field}"))
-        elif isinstance(item, models.Equation):
-            return ElementTree.Element(gdocs_name("equation"))
         elif isinstance(item, models.FootnoteReference):
-            element = ElementTree.Element(gdocs_name("footnote-reference"))
-            element.set(
-                gdocs_name("footnote-id"),
-                require_string(item.footnote_id, "FootnoteReference.footnote_id"),
-            )
-            element.set(
-                gdocs_name("footnote-number"),
-                require_string(
-                    item.footnote_number, "FootnoteReference.footnote_number"
-                ),
+            tag_type = tags.FootnoteReferenceTag
+            values.update(
+                footnote_id=item.footnote_id, footnote_number=item.footnote_number
             )
         elif isinstance(item, models.HorizontalRule):
-            element = ElementTree.Element(xhtml_name("hr"))
+            tag_type = tags.HorizontalRuleTag
         elif isinstance(item, models.InlineObjectReference):
-            element = ElementTree.Element(gdocs_name("inline-object"))
-            element.set(
-                gdocs_name("inline-object-id"),
-                require_string(
-                    item.inline_object_id, "InlineObjectReference.inline_object_id"
-                ),
-            )
+            tag_type = tags.InlineObjectReferenceTag
+            values["inline_object_id"] = item.inline_object_id
         elif isinstance(item, models.PageBreak):
-            element = ElementTree.Element(gdocs_name("page-break"))
+            tag_type = tags.PageBreakTag
         elif isinstance(item, models.PersonReference):
-            element = ElementTree.Element(gdocs_name("person"))
-            element.set(
-                gdocs_name("person-id"),
-                require_string(item.person_id, "PersonReference.person_id"),
-            )
-            if item.email is not models.UNSET:
-                element.set(
-                    gdocs_name("email"),
-                    require_string(item.email, "PersonReference.email"),
-                )
-            if item.name is not models.UNSET:
-                element.set(
-                    gdocs_name("name"),
-                    require_string(item.name, "PersonReference.name"),
-                )
+            tag_type = tags.PersonReferenceTag
+            values.update(person_id=item.person_id, email=item.email, name=item.name)
         elif isinstance(item, models.RichLink):
-            element = ElementTree.Element(gdocs_name("rich-link"))
-            element.set(
-                gdocs_name("rich-link-id"),
-                require_string(item.rich_link_id, "RichLink.rich_link_id"),
+            tag_type = tags.RichLinkTag
+            values.update(
+                rich_link_id=item.rich_link_id,
+                uri=item.uri,
+                title=item.title,
+                mime_type=item.mime_type,
             )
-            element.set(gdocs_name("uri"), require_string(item.uri, "RichLink.uri"))
-            if item.title is not models.UNSET:
-                element.set(
-                    gdocs_name("title"), require_string(item.title, "RichLink.title")
-                )
-            if item.mime_type is not models.UNSET:
-                element.set(
-                    gdocs_name("mime-type"),
-                    require_string(item.mime_type, "RichLink.mime_type"),
-                )
         else:
             raise ValueError(f"unsupported paragraph element {type(item).__name__}")
-        return encode_text_style(element, item.text_style)
+
+        link: models.Link | models.UnsetType = models.UNSET
+        if item.text_style is not models.UNSET:
+            style = cast(models.TextStyle, item.text_style)
+            link = style.link
+            values.update(
+                (name, getattr(style, name))
+                for name in tags.StyledParagraphElementTag.fields()
+                if name != "children"
+            )
+        return self._encode_content_link(tag_type(**values), link)
 
     def _encode_paragraph_style_tag(
         self,
@@ -813,7 +794,7 @@ class _Encoder:
         values = {
             name: getattr(style, name)
             for name in paragraph_style_tag_type.fields()
-            if name != "children"
+            if name not in {"children", "owned_named_style_type"}
         }
         children: list[Tag] = []
         border_tags: tuple[tuple[str, type[tags.ParagraphBorderTag]], ...] = (
@@ -881,13 +862,6 @@ class _Encoder:
             }
 
         return tags.SpanTag(children=children, **style_values), link
-
-    def encode_text_run(self, run: models.TextRun) -> ElementTree.Element:
-        span, link = self._encode_text_run_span(run)
-        element = XHTMLEncoder().encode_element(span)
-        if link is not models.UNSET:
-            return encode_link(element, cast(models.Link, link))
-        return element
 
 
 def _is_xml_10_character(character: str) -> bool:

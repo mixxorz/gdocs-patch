@@ -17,6 +17,7 @@ from .nodes import (
     UNSET,
     Child,
     Children,
+    DecodeError,
     Decoder,
     Encoder,
     Field,
@@ -212,6 +213,7 @@ class TabStopsTag(Tag):
 class ParagraphStyleTag(Tag):
     tag_name = gdocs_name("paragraph-style")
 
+    owned_named_style_type = StringAttribute(gdocs_name("named-style-type"))
     alignment = ChoiceAttribute(
         gdocs_name("alignment"),
         choices={"ALIGNMENT_UNSPECIFIED", "START", "CENTER", "END", "JUSTIFIED"},
@@ -274,6 +276,7 @@ class NamedParagraphStyleTag(ParagraphStyleTag):
     @classmethod
     def fields(cls) -> dict[str, Field[Any]]:
         fields = super().fields()
+        fields.pop("owned_named_style_type")
         named_style_type = fields.pop("named_style_type")
         return {"named_style_type": named_style_type, **fields}
 
@@ -369,6 +372,25 @@ class DocumentStyleTag(Tag):
     flip_page_orientation = BooleanAttribute(gdocs_name("flip-page-orientation"))
     page_number_start = IntegerAttribute(gdocs_name("page-number-start"))
     children = Children(Child(BackgroundColorTag, max_num=1))
+
+
+class BulletStyleTag(Tag):
+    tag_name = gdocs_name("bullet-style")
+
+    (
+        bold,
+        italic,
+        underline,
+        strikethrough,
+        small_caps,
+        baseline_offset,
+        font_size,
+        font_family,
+        font_weight,
+        foreground_color,
+        background_color,
+    ) = _text_style_attributes()
+    children = Children(Child(MetadataAnchorTag, max_num=1))
 
 
 class NamedStyleTag(Tag):
@@ -488,58 +510,226 @@ class _OpaqueStructuralTag(Tag):
         return cls(payload=element)
 
 
-class GenericParagraphTag(_OpaqueStructuralTag):
-    tag_name = gdocs_name("paragraph")
+class PositionedObjectTag(Tag):
+    tag_name = gdocs_name("positioned-object")
+
+    object_id = StringAttribute(gdocs_name("id"), required=True)
+    children = Children()
 
 
-class UnspecifiedParagraphTag(_OpaqueStructuralTag):
-    tag_name = gdocs_name("named-style-unspecified")
+class PositionedObjectsTag(Tag):
+    tag_name = gdocs_name("positioned-objects")
+
+    children = Children(Child(PositionedObjectTag))
 
 
-class ParagraphTag(_OpaqueStructuralTag):
-    tag_name = xhtml_name("p")
+class StyledParagraphElementTag(Tag):
+    (
+        bold,
+        italic,
+        underline,
+        strikethrough,
+        small_caps,
+        baseline_offset,
+        font_size,
+        font_family,
+        font_weight,
+        foreground_color,
+        background_color,
+    ) = _text_style_attributes()
+    children = Children()
 
 
-class SimpleParagraphTag(Tag):
-    tag_name = xhtml_name("p")
+class AutoTextTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("auto-text")
+    auto_text_type = ChoiceAttribute(
+        gdocs_name("type"),
+        choices={"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"},
+        required=True,
+    )
 
-    children = Children(
-        Child(ParagraphStyleTag, max_num=1),
+
+class ColumnBreakTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("column-break")
+
+
+class DateElementTag(StyledParagraphElementTag):
+    tag_name = xhtml_name("time")
+    date_id = StringAttribute(gdocs_name("date-id"), required=True)
+    date_format = ChoiceAttribute(
+        gdocs_name("date-format"),
+        choices={
+            "DATE_FORMAT_UNSPECIFIED",
+            "DATE_FORMAT_CUSTOM",
+            "DATE_FORMAT_MONTH_DAY_ABBREVIATED",
+            "DATE_FORMAT_MONTH_DAY_FULL",
+            "DATE_FORMAT_MONTH_DAY_YEAR_ABBREVIATED",
+            "DATE_FORMAT_ISO8601",
+        },
+    )
+    display_text = StringAttribute(gdocs_name("display-text"))
+    locale = StringAttribute(gdocs_name("locale"))
+    time_format = ChoiceAttribute(
+        gdocs_name("time-format"),
+        choices={
+            "TIME_FORMAT_UNSPECIFIED",
+            "TIME_FORMAT_DISABLED",
+            "TIME_FORMAT_HOUR_MINUTE",
+            "TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
+        },
+    )
+    time_zone_id = StringAttribute(gdocs_name("time-zone-id"))
+    timestamp = StringAttribute("datetime")
+
+
+class EquationTag(Tag):
+    tag_name = gdocs_name("equation")
+    children = Children()
+
+
+class FootnoteReferenceTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("footnote-reference")
+    footnote_id = StringAttribute(gdocs_name("footnote-id"), required=True)
+    footnote_number = StringAttribute(gdocs_name("footnote-number"), required=True)
+
+
+class HorizontalRuleTag(StyledParagraphElementTag):
+    tag_name = xhtml_name("hr")
+
+
+class InlineObjectReferenceTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("inline-object")
+    inline_object_id = StringAttribute(gdocs_name("inline-object-id"), required=True)
+
+
+class PageBreakTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("page-break")
+
+
+class PersonReferenceTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("person")
+    person_id = StringAttribute(gdocs_name("person-id"), required=True)
+    email = StringAttribute(gdocs_name("email"))
+    name = StringAttribute(gdocs_name("name"))
+
+
+class RichLinkTag(StyledParagraphElementTag):
+    tag_name = gdocs_name("rich-link")
+    rich_link_id = StringAttribute(gdocs_name("rich-link-id"), required=True)
+    uri = StringAttribute(gdocs_name("uri"), required=True)
+    title = StringAttribute(gdocs_name("title"))
+    mime_type = StringAttribute(gdocs_name("mime-type"))
+
+
+def _styled_paragraph_element_children() -> tuple[Child, ...]:
+    return (
         Child(SpanTag),
+        Child(AutoTextTag),
+        Child(ColumnBreakTag),
+        Child(DateElementTag),
+        Child(FootnoteReferenceTag),
+        Child(HorizontalRuleTag),
+        Child(InlineObjectReferenceTag),
+        Child(PageBreakTag),
+        Child(PersonReferenceTag),
+        Child(RichLinkTag),
+    )
+
+
+class _ContentAnchorChildren(Children):
+    def validate(self, value: list[Node] | UnsetType) -> None:
+        if not isinstance(value, list) or len(value) != 1:
+            raise ValidationError(
+                "link target must contain exactly one paragraph element"
+            )
+        super().validate(value)
+
+
+class ContentAnchorTag(MetadataAnchorTag):
+    children = _ContentAnchorChildren(
+        *_styled_paragraph_element_children(), min_num=1, max_num=1
+    )
+
+
+class _ParagraphChildren(Children):
+    def decode_from(self, element: ElementTree.Element, decoder: Decoder) -> list[Node]:
+        try:
+            return super().decode_from(element, decoder)
+        except DecodeError as error:
+            if (
+                error.attribute_name == gdocs_name("type")
+                and error.path
+                and error.path[-1].startswith(gdocs_name("auto-text"))
+            ):
+                occurrence = int(error.path[-1].rsplit("[", 1)[1][:-1])
+                matching = 0
+                for index, child in enumerate(element, 1):
+                    if child.tag == AutoTextTag.tag_name:
+                        matching += 1
+                    if matching == occurrence:
+                        path = (*error.path[:-1], f"*[{index}]")
+                        raise DecodeError(
+                            str(error),
+                            path=path,
+                            attribute_name=error.attribute_name,
+                            element_name=error.element_name,
+                        ) from error
+            raise
+
+
+class ParagraphVocabularyTag(Tag):
+    children = _ParagraphChildren(
+        Child(ParagraphStyleTag, max_num=1),
+        Child(PositionedObjectsTag, max_num=1),
+        *_styled_paragraph_element_children(),
+        Child(EquationTag),
+        Child(ContentAnchorTag),
         text_error="unexpected text content",
         tail_error="unexpected text between paragraph elements",
     )
 
 
-class TitleTag(_OpaqueStructuralTag):
+class GenericParagraphTag(ParagraphVocabularyTag):
+    tag_name = gdocs_name("paragraph")
+
+
+class UnspecifiedParagraphTag(ParagraphVocabularyTag):
+    tag_name = gdocs_name("named-style-unspecified")
+
+
+class ParagraphTag(ParagraphVocabularyTag):
+    tag_name = xhtml_name("p")
+
+
+class TitleTag(ParagraphVocabularyTag):
     tag_name = gdocs_name("title")
 
 
-class SubtitleTag(_OpaqueStructuralTag):
+class SubtitleTag(ParagraphVocabularyTag):
     tag_name = gdocs_name("subtitle")
 
 
-class Heading1Tag(_OpaqueStructuralTag):
+class Heading1Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h1")
 
 
-class Heading2Tag(_OpaqueStructuralTag):
+class Heading2Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h2")
 
 
-class Heading3Tag(_OpaqueStructuralTag):
+class Heading3Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h3")
 
 
-class Heading4Tag(_OpaqueStructuralTag):
+class Heading4Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h4")
 
 
-class Heading5Tag(_OpaqueStructuralTag):
+class Heading5Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h5")
 
 
-class Heading6Tag(_OpaqueStructuralTag):
+class Heading6Tag(ParagraphVocabularyTag):
     tag_name = xhtml_name("h6")
 
 

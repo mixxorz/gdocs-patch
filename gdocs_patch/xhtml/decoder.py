@@ -16,19 +16,15 @@ from .base import (
     XML_DECLARATION,
     XHTMLParseError,
     construct_model,
-    decode_link,
     display_name,
     extract_one_child,
     gdocs_name,
-    optional_string,
     parse_allowed,
     parse_boolean,
     parse_error,
     parse_float,
     parse_integer,
-    parse_text_style,
     required_string,
-    text_style_attributes,
     validate_attributes,
     validate_whitespace,
     xhtml_name,
@@ -172,25 +168,6 @@ class _Decoder:
         finally:
             sys.setrecursionlimit(recursion_limit)
 
-    def decode_metadata_text_style(
-        self, element: ElementTree.Element, path: str
-    ) -> models.TextStyle | models.UnsetType:
-        construct_text_style = parse_text_style(element, path)
-        validate_whitespace(element, path)
-        children = list(element)
-        anchor = extract_one_child(children, xhtml_name("a"), path)
-        link: models.Link | models.UnsetType = models.UNSET
-        if anchor is not None:
-            anchor_path = f"{path}/a"
-            link = decode_link(anchor, anchor_path)
-            validate_whitespace(anchor, anchor_path)
-            _validate_no_children(anchor, anchor_path)
-        text_style = construct_text_style(link)
-        for child in children:
-            if child is not anchor:
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-        return text_style
-
     def decode_document(self, root: tags.HtmlTag) -> models.Document:
         body = cast(tags.BodyTag, cast(list[Node], root.children)[0])
         return models.Document(
@@ -288,7 +265,9 @@ class _Decoder:
         )
 
     def _decode_metadata_text_style_tag(
-        self, element: tags.NamedStyleTag | tags.ListLevelTag, path: str
+        self,
+        element: tags.NamedStyleTag | tags.ListLevelTag | tags.BulletStyleTag,
+        path: str,
     ) -> models.TextStyle | models.UnsetType:
         values = {
             name: getattr(element, name)
@@ -476,15 +455,17 @@ class _Decoder:
                     )
                 )
                 continue
+            if isinstance(element, tags.ParagraphVocabularyTag):
+                decoded.append(self.decode_paragraph(element, child_path))
+                continue
             if not isinstance(element, tags._OpaqueStructuralTag):  # pyright: ignore[reportPrivateUsage]
                 parse_error(child_path, "unknown structural element")
             payload = cast(ElementTree.Element, element.payload)
             if isinstance(element, tags.ListTag):
                 decoded.extend(self.decode_list(payload, child_path))
-            elif isinstance(element, tags.TableTag):
-                decoded.append(self.decode_table(payload, child_path))
             else:
-                decoded.append(self.decode_paragraph(payload, child_path))
+                assert isinstance(element, tags.TableTag)
+                decoded.append(self.decode_table(payload, child_path))
         return decoded
 
     def optional_allowed(
@@ -607,7 +588,14 @@ class _Decoder:
                 )
             if len(paragraph_elements) != 1:
                 parse_error(item_path, "list item must contain exactly one paragraph")
-            paragraph = self.decode_paragraph(paragraph_elements[0], item_path + "/*")
+            paragraph_element = paragraph_elements[0]
+            paragraph_tag = self.decode_tag(
+                paragraph_element,
+                self._structural_tag_type(paragraph_element.tag, item_path + "/*"),
+                item_path + "/*",
+            )
+            assert isinstance(paragraph_tag, tags.ParagraphVocabularyTag)
+            paragraph = self.decode_paragraph(paragraph_tag, item_path + "/*")
             if preset is not None and style_element is not None:
                 parse_error(item_path, "bullet style is forbidden in a preset list")
             if level < 0:
@@ -625,8 +613,9 @@ class _Decoder:
     def decode_bullet_style(
         self, element: ElementTree.Element, path: str
     ) -> models.TextStyle | models.UnsetType:
-        validate_attributes(element, text_style_attributes(), path)
-        return self.decode_metadata_text_style(element, path)
+        return self._decode_metadata_text_style_tag(
+            self.decode_tag(element, tags.BulletStyleTag, path), path
+        )
 
     def decode_table(self, element: ElementTree.Element, path: str) -> models.Table:
         validate_attributes(element, {gdocs_name("table-key")}, path)
@@ -931,262 +920,129 @@ class _Decoder:
         )
 
     def decode_paragraph(
-        self, element: ElementTree.Element, path: str
+        self, element: tags.ParagraphVocabularyTag, path: str
     ) -> models.Paragraph:
-        children = list(element)
-        declarative_tags = {tags.SpanTag.tag_name, tags.ParagraphStyleTag.tag_name}
-        if element.tag == tags.SimpleParagraphTag.tag_name and all(
-            child.tag in declarative_tags for child in children
-        ):
-            paragraph_tag = self.decode_tag(element, tags.SimpleParagraphTag, path)
-            paragraph_children = cast(list[Node], paragraph_tag.children)
-            style_tag = next(
-                (
-                    child
-                    for child in paragraph_children
-                    if isinstance(child, tags.ParagraphStyleTag)
-                ),
-                None,
-            )
-            style = (
-                models.ParagraphStyle(named_style_type="NORMAL_TEXT")
-                if style_tag is None
-                else self._decode_paragraph_style_tag(
-                    style_tag,
-                    f"{path}/g:paragraph-style",
-                    owning_named_style="NORMAL_TEXT",
-                )
-            )
-            elements: list[models.ParagraphElement] = []
-            for index, child in enumerate(paragraph_children):
-                if isinstance(child, tags.SpanTag):
-                    elements.append(
-                        self._decode_text_run_span(
-                            child, models.UNSET, f"{path}/*[{index + 1}]"
-                        )
-                    )
-            return models.Paragraph(elements=elements, style=style)
-
-        validate_attributes(element, set(), path)
-        if element.text is not None and element.text.strip():
-            parse_error(path, "unexpected text content")
-        metadata = extract_one_child(children, gdocs_name("paragraph-style"), path)
-        named_style_type = _PARAGRAPH_TAGS[element.tag]
-        decoded_style: models.ParagraphStyle | models.UnsetType = models.UNSET
-        if metadata is not None:
-            metadata_path = f"{path}/g:paragraph-style"
-            if metadata.get(gdocs_name("named-style-type")) is not None:
-                parse_error(
-                    metadata_path,
-                    "named style type is owned by the paragraph element",
-                )
-            decoded_style = self._decode_paragraph_style_tag(
-                self.decode_tag(metadata, tags.ParagraphStyleTag, metadata_path),
-                metadata_path,
-                owning_named_style=named_style_type,
-            )
-        elif named_style_type is not models.UNSET:
-            decoded_style = models.ParagraphStyle(named_style_type=named_style_type)  # type: ignore[arg-type]
-        positioned = extract_one_child(children, gdocs_name("positioned-objects"), path)
+        named_style_types: dict[type[tags.ParagraphVocabularyTag], object] = {
+            tags.GenericParagraphTag: models.UNSET,
+            tags.UnspecifiedParagraphTag: "NAMED_STYLE_TYPE_UNSPECIFIED",
+            tags.ParagraphTag: "NORMAL_TEXT",
+            tags.TitleTag: "TITLE",
+            tags.SubtitleTag: "SUBTITLE",
+            tags.Heading1Tag: "HEADING_1",
+            tags.Heading2Tag: "HEADING_2",
+            tags.Heading3Tag: "HEADING_3",
+            tags.Heading4Tag: "HEADING_4",
+            tags.Heading5Tag: "HEADING_5",
+            tags.Heading6Tag: "HEADING_6",
+        }
+        named_style_type = named_style_types[type(element)]
+        style: models.ParagraphStyle | models.UnsetType = models.UNSET
         positioned_ids: list[str] | models.UnsetType = models.UNSET
-        if positioned is not None:
-            positioned_ids = self.decode_positioned_objects(
-                positioned, f"{path}/g:positioned-objects"
-            )
-        runs: list[models.ParagraphElement] = []
-        for index, child in enumerate(children):
-            if child.tail is not None and child.tail.strip():
-                parse_error(path, "unexpected text between paragraph elements")
-            if child in (metadata, positioned):
-                continue
-            child_path = f"{path}/*[{index + 1}]"
-            runs.append(self.decode_paragraph_element(child, child_path))
+        paragraph_elements: list[models.ParagraphElement] = []
+        for index, child in enumerate(cast(list[Node], element.children), 1):
+            child_path = f"{path}/*[{index}]"
+            if isinstance(child, tags.ParagraphStyleTag):
+                if child.owned_named_style_type is not models.UNSET:
+                    parse_error(
+                        f"{path}/g:paragraph-style",
+                        "named style type is owned by the paragraph element",
+                    )
+                style = self._decode_paragraph_style_tag(
+                    child,
+                    f"{path}/g:paragraph-style",
+                    owning_named_style=named_style_type,
+                )
+            elif isinstance(child, tags.PositionedObjectsTag):
+                positioned_ids = [
+                    cast(str, positioned.object_id)
+                    for positioned in cast(
+                        list[tags.PositionedObjectTag], child.children
+                    )
+                ]
+            else:
+                paragraph_elements.append(
+                    self.decode_paragraph_element(cast(Tag, child), child_path)
+                )
+        if style is models.UNSET and named_style_type is not models.UNSET:
+            style = models.ParagraphStyle(named_style_type=cast(Any, named_style_type))
         return models.Paragraph(
-            elements=runs,
-            style=decoded_style,
+            elements=paragraph_elements,
+            style=style,
             positioned_object_ids=positioned_ids,
         )
 
     def decode_paragraph_element(
-        self, element: ElementTree.Element, path: str
+        self, element: Tag, path: str
     ) -> models.ParagraphElement:
-        if element.tag == xhtml_name("a"):
-            link = decode_link(element, path)
-            if element.text is not None and element.text.strip():
-                parse_error(path, "unexpected text in link")
-            children = list(element)
-            if len(children) != 1:
-                parse_error(
-                    path, "link target must contain exactly one paragraph element"
-                )
-            child = children[0]
-            if child.tail is not None and child.tail.strip():
-                parse_error(path, "unexpected text after linked paragraph element")
-            return self.decode_unlinked_paragraph_element(child, link, f"{path}/*[1]")
-        return self.decode_unlinked_paragraph_element(element, models.UNSET, path)
-
-    def decode_unlinked_paragraph_element(
-        self,
-        element: ElementTree.Element,
-        link: models.Link | models.UnsetType,
-        path: str,
-    ) -> models.ParagraphElement:
-        if element.tag == xhtml_name("span"):
-            return self.decode_text_run(element, link, path)
-        if element.tag == gdocs_name("equation"):
-            validate_attributes(element, set(), path)
-            validate_whitespace(element, path)
-            _validate_no_children(element, path)
-            if link is not models.UNSET:
-                parse_error(path, "equation cannot be a link target")
+        link: models.Link | models.UnsetType = models.UNSET
+        if isinstance(element, tags.ContentAnchorTag):
+            link = self._decode_metadata_link(element)
+            element = cast(Tag, cast(list[Node], element.children)[0])
+            path = f"{path}/*[1]"
+        if isinstance(element, tags.SpanTag):
+            return self._decode_text_run_span(element, link, path)
+        if isinstance(element, tags.EquationTag):
             return models.Equation()
 
-        fields: set[str]
-        if element.tag == gdocs_name("auto-text"):
-            fields = {"type"}
-        elif element.tag == gdocs_name("column-break"):
-            fields = set()
-        elif element.tag == xhtml_name("time"):
-            fields = {
-                "date-id",
-                "date-format",
-                "display-text",
-                "locale",
-                "time-format",
-                "time-zone-id",
-            }
-        elif element.tag == gdocs_name("footnote-reference"):
-            fields = {"footnote-id", "footnote-number"}
-        elif element.tag == xhtml_name("hr"):
-            fields = set()
-        elif element.tag == gdocs_name("inline-object"):
-            fields = {"inline-object-id"}
-        elif element.tag == gdocs_name("page-break"):
-            fields = set()
-        elif element.tag == gdocs_name("person"):
-            fields = {"person-id", "email", "name"}
-        elif element.tag == gdocs_name("rich-link"):
-            fields = {"rich-link-id", "uri", "title", "mime-type"}
-        else:
-            parse_error(path, f"unknown paragraph element {display_name(element.tag)}")
-
-        allowed = {gdocs_name(name) for name in fields} | text_style_attributes()
-        if element.tag == xhtml_name("time"):
-            allowed.add("datetime")
-        validate_attributes(element, allowed, path)
-
-        construct_text_style = parse_text_style(element, path)
-
-        def finish_text_style() -> models.TextStyle | models.UnsetType:
-            validate_whitespace(element, path)
-            _validate_no_children(element, path)
-            return construct_text_style(link)
-
-        if element.tag == gdocs_name("auto-text"):
-            auto_text_type = parse_allowed(
-                required_string(element, gdocs_name("type"), path),
-                {"TYPE_UNSPECIFIED", "PAGE_NUMBER", "PAGE_COUNT"},
-                f"{path}/@g:type",
+        assert isinstance(element, tags.StyledParagraphElementTag)
+        style_values = {
+            name: getattr(element, name)
+            for name in tags.StyledParagraphElementTag.fields()
+            if name != "children"
+        }
+        text_style: models.TextStyle | models.UnsetType = models.UNSET
+        if any(value is not models.UNSET for value in (*style_values.values(), link)):
+            text_style = construct_model(
+                path,
+                lambda: models.TextStyle(**cast(Any, style_values), link=link),
             )
+        if isinstance(element, tags.AutoTextTag):
             return models.AutoText(
-                auto_text_type=auto_text_type,  # type: ignore[arg-type]
-                text_style=finish_text_style(),
+                auto_text_type=cast(Any, element.auto_text_type), text_style=text_style
             )
-        if element.tag == gdocs_name("column-break"):
-            return models.ColumnBreak(text_style=finish_text_style())
-        if element.tag == xhtml_name("time"):
-            date_id = required_string(element, gdocs_name("date-id"), path)
-            raw_date_format = element.get(gdocs_name("date-format"))
-            date_format = (
-                models.UNSET
-                if raw_date_format is None
-                else parse_allowed(
-                    raw_date_format, _DATE_FORMATS, f"{path}/@g:date-format"
-                )
-            )
-            display_text = optional_string(element, gdocs_name("display-text"))
-            locale = optional_string(element, gdocs_name("locale"))
-            raw_time_format = element.get(gdocs_name("time-format"))
-            time_format = (
-                models.UNSET
-                if raw_time_format is None
-                else parse_allowed(
-                    raw_time_format, _TIME_FORMATS, f"{path}/@g:time-format"
-                )
-            )
-            time_zone_id = optional_string(element, gdocs_name("time-zone-id"))
-            timestamp = optional_string(element, "datetime")
+        if isinstance(element, tags.ColumnBreakTag):
+            return models.ColumnBreak(text_style=text_style)
+        if isinstance(element, tags.DateElementTag):
             return models.DateElement(
-                date_id=date_id,
-                date_format=date_format,  # type: ignore[arg-type]
-                display_text=display_text,
-                locale=locale,
-                time_format=time_format,  # type: ignore[arg-type]
-                time_zone_id=time_zone_id,
-                timestamp=timestamp,
-                text_style=finish_text_style(),
+                date_id=cast(str, element.date_id),
+                date_format=cast(Any, element.date_format),
+                display_text=element.display_text,
+                locale=element.locale,
+                time_format=cast(Any, element.time_format),
+                time_zone_id=element.time_zone_id,
+                timestamp=element.timestamp,
+                text_style=text_style,
             )
-        if element.tag == gdocs_name("footnote-reference"):
-            footnote_id = required_string(element, gdocs_name("footnote-id"), path)
-            footnote_number = required_string(
-                element, gdocs_name("footnote-number"), path
-            )
+        if isinstance(element, tags.FootnoteReferenceTag):
             return models.FootnoteReference(
-                footnote_id=footnote_id,
-                footnote_number=footnote_number,
-                text_style=finish_text_style(),
+                footnote_id=cast(str, element.footnote_id),
+                footnote_number=cast(str, element.footnote_number),
+                text_style=text_style,
             )
-        if element.tag == xhtml_name("hr"):
-            return models.HorizontalRule(text_style=finish_text_style())
-        if element.tag == gdocs_name("inline-object"):
-            inline_object_id = required_string(
-                element, gdocs_name("inline-object-id"), path
-            )
+        if isinstance(element, tags.HorizontalRuleTag):
+            return models.HorizontalRule(text_style=text_style)
+        if isinstance(element, tags.InlineObjectReferenceTag):
             return models.InlineObjectReference(
-                inline_object_id=inline_object_id,
-                text_style=finish_text_style(),
+                inline_object_id=cast(str, element.inline_object_id),
+                text_style=text_style,
             )
-        if element.tag == gdocs_name("page-break"):
-            return models.PageBreak(text_style=finish_text_style())
-        if element.tag == gdocs_name("person"):
-            person_id = required_string(element, gdocs_name("person-id"), path)
-            email = optional_string(element, gdocs_name("email"))
-            name = optional_string(element, gdocs_name("name"))
+        if isinstance(element, tags.PageBreakTag):
+            return models.PageBreak(text_style=text_style)
+        if isinstance(element, tags.PersonReferenceTag):
             return models.PersonReference(
-                person_id=person_id,
-                email=email,
-                name=name,
-                text_style=finish_text_style(),
+                person_id=cast(str, element.person_id),
+                email=element.email,
+                name=element.name,
+                text_style=text_style,
             )
-        assert element.tag == gdocs_name("rich-link")
-        rich_link_id = required_string(element, gdocs_name("rich-link-id"), path)
-        uri = required_string(element, gdocs_name("uri"), path)
-        title = optional_string(element, gdocs_name("title"))
-        mime_type = optional_string(element, gdocs_name("mime-type"))
+        assert isinstance(element, tags.RichLinkTag)
         return models.RichLink(
-            rich_link_id=rich_link_id,
-            uri=uri,
-            title=title,
-            mime_type=mime_type,
-            text_style=finish_text_style(),
+            rich_link_id=cast(str, element.rich_link_id),
+            uri=cast(str, element.uri),
+            title=element.title,
+            mime_type=element.mime_type,
+            text_style=text_style,
         )
-
-    def decode_positioned_objects(
-        self, element: ElementTree.Element, path: str
-    ) -> list[str]:
-        validate_attributes(element, set(), path)
-        validate_whitespace(element, path)
-        result: list[str] = []
-        for index, child in enumerate(element):
-            child_path = f"{path}/g:positioned-object[{index + 1}]"
-            if child.tag != gdocs_name("positioned-object"):
-                parse_error(path, f"unknown child element {display_name(child.tag)}")
-            validate_attributes(child, {gdocs_name("id")}, child_path)
-            object_id = required_string(child, gdocs_name("id"), child_path)
-            validate_whitespace(child, child_path)
-            _validate_no_children(child, child_path)
-            result.append(object_id)
-        return result
 
     def _decode_paragraph_style_tag(
         self,
@@ -1198,7 +1054,7 @@ class _Decoder:
         values = {
             name: getattr(style_tag, name)
             for name in type(style_tag).fields()
-            if name != "children"
+            if name not in {"children", "owned_named_style_type"}
         }
         if not isinstance(style_tag, tags.NamedParagraphStyleTag):
             values["named_style_type"] = owning_named_style
@@ -1281,27 +1137,6 @@ class _Decoder:
             return models.Color(red=red, green=green, blue=blue)
         except ValueError as error:
             parse_error(path, str(error), cause=error)
-
-    def decode_linked_text_run(
-        self, anchor: ElementTree.Element, path: str
-    ) -> models.TextRun:
-        link = decode_link(anchor, path)
-        if anchor.text is not None and anchor.text.strip():
-            parse_error(path, "unexpected text in link")
-        children = list(anchor)
-        if len(children) != 1 or children[0].tag != xhtml_name("span"):
-            parse_error(path, "link target must contain exactly one span")
-        span = children[0]
-        if span.tail is not None and span.tail.strip():
-            parse_error(path, "unexpected text after linked span")
-        return self.decode_text_run(span, link, f"{path}/span")
-
-    def decode_text_run(
-        self, span: ElementTree.Element, link: models.Link | models.UnsetType, path: str
-    ) -> models.TextRun:
-        return self._decode_text_run_span(
-            self.decode_tag(span, tags.SpanTag, path), link, path
-        )
 
     def _decode_text_run_span(
         self, span_tag: tags.SpanTag, link: models.Link | models.UnsetType, path: str
