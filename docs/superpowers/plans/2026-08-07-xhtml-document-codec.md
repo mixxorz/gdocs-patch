@@ -1,5 +1,7 @@
 # XHTML Document Codec Implementation Plan
 
+> **Status:** Implemented. Its imperative internal architecture is superseded by `2026-08-08-declarative-xhtml-rewrite.md`; the public behavior and syntax requirements remain authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a deterministic XML/XHTML serializer and deserializer for every currently modeled `Document` field.

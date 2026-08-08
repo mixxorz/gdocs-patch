@@ -71,114 +71,72 @@ There are no public serializer classes or configuration objects in the initial v
 
 ## Architecture
 
-Use a small package:
+Use a small package with a declarative XHTML syntax tree between the Google Docs models and `ElementTree`:
 
 ```text
 gdocs_patch/xhtml/
-├── __init__.py   # public functions and XHTMLParseError
-├── base.py       # namespaces and shared scalar/color/style/XML helpers
-├── encoder.py    # private model-tree encoder
-└── decoder.py    # private XML-tree decoder
+├── __init__.py    # public functions and XHTMLParseError
+├── base.py        # namespaces, security limits, rendering, and public error adaptation
+├── nodes.py       # generic Node, Text, Field, Children, Tag, Encoder, and Decoder
+├── attributes.py  # reusable scalar, point, choice, literal, and composite attributes
+├── tags.py        # declarative XHTML vocabulary and child grammar
+├── encoder.py     # Document models → XHTML Tag tree
+└── decoder.py     # XHTML Tag tree → Document models
 ```
 
-### Shared helpers
+### Declarative XHTML model
 
-`base.py` contains explicit XML mechanics rather than model reflection:
+`nodes.py` defines a small XHTML syntax-tree library. A `Tag` subclass declares one qualified XML name, scalar/composite `Field` descriptors, and one `Children` descriptor. `Text` is an explicit ordered child node, so `ElementTree.text` and `ElementTree.tail` are translated only inside the generic XML boundary.
 
-- qualified XHTML and `gdocs` names;
-- required and optional attribute parsing;
-- strict boolean, integer, float, and enum parsing;
-- unknown-attribute validation;
-- unique metadata-child extraction independent of placement;
-- opaque/transparent color handling;
-- explicit `TextStyle` attributes and `<a>` link targets;
-- parse-path construction and contextual errors.
+`attributes.py` owns canonical lexical conversion and `UNSET` handling. A scalar `Attribute[T]` represents exactly one XML attribute. `MultiValueAttribute[T]` composes several XML attributes into one Python value, such as an opaque/transparent `Color`.
 
-XML attributes are accepted in any order. Unique metadata children may appear anywhere among their owner's children. The decoder filters metadata before reconstructing ordered content and rejects duplicates. Whitespace outside spans is formatting; text and `<br />` inside spans are run content.
+`tags.py` is model-agnostic. It declares the complete accepted XHTML vocabulary, allowed direct child types, singular/repeated cardinalities, and context-specific variants that share an XML name. For example, paragraph-owned and named-style-owned paragraph metadata use separate tag classes because only the latter accepts `g:named-style-type`.
+
+The generic decoder rejects undeclared attributes and children, accepts declared children independent of order, validates cardinalities, ignores formatting whitespace where text is forbidden, and preserves text exactly where `Text` is declared. It receives an expected root tag type; no global registry, class-name dispatch, or generic Document-model serialization is used.
 
 ### Encoder
 
-A private `_Encoder` uses the existing `TreeNode.children` hierarchy once encoding reaches actual document content. `Document`, `Tab`, and `DocumentTab` remain explicit because they are not `TreeNode` objects and their field semantics do not form the same tree.
-
-Representative internal API:
+A private model mapper converts each supported `Document` model object into its declared `Tag` representation. It sets typed tag fields and assembles ordered tag children; it never sets `ElementTree` attributes, `.text`, or `.tail` directly.
 
 ```python
 class _Encoder:
-    def encode_document(self, document: Document) -> Element: ...
-
+    def encode_document(self, document: Document) -> HtmlTag: ...
     def encode_structural_sequence(
-        self,
-        nodes: Sequence[StructuralElement],
-        *,
-        body: bool = False,
-    ) -> list[Element]: ...
-
-    def encode_node(self, node: TreeNode) -> Element: ...
+        self, nodes: list[StructuralElement], *, body: bool = False
+    ) -> list[Tag]: ...
 ```
 
-Call flow:
+`serialize_document()` calls the generic XHTML `Encoder` exactly once at the XML boundary:
 
 ```text
-serialize_document
-└── _Encoder.encode_document
-    └── encode_tab                         # recursive child tabs
-        └── encode_document_tab
-            ├── explicit metadata/region fields
-            ├── encode body sections
-            │   └── encode_structural_sequence
-            │       ├── group adjacent bullet paragraphs
-            │       └── encode_node
-            │           ├── Paragraph → paragraph children
-            │           ├── Table → rows → cells → structural sequence
-            │           └── TableOfContents → structural sequence
-            └── encode segments through the same structural sequence
+Document models
+└── _Encoder → declared Tag/Text tree
+    └── nodes.Encoder → ElementTree
+        └── security validation, indentation, and XML rendering
 ```
 
-`encode_node()` uses explicit type matching. It does not infer a serializer from class names or object fields.
-
-Two parent-level projections inspect sibling sequences:
-
-1. A body consumes each `SectionBreak` and following structural siblings into one XHTML `<section>`.
-2. A structural sequence consumes adjacent paragraphs with the same existing list ID or target bullet preset into one `<g:list>`.
-
-All other tree recursion follows typed child collections directly. Parent pointers and derived indices are never serialized.
-
-The encoder builds an ElementTree, inserts attributes and canonical metadata in stable model-field order, then formats the tree. Formatting must treat `<span>` as mixed content and never introduce whitespace inside it; doing so would mutate `TextRun.content`.
+The model mapper retains the two unavoidable sibling projections: body sections and adjacent compatible list paragraphs. All XML lexical conversion, unknown vocabulary, cardinality, mixed text, and attribute mechanics are hidden below the tag declarations.
 
 ### Decoder
 
-A private `_Decoder` mirrors the encoder:
+After XML security preflight and `ElementTree.fromstring()`, the generic XHTML `Decoder` parses the entire tree from the expected `HtmlTag` root. A private model mapper then converts typed tags into `Document` models:
 
 ```python
 class _Decoder:
-    def decode_document(self, root: Element) -> Document: ...
-
+    def decode_document(self, root: HtmlTag) -> Document: ...
     def decode_structural_sequence(
-        self,
-        elements: Sequence[Element],
-        *,
-        body: bool = False,
+        self, tags: list[Tag], *, body: bool = False
     ) -> list[StructuralElement]: ...
-
-    def decode_element(self, element: Element) -> TreeNode: ...
 ```
-
-Call flow:
 
 ```text
-deserialize_document
-├── ElementTree.fromstring
-└── _Decoder.decode_document
-    └── decode_tab
-        └── decode_document_tab
-            ├── extract explicit metadata/region fields
-            ├── flatten <section> into SectionBreak + structural children
-            ├── flatten <g:list> into Paragraph objects with bullets
-            ├── decode tables recursively through cell content
-            └── decode segments through the structural dispatcher
+XML text
+├── security preflight and ElementTree.fromstring
+├── nodes.Decoder → validated Tag/Text tree
+└── _Decoder → Document models
 ```
 
-Model constructors receive completed child lists and establish ordinary parent links. The decoder does not deserialize parent references or absolute indices.
+The mapper handles only semantic projections and model construction: flattening sections, flattening list containers into bullet paragraphs, selecting semantic paragraph styles, reconstructing links and text styles, and preserving `UNSET`/empty collection distinctions. Model constructors receive completed child lists and establish ordinary parent links. Parent references and absolute indices are never represented in the XHTML tree.
 
 ## Structural projections
 
