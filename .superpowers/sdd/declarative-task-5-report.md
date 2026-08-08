@@ -168,3 +168,47 @@ All configured hooks passed
 git diff --check
 passed
 ```
+
+## Final Precedence Correction
+
+- Split generic child handling into the original semantic phases: attribute lexical decoding/validation; direct-child shell validation; post-shell cross-attribute validation; child cardinality/cross-alternative preflight; recursive child decoding; and final `Tag.clean()`.
+- Direct-child shell validation now checks non-whitespace parent text, unknown direct child element types, and non-whitespace child tails before invoking `validate_after_child_shell()`.
+- Moved `ListTag` identity exclusivity to `validate_after_child_shell()`, so shell lexical/type errors win while identity still wins over cardinality and malformed descendants.
+- Kept `ListItemTag` paragraph-alternative counting in `validate_resolved_child_types()`, before recursive paragraph decoding.
+- Moved negative nesting validation to `ListItemTag.clean()`, after child decoding, while retaining li-level diagnostics and encode-time rejection.
+- Added public compound-invalid regressions proving list raw text and unknown direct children beat missing identity, and item raw text beats negative nesting.
+
+### Final Precedence TDD Evidence
+
+Focused RED:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_list_child_shell_errors_precede_semantic_validation -q
+3 failed
+```
+
+Focused GREEN with the preceding compound-invalid coverage:
+
+```console
+uv run pytest tests/xhtml/test_structures.py::test_list_child_shell_errors_precede_semantic_validation tests/xhtml/test_structures.py::test_list_preflight_errors_win_over_malformed_descendants tests/xhtml/test_structures.py::test_negative_list_nesting_error_is_reported_at_item_path tests/xhtml/test_structures.py::test_preserves_exact_list_validation_diagnostics -q
+14 passed
+```
+
+### Final Precedence Verification
+
+```console
+uv run pytest -q
+279 passed in 2.77s
+uv run ruff check .
+All checks passed!
+uv run ruff format --check .
+74 files already formatted
+uv run fixit lint .
+57 files clean
+uv run pyright
+0 errors, 0 warnings, 0 informations
+uv run pre-commit run --all-files
+All configured hooks passed
+git diff --check
+passed
+```

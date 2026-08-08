@@ -367,8 +367,8 @@ class Tag(Node):
     def clean(self) -> None:
         """Validate relationships between fully decoded fields on this tag."""
 
-    def validate_before_children(self) -> None:
-        """Validate decoded non-child fields before child preflight and recursion."""
+    def validate_after_child_shell(self) -> None:
+        """Validate fields after direct-child lexical/type shell validation."""
 
     def validate_resolved_child_types(
         self, child_types: tuple[type[Node], ...]
@@ -388,7 +388,7 @@ class Tag(Node):
         for name, field in fields.items():
             if not isinstance(field, Children):
                 self._validate_field(name, field)
-        self.validate_before_children()
+        self.validate_after_child_shell()
         for name, field in fields.items():
             if isinstance(field, Children):
                 self._validate_field(name, field)
@@ -424,7 +424,6 @@ class Tag(Node):
             for name, field in fields.items():
                 if not isinstance(field, Children):
                     node._validate_field(name, field)
-            node.validate_before_children()
         except ValidationError as error:
             decoder.fail(str(error))
 
@@ -533,10 +532,18 @@ class Decoder:
             child_type = spec.node_type
             if not issubclass(child_type, Tag):
                 raise TypeError("element child declaration must refer to a Tag")
+            if (
+                child_element.tail
+                and child_element.tail.strip()
+                and not field.permits_text
+            ):
+                self.fail(field.tail_error)
             resolved.append((child_element, spec, child_type))
 
         child_types = tuple(child_type for _, _, child_type in resolved)
         try:
+            if owner is not None:
+                owner.validate_after_child_shell()
             field.validate_resolved_types(child_types)
             if owner is not None:
                 owner.validate_resolved_child_types(child_types)

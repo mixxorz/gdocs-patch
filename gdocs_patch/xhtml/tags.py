@@ -822,10 +822,6 @@ class ListItemTag(Tag):
         tail_error="unexpected text after child element",
     )
 
-    def validate_before_children(self) -> None:
-        if self.nesting_level is not UNSET and cast(int, self.nesting_level) < 0:
-            raise ValidationError("nesting level must be non-negative")
-
     def validate_resolved_child_types(
         self, child_types: tuple[type[Node], ...]
     ) -> None:
@@ -834,6 +830,10 @@ class ListItemTag(Tag):
         )
         if paragraphs != 1:
             raise ValidationError("list item must contain exactly one paragraph")
+
+    def clean(self) -> None:
+        if self.nesting_level is not UNSET and cast(int, self.nesting_level) < 0:
+            raise ValidationError("nesting level must be non-negative")
 
 
 class ListTag(Tag):
@@ -851,7 +851,7 @@ class ListTag(Tag):
         tail_error="unexpected text after child element",
     )
 
-    def validate_before_children(self) -> None:
+    def validate_after_child_shell(self) -> None:
         self._validate_identity()
 
     def clean(self) -> None:

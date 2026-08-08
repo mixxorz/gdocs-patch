@@ -594,6 +594,32 @@ def test_list_preflight_errors_win_over_malformed_descendants(
     assert str(error.value).endswith(f": {diagnostic}")
 
 
+@pytest.mark.parametrize(
+    ("structure", "diagnostic"),
+    [
+        (
+            "<g:list>raw<li><p /></li></g:list>",
+            "unexpected text content",
+        ),
+        (
+            "<g:list><g:unknown /></g:list>",
+            "unknown child element g:unknown",
+        ),
+        (
+            '<g:list g:list-id="id"><li g:nesting-level="-1">raw<p /></li></g:list>',
+            "unexpected text content",
+        ),
+    ],
+)
+def test_list_child_shell_errors_precede_semantic_validation(
+    structure: str, diagnostic: str
+) -> None:
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value).endswith(f": {diagnostic}")
+
+
 def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
 
