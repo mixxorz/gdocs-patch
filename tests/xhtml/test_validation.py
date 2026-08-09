@@ -73,7 +73,7 @@ def test_rejects_empty_body() -> None:
     )
 
     with pytest.raises(
-        XHTMLParseError, match=r"g:body: expected at least one child element"
+        XHTMLParseError, match=r"g:body .*: expected at least one child element"
     ):
         deserialize_document(xhtml)
 

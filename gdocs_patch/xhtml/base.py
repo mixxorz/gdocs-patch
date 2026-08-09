@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Never
 
 XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
@@ -10,13 +9,6 @@ MAX_ELEMENT_DEPTH = 128
 
 class XHTMLParseError(ValueError):
     pass
-
-
-def construct_model[ModelT](path: str, factory: Callable[[], ModelT]) -> ModelT:
-    try:
-        return factory()
-    except ValueError as error:
-        parse_error(path, str(error), cause=error)
 
 
 def xhtml_name(local_name: str) -> str:

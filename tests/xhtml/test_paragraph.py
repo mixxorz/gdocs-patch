@@ -538,7 +538,7 @@ def test_decodes_literal_line_feed_breaks_and_preserves_run_boundaries() -> None
 def test_rejects_named_style_type_metadata_on_gdocs_paragraph() -> None:
     with pytest.raises(
         XHTMLParseError,
-        match=r"/g:paragraph-style: named style type is owned by the paragraph element",
+        match=r"/g:paragraph-style .*: named style type is owned by the paragraph element",
     ):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -557,7 +557,7 @@ def test_rejects_named_style_type_metadata_on_gdocs_paragraph() -> None:
 def test_rejects_out_of_range_structured_color_with_parse_context() -> None:
     with pytest.raises(
         XHTMLParseError,
-        match=r"/g:paragraph-style/g:shading-color: .*red.*between 0.* and 1",
+        match=r"/g:paragraph-style/g:shading-color .*: .*red.*between 0.* and 1",
     ):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'

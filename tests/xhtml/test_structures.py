@@ -478,13 +478,33 @@ def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
         deserialize_document(xhtml_with_structure(structure))
 
 
+def test_semantic_error_includes_automatic_source_location() -> None:
+    structure = (
+        '<g:list g:bullet-preset="BULLET_CHECKBOX">\n'
+        "<li>\n"
+        "<g:bullet-style />\n"
+        "<p />\n"
+        "</li>\n"
+        "</g:list>"
+    )
+
+    with pytest.raises(XHTMLParseError) as error:
+        deserialize_document(xhtml_with_structure(structure))
+
+    assert str(error.value).startswith(
+        "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/g:list[1]/li[1]"
+        "/g:bullet-style (line 4, column 1):"
+    )
+
+
 def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
 
     with pytest.raises(XHTMLParseError) as error:
         deserialize_document(xhtml_with_structure(structure))
 
-    assert str(error.value).endswith("/li[1]: nesting level must be non-negative")
+    assert "/li[1] " in str(error.value)
+    assert str(error.value).endswith(": nesting level must be non-negative")
     assert "/@g:nesting-level" not in str(error.value)
 
 

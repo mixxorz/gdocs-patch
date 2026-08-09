@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from typing import Any, Never, cast
 from xml.etree import ElementTree
 from xml.parsers import expat
@@ -13,26 +14,35 @@ from .base import (
     XHTML_NAMESPACE,
     XML_DECLARATION,
     XHTMLParseError,
-    construct_model,
     display_name,
     parse_error,
     xhtml_name,
 )
-from .nodes import DecodeError, Node, Tag, Text
+from .nodes import (
+    DecodeError,
+    Node,
+    SourceLocation,
+    SourceMap,
+    SourcePosition,
+    Tag,
+    Text,
+)
 from .nodes import Decoder as XHTMLDecoder
 
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 
 def _decode_tag[T: Tag](
-    element: ElementTree.Element, tag_type: type[T], path: str
+    element: ElementTree.Element, tag_type: type[T], decoder: XHTMLDecoder
 ) -> T:
     try:
-        return XHTMLDecoder().decode_element(element, tag_type)
+        with decoder.at(element.tag):
+            return decoder.decode_element(element, tag_type)
     except DecodeError as error:
-        error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
+        location = SourceLocation(error.path, error.position)
+        suffix = ""
         if error.attribute_name is not None:
-            error_path += f"/@{display_name(error.attribute_name)}"
+            suffix = f"/@{display_name(error.attribute_name)}"
         message = str(error)
         if error.attribute_name is not None:
             if error.attribute_name.startswith(
@@ -48,10 +58,28 @@ def _decode_tag[T: Tag](
                 message += f" {display_name(error.attribute_name)}"
         if error.element_name is not None:
             message += f" {display_name(error.element_name)}"
-        parse_error(error_path, message, cause=error)
+        parse_error(location.format(suffix), message, cause=error)
 
 
 class _Decoder:
+    def __init__(self, source_map: SourceMap) -> None:
+        self.source_map = source_map
+
+    def source_location(self, element: Tag) -> str:
+        return str(self.source_map.location_for(element))
+
+    def construct_model[ModelT](
+        self,
+        element: Tag,
+        model_type: Callable[..., ModelT],
+        /,
+        **values: object,
+    ) -> ModelT:
+        try:
+            return model_type(**values)
+        except ValueError as error:
+            parse_error(self.source_location(element), str(error), cause=error)
+
     def decode_document(self, root: tags.HtmlTag) -> models.Document:
         body = cast(tags.BodyTag, cast(list[Node], root.children)[0])
         return models.Document(
@@ -60,26 +88,22 @@ class _Decoder:
             revision_id=root.revision_id,
             suggestions_view_mode=root.suggestions_view_mode,  # type: ignore[arg-type]
             tabs=[
-                self.decode_tab(cast(tags.TabTag, child), f"/html/body/g:tab[{index}]")
-                for index, child in enumerate(cast(list[Node], body.children), 1)
+                self.decode_tab(cast(tags.TabTag, child))
+                for child in cast(list[Node], body.children)
             ],
         )
 
-    def decode_tab(self, element: tags.TabTag, path: str) -> models.Tab:
+    def decode_tab(self, element: tags.TabTag) -> models.Tab:
         content: models.DocumentTab | models.UnsetType = models.UNSET
         children: list[models.Tab] = []
         for child in cast(list[Node], element.children):
             if isinstance(child, tags.DocumentTabTag):
-                content = self.decode_document_tab(child, f"{path}/g:document-tab")
+                content = self.decode_document_tab(child)
             else:
                 child_tabs = cast(tags.ChildTabsTag, child)
                 children = [
-                    self.decode_tab(
-                        cast(tags.TabTag, tab), f"{path}/g:child-tabs/g:tab[{index}]"
-                    )
-                    for index, tab in enumerate(
-                        cast(list[Node], child_tabs.children), 1
-                    )
+                    self.decode_tab(cast(tags.TabTag, tab))
+                    for tab in cast(list[Node], child_tabs.children)
                 ]
         return models.Tab(
             tab_id=cast(str, element.tab_id),
@@ -92,9 +116,7 @@ class _Decoder:
             children=children,
         )
 
-    def decode_document_tab(
-        self, element: tags.DocumentTabTag, path: str
-    ) -> models.DocumentTab:
+    def decode_document_tab(self, element: tags.DocumentTabTag) -> models.DocumentTab:
         values: dict[str, object] = {
             "body": models.UNSET,
             "headers": models.UNSET,
@@ -106,32 +128,26 @@ class _Decoder:
         }
         for child in cast(list[Node], element.children):
             if isinstance(child, tags.DocumentStyleTag):
-                values["document_style"] = self.decode_document_style(
-                    child, f"{path}/g:document-style"
-                )
+                values["document_style"] = self.decode_document_style(child)
             elif isinstance(child, tags.NamedStylesTag):
-                values["named_styles"] = self.decode_named_styles(
-                    child, f"{path}/g:named-styles"
-                )
+                values["named_styles"] = self.decode_named_styles(child)
             elif isinstance(child, tags.ListDefinitionsTag):
-                values["lists"] = self.decode_list_definitions(
-                    child, f"{path}/g:list-definitions"
-                )
+                values["lists"] = self.decode_list_definitions(child)
             elif isinstance(child, tags.DocumentBodyTag):
-                values["body"] = self.decode_body(child, f"{path}/g:body")
+                values["body"] = self.decode_body(child)
             elif isinstance(
                 child, (tags.HeadersTag, tags.FootersTag, tags.FootnotesTag)
             ):
-                name, item = {
-                    tags.HeadersTag: ("headers", "header"),
-                    tags.FootersTag: ("footers", "footer"),
-                    tags.FootnotesTag: ("footnotes", "footnote"),
+                name = {
+                    tags.HeadersTag: "headers",
+                    tags.FootersTag: "footers",
+                    tags.FootnotesTag: "footnotes",
                 }[type(child)]
-                values[name] = self.decode_segments(child, item, f"{path}/g:{name}")
+                values[name] = self.decode_segments(child)
         return models.DocumentTab(**cast(Any, values))
 
     def decode_document_style(
-        self, element: tags.DocumentStyleTag, path: str
+        self, element: tags.DocumentStyleTag
     ) -> models.DocumentStyle:
         values = element.attribute_values
         background_color: models.Color | None | models.UnsetType = models.UNSET
@@ -139,17 +155,16 @@ class _Decoder:
         if children:
             background = cast(tags.BackgroundColorTag, children[0])
             background_color = cast(models.Color | None, background.color)
-        return construct_model(
-            path,
-            lambda: models.DocumentStyle(
-                background_color=background_color, **cast(Any, values)
-            ),
+        return self.construct_model(
+            element,
+            models.DocumentStyle,
+            background_color=background_color,
+            **cast(Any, values),
         )
 
     def _decode_metadata_text_style_tag(
         self,
         element: tags.NamedStyleTag | tags.ListLevelTag | tags.BulletStyleTag,
-        path: str,
     ) -> models.TextStyle | models.UnsetType:
         values = {
             name: getattr(element, name) for name in tags.SpanTag.attribute_fields()
@@ -160,8 +175,8 @@ class _Decoder:
                 link = self._decode_metadata_link(child)
         if all(value is models.UNSET for value in (*values.values(), link)):
             return models.UNSET
-        return construct_model(
-            path, lambda: models.TextStyle(**cast(Any, values), link=link)
+        return self.construct_model(
+            element, models.TextStyle, **cast(Any, values), link=link
         )
 
     def _decode_metadata_link(self, anchor: tags.MetadataAnchorTag) -> models.Link:
@@ -178,91 +193,73 @@ class _Decoder:
         return models.TabLink(tab_id=cast(str, anchor.tab_id))
 
     def decode_named_styles(
-        self, element: tags.NamedStylesTag, path: str
+        self, element: tags.NamedStylesTag
     ) -> list[models.NamedStyle]:
         result: list[models.NamedStyle] = []
-        for index, child in enumerate(cast(list[Node], element.children), 1):
+        for child in cast(list[Node], element.children):
             style = cast(tags.NamedStyleTag, child)
-            child_path = f"{path}/g:named-style[{index}]"
             paragraph_style: models.ParagraphStyle | models.UnsetType = models.UNSET
             for metadata in cast(list[Node], style.children):
                 if isinstance(metadata, tags.NamedParagraphStyleTag):
-                    paragraph_style = self._decode_paragraph_style_tag(
-                        metadata, f"{child_path}/g:paragraph-style"
-                    )
+                    paragraph_style = self._decode_paragraph_style_tag(metadata)
             result.append(
                 models.NamedStyle(
                     named_style_type=cast(Any, style.named_style_type),
-                    text_style=self._decode_metadata_text_style_tag(style, child_path),
+                    text_style=self._decode_metadata_text_style_tag(style),
                     paragraph_style=paragraph_style,
                 )
             )
         return result
 
     def decode_list_definitions(
-        self, element: tags.ListDefinitionsTag, path: str
+        self, element: tags.ListDefinitionsTag
     ) -> dict[str, models.ListDefinition]:
         result: dict[str, models.ListDefinition] = {}
-        for index, child in enumerate(cast(list[Node], element.children), 1):
+        for child in cast(list[Node], element.children):
             definition = cast(tags.ListDefinitionTag, child)
-            child_path = f"{path}/g:list-definition[{index}]"
             list_id = cast(str, definition.list_id)
             result[list_id] = models.ListDefinition(
                 levels=[
-                    self.decode_list_level(cast(tags.ListLevelTag, level), level_path)
-                    for level_index, level in enumerate(
-                        cast(list[Node], definition.children), 1
-                    )
-                    for level_path in [f"{child_path}/g:list-level[{level_index}]"]
+                    self.decode_list_level(cast(tags.ListLevelTag, level))
+                    for level in cast(list[Node], definition.children)
                 ]
             )
         return result
 
-    def decode_list_level(
-        self, element: tags.ListLevelTag, path: str
-    ) -> models.ListLevel:
-        return construct_model(
-            path,
-            lambda: models.ListLevel(
-                glyph_format=cast(str, element.glyph_format),
-                glyph_type=element.glyph_type,  # type: ignore[arg-type]
-                glyph_symbol=element.glyph_symbol,
-                alignment=cast(Any, element.alignment),
-                indent_first_line=element.indent_first_line,
-                indent_start=element.indent_start,
-                start_number=cast(int, element.start_number),
-                text_style=self._decode_metadata_text_style_tag(element, path),
-            ),
+    def decode_list_level(self, element: tags.ListLevelTag) -> models.ListLevel:
+        return self.construct_model(
+            element,
+            models.ListLevel,
+            glyph_format=cast(str, element.glyph_format),
+            glyph_type=element.glyph_type,
+            glyph_symbol=element.glyph_symbol,
+            alignment=element.alignment,
+            indent_first_line=element.indent_first_line,
+            indent_start=element.indent_start,
+            start_number=cast(int, element.start_number),
+            text_style=self._decode_metadata_text_style_tag(element),
         )
 
-    def decode_body(self, element: tags.DocumentBodyTag, path: str) -> models.Body:
+    def decode_body(self, element: tags.DocumentBodyTag) -> models.Body:
         content: list[models.StructuralElement] = []
         sections = cast(list[tags.SectionTag], element.children)
-        for index, section in enumerate(sections, 1):
-            section_path = f"{path}/section[{index}]"
+        for section in sections:
             section_children = cast(list[Node], section.children)
             style = next(
                 item
                 for item in section_children
                 if isinstance(item, tags.SectionStyleTag)
             )
-            content.append(
-                models.SectionBreak(
-                    style=self.decode_section_style(
-                        style, f"{section_path}/g:section-style"
-                    )
-                )
-            )
+            content.append(models.SectionBreak(style=self.decode_section_style(style)))
             content.extend(
                 self.decode_structural_sequence(
-                    [item for item in section_children if item is not style],
-                    section_path,
+                    [item for item in section_children if item is not style]
                 )
             )
         return models.Body(content=content)
 
     def decode_section_style(
-        self, element: tags.SectionStyleTag, path: str
+        self, element: tags.SectionStyleTag
     ) -> models.SectionStyle:
         values = element.attribute_values
         columns: list[models.SectionColumn] | models.UnsetType = models.UNSET
@@ -277,84 +274,70 @@ class _Decoder:
                 for child in cast(list[Node], wrapper.children)
                 for column in [cast(tags.SectionColumnTag, child)]
             ]
-        return construct_model(
-            path,
-            lambda: models.SectionStyle(columns=columns, **cast(Any, values)),
+        return self.construct_model(
+            element, models.SectionStyle, columns=columns, **cast(Any, values)
         )
 
     def decode_segments(
         self,
         wrapper: tags.HeadersTag | tags.FootersTag | tags.FootnotesTag,
-        item_name: str,
-        path: str,
     ) -> dict[str, models.Segment]:
         result: dict[str, models.Segment] = {}
-        for index, child in enumerate(cast(list[Node], wrapper.children), 1):
+        for child in cast(list[Node], wrapper.children):
             item = cast(tags.SegmentTag, child)
-            item_path = f"{path}/g:{item_name}[{index}]"
             key = cast(str, item.key)
             result[key] = models.Segment(
                 segment_id=cast(str, item.segment_id),
                 content=self.decode_structural_sequence(
-                    cast(list[Node], item.children), item_path
+                    cast(list[Node], item.children)
                 ),
             )
         return result
 
     def decode_structural_sequence(
-        self,
-        elements: list[Node],
-        path: str,
-        body: bool = False,
+        self, elements: list[Node]
     ) -> list[models.StructuralElement]:
-        del body
         decoded: list[models.StructuralElement] = []
-        counts: dict[str, int] = {}
         for item in elements:
             element = cast(Tag, item)
-            name = display_name(cast(str, element.tag_name))
-            counts[name] = counts.get(name, 0) + 1
-            child_path = f"{path}/{name}[{counts[name]}]"
             if isinstance(element, tags.TableOfContentsTag):
                 decoded.append(
                     models.TableOfContents(
                         content=self.decode_structural_sequence(
-                            cast(list[Node], element.children), child_path
+                            cast(list[Node], element.children)
                         )
                     )
                 )
                 continue
             if isinstance(element, tags.ParagraphVocabularyTag):
-                decoded.append(self.decode_paragraph(element, child_path))
+                decoded.append(self.decode_paragraph(element))
                 continue
             if isinstance(element, tags.ListTag):
-                decoded.extend(self.decode_list(element, child_path))
+                decoded.extend(self.decode_list(element))
                 continue
-            decoded.append(self.decode_table(cast(tags.TableTag, element), child_path))
+            decoded.append(self.decode_table(cast(tags.TableTag, element)))
         return decoded
 
-    def decode_list(self, element: tags.ListTag, path: str) -> list[models.Paragraph]:
+    def decode_list(self, element: tags.ListTag) -> list[models.Paragraph]:
         list_id = element.list_id
         preset = element.bullet_preset
         result: list[models.Paragraph] = []
-        for index, child in enumerate(cast(list[Node], element.children), 1):
+        for child in cast(list[Node], element.children):
             item = cast(tags.ListItemTag, child)
-            item_path = f"{path}/li[{index}]"
             style: models.TextStyle | models.UnsetType = models.UNSET
             paragraph_tag: tags.ParagraphVocabularyTag | None = None
             for item_child in cast(list[Node], item.children):
                 if isinstance(item_child, tags.BulletStyleTag):
                     if preset is not models.UNSET:
                         parse_error(
-                            item_path, "bullet style is forbidden in a preset list"
+                            self.source_location(item_child),
+                            "bullet style is forbidden in a preset list",
                         )
-                    style = self._decode_metadata_text_style_tag(
-                        item_child, f"{item_path}/g:bullet-style"
-                    )
+                    style = self._decode_metadata_text_style_tag(item_child)
                 else:
                     paragraph_tag = cast(tags.ParagraphVocabularyTag, item_child)
             paragraph = self.decode_paragraph(
-                cast(tags.ParagraphVocabularyTag, paragraph_tag), item_path + "/*"
+                cast(tags.ParagraphVocabularyTag, paragraph_tag)
             )
             paragraph.bullet = (
                 models.Bullet(
@@ -371,30 +354,25 @@ class _Decoder:
             result.append(paragraph)
         return result
 
-    def decode_table(self, element: tags.TableTag, path: str) -> models.Table:
+    def decode_table(self, element: tags.TableTag) -> models.Table:
         columns: list[models.TableColumn] | models.UnsetType = models.UNSET
         rows: list[models.TableRow] = []
         for child in cast(list[Node], element.children):
             if isinstance(child, tags.TableColgroupTag):
                 columns = [
-                    construct_model(
-                        f"{path}/colgroup/col[{index}]",
-                        lambda column=column: models.TableColumn(
-                            width_type=cast(Any, column.width_type),
-                            width=column.width,
-                        ),
+                    self.construct_model(
+                        column,
+                        models.TableColumn,
+                        width_type=column.width_type,
+                        width=column.width,
                     )
-                    for index, column in enumerate(
-                        cast(list[tags.TableColumnTag], child.children), 1
-                    )
+                    for column in cast(list[tags.TableColumnTag], child.children)
                 ]
             else:
                 body = cast(tags.TableBodyTag, child)
                 rows = [
-                    self.decode_table_row(row, f"{path}/tbody/tr[{index}]")
-                    for index, row in enumerate(
-                        cast(list[tags.TableRowTag], body.children), 1
-                    )
+                    self.decode_table_row(row)
+                    for row in cast(list[tags.TableRowTag], body.children)
                 ]
         return models.Table(
             rows=rows,
@@ -406,13 +384,11 @@ class _Decoder:
             ),
         )
 
-    def decode_table_row(self, element: tags.TableRowTag, path: str) -> models.TableRow:
+    def decode_table_row(self, element: tags.TableRowTag) -> models.TableRow:
         return models.TableRow(
             cells=[
-                self.decode_table_cell(cell, f"{path}/td[{index}]")
-                for index, cell in enumerate(
-                    cast(list[tags.TableCellTag], element.children), 1
-                )
+                self.decode_table_cell(cell)
+                for cell in cast(list[tags.TableCellTag], element.children)
             ],
             min_height=element.min_height,
             prevent_overflow=element.prevent_overflow,
@@ -422,9 +398,7 @@ class _Decoder:
             ),
         )
 
-    def decode_table_cell(
-        self, element: tags.TableCellTag, path: str
-    ) -> models.TableCell:
+    def decode_table_cell(self, element: tags.TableCellTag) -> models.TableCell:
         row_span = (
             1 if element.row_span is models.UNSET else cast(int, element.row_span)
         )
@@ -439,24 +413,21 @@ class _Decoder:
             else:
                 content_tags.append(child)
         style: models.TableCellStyle | models.UnsetType = models.UNSET
-        values = (
-            {}
-            if style_tag is None
-            else self.decode_table_cell_style(style_tag, f"{path}/g:cell-style")
-        )
+        values = {} if style_tag is None else self.decode_table_cell_style(style_tag)
         if (
             row_span != 1
             or column_span != 1
             or any(value is not models.UNSET for value in values.values())
         ):
-            style = construct_model(
-                path,
-                lambda: models.TableCellStyle(
-                    row_span=row_span, column_span=column_span, **cast(Any, values)
-                ),
+            style = self.construct_model(
+                element,
+                models.TableCellStyle,
+                row_span=row_span,
+                column_span=column_span,
+                **cast(Any, values),
             )
         return models.TableCell(
-            content=self.decode_structural_sequence(content_tags, path),
+            content=self.decode_structural_sequence(content_tags),
             style=style,
             cell_key=(
                 None
@@ -466,7 +437,7 @@ class _Decoder:
         )
 
     def decode_table_cell_style(
-        self, element: tags.TableCellStyleTag, path: str
+        self, element: tags.TableCellStyleTag
     ) -> dict[str, object]:
         values = element.attribute_values
         border_fields: dict[type[Node], str] = {
@@ -481,18 +452,17 @@ class _Decoder:
                 continue
             border = cast(tags.TableCellBorderTag, child)
             color = cast(tags.ColorTag, cast(list[Node], border.children)[0]).color
-            values[border_fields[type(border)]] = construct_model(
-                f"{path}/{display_name(border.tag_name or '')}",
-                lambda: models.TableCellBorder(
-                    color=cast(models.Color | None, color),
-                    width=cast(models.Dimension, border.width),
-                    dash_style=cast(Any, border.dash_style),
-                ),
+            values[border_fields[type(border)]] = self.construct_model(
+                border,
+                models.TableCellBorder,
+                color=cast(models.Color | None, color),
+                width=border.width,
+                dash_style=border.dash_style,
             )
         return values
 
     def decode_paragraph(
-        self, element: tags.ParagraphVocabularyTag, path: str
+        self, element: tags.ParagraphVocabularyTag
     ) -> models.Paragraph:
         named_style_types: dict[type[tags.ParagraphVocabularyTag], object] = {
             tags.GenericParagraphTag: models.UNSET,
@@ -511,18 +481,15 @@ class _Decoder:
         style: models.ParagraphStyle | models.UnsetType = models.UNSET
         positioned_ids: list[str] | models.UnsetType = models.UNSET
         paragraph_elements: list[models.ParagraphElement] = []
-        for index, child in enumerate(cast(list[Node], element.children), 1):
-            child_path = f"{path}/*[{index}]"
+        for child in cast(list[Node], element.children):
             if isinstance(child, tags.ParagraphStyleTag):
                 if child.owned_named_style_type is not models.UNSET:
                     parse_error(
-                        f"{path}/g:paragraph-style",
+                        self.source_location(child),
                         "named style type is owned by the paragraph element",
                     )
                 style = self._decode_paragraph_style_tag(
-                    child,
-                    f"{path}/g:paragraph-style",
-                    owning_named_style=named_style_type,
+                    child, owning_named_style=named_style_type
                 )
             elif isinstance(child, tags.PositionedObjectsTag):
                 positioned_ids = [
@@ -533,7 +500,7 @@ class _Decoder:
                 ]
             else:
                 paragraph_elements.append(
-                    self.decode_paragraph_element(cast(Tag, child), child_path)
+                    self.decode_paragraph_element(cast(Tag, child))
                 )
         if paragraph_elements and isinstance(paragraph_elements[-1], models.TextRun):
             paragraph_elements[-1].content += "\n"
@@ -547,16 +514,13 @@ class _Decoder:
             positioned_object_ids=positioned_ids,
         )
 
-    def decode_paragraph_element(
-        self, element: Tag, path: str
-    ) -> models.ParagraphElement:
+    def decode_paragraph_element(self, element: Tag) -> models.ParagraphElement:
         link: models.Link | models.UnsetType = models.UNSET
         if isinstance(element, tags.ContentAnchorTag):
             link = self._decode_metadata_link(element)
             element = cast(Tag, cast(list[Node], element.children)[0])
-            path = f"{path}/*[1]"
         if isinstance(element, tags.SpanTag):
-            return self._decode_text_run_span(element, link, path)
+            return self._decode_text_run_span(element, link)
         if isinstance(element, tags.EquationTag):
             return models.Equation()
 
@@ -567,9 +531,8 @@ class _Decoder:
         }
         text_style: models.TextStyle | models.UnsetType = models.UNSET
         if any(value is not models.UNSET for value in (*style_values.values(), link)):
-            text_style = construct_model(
-                path,
-                lambda: models.TextStyle(**cast(Any, style_values), link=link),
+            text_style = self.construct_model(
+                element, models.TextStyle, **cast(Any, style_values), link=link
             )
         if isinstance(element, tags.AutoTextTag):
             return models.AutoText(
@@ -622,7 +585,6 @@ class _Decoder:
     def _decode_paragraph_style_tag(
         self,
         style_tag: tags.ParagraphStyleTag,
-        path: str,
         *,
         owning_named_style: object = models.UNSET,
     ) -> models.ParagraphStyle:
@@ -642,9 +604,7 @@ class _Decoder:
             field_name = border_fields.get(type(child))
             if field_name is not None:
                 border = cast(tags.ParagraphBorderTag, child)
-                values[field_name] = self._decode_paragraph_border_tag(
-                    border, f"{path}/{display_name(border.tag_name or '')}"
-                )
+                values[field_name] = self._decode_paragraph_border_tag(border)
             elif isinstance(child, tags.ShadingColorTag):
                 values["shading_color"] = cast(models.Color | None, child.color)
             elif isinstance(child, tags.TabStopsTag):
@@ -656,28 +616,26 @@ class _Decoder:
                     for stop in cast(list[tags.TabStopTag], child.children)
                 ]
 
-        return construct_model(
-            path,
-            lambda: models.ParagraphStyle(**cast(Any, values)),
+        return self.construct_model(
+            style_tag, models.ParagraphStyle, **cast(Any, values)
         )
 
     def _decode_paragraph_border_tag(
-        self, border_tag: tags.ParagraphBorderTag, path: str
+        self, border_tag: tags.ParagraphBorderTag
     ) -> models.ParagraphBorder:
         children = cast(list[Node], border_tag.children)
         color_tag = cast(tags.ColorTag, children[0])
-        return construct_model(
-            path,
-            lambda: models.ParagraphBorder(
-                color=cast(models.Color | None, color_tag.color),
-                width=cast(models.Dimension, border_tag.width),
-                padding=cast(models.Dimension, border_tag.padding),
-                dash_style=cast(Any, border_tag.dash_style),
-            ),
+        return self.construct_model(
+            border_tag,
+            models.ParagraphBorder,
+            color=cast(models.Color | None, color_tag.color),
+            width=border_tag.width,
+            padding=border_tag.padding,
+            dash_style=border_tag.dash_style,
         )
 
     def _decode_text_run_span(
-        self, span_tag: tags.SpanTag, link: models.Link | models.UnsetType, path: str
+        self, span_tag: tags.SpanTag, link: models.Link | models.UnsetType
     ) -> models.TextRun:
         style_values = span_tag.attribute_values
         text_style: models.TextStyle | models.UnsetType = models.UNSET
@@ -685,9 +643,8 @@ class _Decoder:
             any(value is not models.UNSET for value in style_values.values())
             or link is not models.UNSET
         ):
-            text_style = construct_model(
-                path,
-                lambda: models.TextStyle(**cast(Any, style_values), link=link),
+            text_style = self.construct_model(
+                span_tag, models.TextStyle, **cast(Any, style_values), link=link
             )
 
         content = ""
@@ -704,11 +661,20 @@ class _Decoder:
         return models.TextRun(content=content, text_style=text_style)
 
 
-def _preflight_xml(payload: str) -> None:
+def _preflight_xml(payload: str) -> list[SourcePosition]:
+    """Validate the original XML source and locate its elements.
+
+    Parse the complete input with Expat before ElementTree decoding, rejecting DTD
+    and entity declarations, external entity references, malformed XML, and element
+    nesting beyond ``MAX_ELEMENT_DEPTH``. Return the one-based line and column of
+    every start element in document order; ``nodes.Decoder`` consumes these positions
+    in the same preorder to build its tag source map.
+    """
     if _FORBIDDEN_XML_DECLARATION.search(payload) is not None:
         raise XHTMLParseError("/document: DTD and entity declarations are forbidden")
     parser = expat.ParserCreate()
     depth = 0
+    positions: list[SourcePosition] = []
 
     def reject_declaration(*_args: object) -> Never:
         raise XHTMLParseError("/document: DTD and entity declarations are forbidden")
@@ -723,6 +689,12 @@ def _preflight_xml(payload: str) -> None:
 
     def start_element(_name: str, _attributes: dict[str, str]) -> None:
         nonlocal depth
+        positions.append(
+            SourcePosition(
+                line=parser.CurrentLineNumber,
+                column=parser.CurrentColumnNumber + 1,
+            )
+        )
         depth += 1
         if depth > MAX_ELEMENT_DEPTH:
             raise XHTMLParseError(
@@ -745,6 +717,7 @@ def _preflight_xml(payload: str) -> None:
         raise
     except (expat.ExpatError, RecursionError, UnicodeEncodeError) as error:
         raise XHTMLParseError(f"/document: malformed XML: {error}") from error
+    return positions
 
 
 def deserialize_document(xhtml: str) -> models.Document:
@@ -757,15 +730,16 @@ def deserialize_document(xhtml: str) -> models.Document:
             "/document: required XML declaration is missing or invalid"
         )
     payload = xhtml[len(XML_DECLARATION) :].lstrip()
-    _preflight_xml(payload)
+    source_positions = _preflight_xml(xhtml)
     try:
         root = ElementTree.fromstring(payload)
         if root.tag != xhtml_name("html") and (
             root.tag == "html" or root.tag.endswith("}html")
         ):
             raise XHTMLParseError("/html: unsupported XHTML namespace")
-        decoder = _Decoder()
-        return decoder.decode_document(_decode_tag(root, tags.HtmlTag, "/html"))
+        xhtml_decoder = XHTMLDecoder(source_positions)
+        html = _decode_tag(root, tags.HtmlTag, xhtml_decoder)
+        return _Decoder(xhtml_decoder.source_map).decode_document(html)
     except XHTMLParseError:
         raise
     except (ElementTree.ParseError, RecursionError) as error:

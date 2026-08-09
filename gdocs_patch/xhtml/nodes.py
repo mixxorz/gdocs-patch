@@ -1,5 +1,5 @@
 from abc import ABC
-from collections.abc import Callable, Generator, Mapping, MutableMapping
+from collections.abc import Callable, Generator, Iterable, Mapping, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Never, Self, cast, overload
@@ -23,6 +23,31 @@ def _node_name(node_type: type["Node"]) -> str:
     return display_name(tag_name) if isinstance(tag_name, str) else node_type.__name__
 
 
+@dataclass(frozen=True)
+class SourcePosition:
+    """One-based position of an element in the source XML."""
+
+    line: int
+    column: int
+
+
+@dataclass(frozen=True)
+class SourceLocation:
+    """Structural path and optional textual position of a decoded node."""
+
+    path: tuple[str, ...]
+    position: SourcePosition | None = None
+
+    def format(self, suffix: str = "") -> str:
+        path = "/" + "/".join(display_name(step) for step in self.path) + suffix
+        if self.position is None:
+            return path
+        return f"{path} (line {self.position.line}, column {self.position.column})"
+
+    def __str__(self) -> str:
+        return self.format()
+
+
 class XHTMLModelError(ValueError):
     """Base error for the declarative XHTML model."""
 
@@ -43,17 +68,35 @@ class DecodeError(XHTMLModelError):
         message: str,
         *,
         path: tuple[str, ...] = (),
+        position: SourcePosition | None = None,
         attribute_name: str | None = None,
         element_name: str | None = None,
     ) -> None:
         super().__init__(message)
         self.path = path
+        self.position = position
         self.attribute_name = attribute_name
         self.element_name = element_name
 
 
 class Node:
     """Base class for nodes in the declarative XHTML tree."""
+
+
+class SourceMap:
+    """Associate decoded nodes with locations without modifying the nodes."""
+
+    def __init__(self) -> None:
+        self._entries: dict[int, tuple[Node, SourceLocation]] = {}
+
+    def record(self, node: Node, location: SourceLocation) -> None:
+        self._entries[id(node)] = (node, location)
+
+    def location_for(self, node: Node) -> SourceLocation:
+        stored_node, location = self._entries[id(node)]
+        if stored_node is not node:
+            raise KeyError(node)
+        return location
 
 
 @dataclass(eq=True)
@@ -402,8 +445,11 @@ class Tag(Node):
 
 
 class Decoder:
-    def __init__(self) -> None:
+    def __init__(self, source_positions: Iterable[SourcePosition] = ()) -> None:
         self._path: list[str] = []
+        self._source_positions = iter(source_positions)
+        self._current_location: SourceLocation | None = None
+        self.source_map = SourceMap()
 
     def fail(
         self,
@@ -412,9 +458,11 @@ class Decoder:
         attribute_name: str | None = None,
         element_name: str | None = None,
     ) -> Never:
+        location = self._current_location or SourceLocation(tuple(self._path))
         raise DecodeError(
             message,
-            path=tuple(self._path),
+            path=location.path,
+            position=location.position,
             attribute_name=attribute_name,
             element_name=element_name,
         )
@@ -435,16 +483,25 @@ class Decoder:
     def decode_element[T: Tag](
         self, element: ElementTree.Element, node_type: type[T]
     ) -> T:
-        node = node_type.decode_from(element, self)
+        position = next(self._source_positions, None)
+        location = SourceLocation(tuple(self._path), position)
+        previous_location = self._current_location
+        self._current_location = location
         try:
-            node.validate()
-        except ValidationError as error:
-            raise DecodeError(
-                str(error),
-                path=tuple(self._path),
-                attribute_name=error.attribute_name,
-            ) from error
-        return node
+            node = node_type.decode_from(element, self)
+            self.source_map.record(node, location)
+            try:
+                node.validate()
+            except ValidationError as error:
+                raise DecodeError(
+                    str(error),
+                    path=location.path,
+                    position=location.position,
+                    attribute_name=error.attribute_name,
+                ) from error
+            return node
+        finally:
+            self._current_location = previous_location
 
     def decode_children(
         self, parent: ElementTree.Element, field: Children
