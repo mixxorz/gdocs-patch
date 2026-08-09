@@ -62,7 +62,7 @@ class Attribute[T](Field[T], ABC):
         if raw is None:
             if self.required:
                 decoder.fail(
-                    "required attribute is missing",
+                    "missing required attribute",
                     attribute_name=self.bound_xml_name,
                 )
             return self.get_default()

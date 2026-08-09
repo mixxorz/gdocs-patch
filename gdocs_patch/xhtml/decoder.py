@@ -34,8 +34,6 @@ def _decode_tag[T: Tag](
         if error.attribute_name is not None:
             error_path += f"/@{display_name(error.attribute_name)}"
         message = str(error)
-        if message == "required attribute is missing":
-            message = "missing required attribute"
         if error.attribute_name is not None:
             if error.attribute_name.startswith(
                 "{"
