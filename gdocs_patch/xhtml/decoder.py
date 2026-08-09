@@ -72,12 +72,14 @@ class _Decoder:
             if isinstance(child, tags.DocumentTabTag):
                 content = self.decode_document_tab(child, f"{path}/g:document-tab")
             else:
-                assert isinstance(child, tags.ChildTabsTag)
+                child_tabs = cast(tags.ChildTabsTag, child)
                 children = [
                     self.decode_tab(
                         cast(tags.TabTag, tab), f"{path}/g:child-tabs/g:tab[{index}]"
                     )
-                    for index, tab in enumerate(cast(list[Node], child.children), 1)
+                    for index, tab in enumerate(
+                        cast(list[Node], child_tabs.children), 1
+                    )
                 ]
         return models.Tab(
             tab_id=cast(str, element.tab_id),
@@ -238,11 +240,8 @@ class _Decoder:
 
     def decode_body(self, element: tags.DocumentBodyTag, path: str) -> models.Body:
         content: list[models.StructuralElement] = []
-        sections = cast(list[Node], element.children)
-        for index, child in enumerate(sections, 1):
-            if not isinstance(child, tags.SectionTag):
-                parse_error(path, "body content must be section elements")
-            section = child
+        sections = cast(list[tags.SectionTag], element.children)
+        for index, section in enumerate(sections, 1):
             section_path = f"{path}/section[{index}]"
             section_children = cast(list[Node], section.children)
             style = next(
@@ -317,8 +316,8 @@ class _Decoder:
         del body
         decoded: list[models.StructuralElement] = []
         counts: dict[str, int] = {}
-        for element in elements:
-            assert isinstance(element, Tag)
+        for item in elements:
+            element = cast(Tag, item)
             name = display_name(cast(str, element.tag_name))
             counts[name] = counts.get(name, 0) + 1
             child_path = f"{path}/{name}[{counts[name]}]"
@@ -337,10 +336,7 @@ class _Decoder:
             if isinstance(element, tags.ListTag):
                 decoded.extend(self.decode_list(element, child_path))
                 continue
-            if isinstance(element, tags.TableTag):
-                decoded.append(self.decode_table(element, child_path))
-                continue
-            parse_error(child_path, "unknown structural element")
+            decoded.append(self.decode_table(cast(tags.TableTag, element), child_path))
         return decoded
 
     def decode_list(self, element: tags.ListTag, path: str) -> list[models.Paragraph]:
@@ -363,8 +359,9 @@ class _Decoder:
                     )
                 else:
                     paragraph_tag = cast(tags.ParagraphVocabularyTag, item_child)
-            assert paragraph_tag is not None
-            paragraph = self.decode_paragraph(paragraph_tag, item_path + "/*")
+            paragraph = self.decode_paragraph(
+                cast(tags.ParagraphVocabularyTag, paragraph_tag), item_path + "/*"
+            )
             paragraph.bullet = (
                 models.Bullet(
                     list_id=cast(str, list_id),
@@ -398,11 +395,11 @@ class _Decoder:
                     )
                 ]
             else:
-                assert isinstance(child, tags.TableBodyTag)
+                body = cast(tags.TableBodyTag, child)
                 rows = [
                     self.decode_table_row(row, f"{path}/tbody/tr[{index}]")
                     for index, row in enumerate(
-                        cast(list[tags.TableRowTag], child.children), 1
+                        cast(list[tags.TableRowTag], body.children), 1
                     )
                 ]
         return models.Table(
@@ -491,8 +488,7 @@ class _Decoder:
             if isinstance(child, tags.TableCellBackgroundColorTag):
                 values["background_color"] = child.color
                 continue
-            assert isinstance(child, tags.TableCellBorderTag)
-            border = child
+            border = cast(tags.TableCellBorderTag, child)
             color = cast(tags.ColorTag, cast(list[Node], border.children)[0]).color
             values[border_fields[type(border)]] = construct_model(
                 f"{path}/{display_name(border.tag_name or '')}",
@@ -573,7 +569,7 @@ class _Decoder:
         if isinstance(element, tags.EquationTag):
             return models.Equation()
 
-        assert isinstance(element, tags.StyledParagraphElementTag)
+        element = cast(tags.StyledParagraphElementTag, element)
         style_values = {
             name: getattr(element, name)
             for name in tags.StyledParagraphElementTag.attribute_fields()
@@ -623,12 +619,12 @@ class _Decoder:
                 name=element.name,
                 text_style=text_style,
             )
-        assert isinstance(element, tags.RichLinkTag)
+        rich_link = cast(tags.RichLinkTag, element)
         return models.RichLink(
-            rich_link_id=cast(str, element.rich_link_id),
-            uri=cast(str, element.uri),
-            title=element.title,
-            mime_type=element.mime_type,
+            rich_link_id=cast(str, rich_link.rich_link_id),
+            uri=cast(str, rich_link.uri),
+            title=rich_link.title,
+            mime_type=rich_link.mime_type,
             text_style=text_style,
         )
 
@@ -657,9 +653,9 @@ class _Decoder:
         for child in children:
             field_name = border_fields.get(type(child))
             if field_name is not None:
-                assert isinstance(child, tags.ParagraphBorderTag)
+                border = cast(tags.ParagraphBorderTag, child)
                 values[field_name] = self._decode_paragraph_border_tag(
-                    child, f"{path}/{display_name(child.tag_name or '')}"
+                    border, f"{path}/{display_name(border.tag_name or '')}"
                 )
             elif isinstance(child, tags.ShadingColorTag):
                 values["shading_color"] = cast(models.Color | None, child.color)
@@ -718,7 +714,6 @@ class _Decoder:
             elif isinstance(child, tags.VerticalTabTag):
                 content += "\v"
             else:
-                assert isinstance(child, tags.FormFeedTag)
                 content += "\f"
         return models.TextRun(content=content, text_style=text_style)
 
