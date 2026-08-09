@@ -727,7 +727,7 @@ The format uses XML 1.0 and XHTML-style semantic elements for document content, 
 
 ### Validation and security limits
 
-Deserialization enforces a maximum input size of 10,000,000 characters and a maximum XML element depth of 256, counting the root element as depth 1. It performs a stdlib expat preflight before `ElementTree` can expand content. Any DTD, internal or external entity declaration, or external entity reference is forbidden. The preflight also enforces element depth before construction of the `ElementTree` tree.
+Deserialization enforces a maximum input size of 10,000,000 characters and a maximum XML element depth of 128, counting the root element as depth 1. It performs a stdlib expat preflight before `ElementTree` can expand content. Any DTD, internal or external entity declaration, or external entity reference is forbidden. The preflight also enforces element depth before construction of the `ElementTree` tree.
 
 Invalid external XHTML input, including parser, declaration, size, depth, and semantic failures, raises `XHTMLParseError`. Parser and recursion causes are chained when applicable; deserialization does not expose a raw parser error or `RecursionError` for these validation failures.
 

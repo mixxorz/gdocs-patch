@@ -1,5 +1,4 @@
 import re
-import sys
 from typing import Any, Never, cast
 from xml.etree import ElementTree
 from xml.parsers import expat
@@ -28,9 +27,7 @@ _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 def _decode_tag[T: Tag](
     element: ElementTree.Element, tag_type: type[T], path: str
 ) -> T:
-    recursion_limit = sys.getrecursionlimit()
     try:
-        sys.setrecursionlimit(max(recursion_limit, MAX_ELEMENT_DEPTH * 20))
         return XHTMLDecoder().decode_element(element, tag_type)
     except DecodeError as error:
         error_path = path + "".join(f"/{display_name(name)}" for name in error.path)
@@ -54,8 +51,6 @@ def _decode_tag[T: Tag](
         if error.element_name is not None:
             message += f" {display_name(error.element_name)}"
         parse_error(error_path, message, cause=error)
-    finally:
-        sys.setrecursionlimit(recursion_limit)
 
 
 class _Decoder:

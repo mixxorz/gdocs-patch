@@ -5,7 +5,7 @@ XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
 GDOCS_NAMESPACE = "urn:gdocs-patch:xhtml:1"
 XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>'
 MAX_XHTML_CHARACTERS = 10_000_000
-MAX_ELEMENT_DEPTH = 256
+MAX_ELEMENT_DEPTH = 128
 
 
 class XHTMLParseError(ValueError):

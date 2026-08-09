@@ -4,7 +4,7 @@ from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
 
 DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
 MAX_XHTML_CHARACTERS = 10_000_000
-MAX_ELEMENT_DEPTH = 256
+MAX_ELEMENT_DEPTH = 128
 
 
 def xhtml(structure: str = "") -> str:
@@ -49,13 +49,19 @@ def test_documented_input_character_limit_accepts_boundary_and_rejects_excess() 
         deserialize_document(at_input_limit + " ")
 
 
-def nested_xml(depth: int) -> str:
-    return DECLARATION + "<x>" * depth + "</x>" * depth
+def nested_xhtml(depth: int) -> str:
+    table_of_contents_depth = depth - 8
+    return xhtml(
+        "<g:table-of-contents>" * table_of_contents_depth
+        + "<p><span /></p>"
+        + "</g:table-of-contents>" * table_of_contents_depth
+    )
 
 
-def test_documented_input_element_depth_rejects_excess() -> None:
+def test_documented_input_element_depth_accepts_boundary_and_rejects_excess() -> None:
+    assert deserialize_document(nested_xhtml(MAX_ELEMENT_DEPTH)).document_id == "doc"
     with pytest.raises(XHTMLParseError, match="element depth") as error:
-        deserialize_document(nested_xml(MAX_ELEMENT_DEPTH + 1))
+        deserialize_document(nested_xhtml(MAX_ELEMENT_DEPTH + 1))
     assert not isinstance(error.value.__cause__, RecursionError)
 
 
