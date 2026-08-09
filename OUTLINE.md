@@ -196,6 +196,20 @@ The initial XHTML representation includes all currently modeled fields, includin
 
 Do not implement this optimization until the full XHTML syntax and source/target compilation behavior make the safe inheritance boundaries clear.
 
+## XHTML token-count reduction
+
+Keep the initial XHTML syntax explicit and attribute-based. Later, evaluate a Tailwind-like local token syntax for reducing LLM token usage without omitting model data:
+
+- encode present booleans, enums, point dimensions, and colors as canonical tokens in one `g:format`-style attribute;
+- preserve `UNSET`, explicit `false`, transparent colors, and all concrete values bijectively;
+- define one fixed serialization order and reject unknown or duplicate tokens;
+- retain ordinary XML attributes for arbitrary strings unless a simple unambiguous quoting scheme proves worthwhile;
+- do not add selectors, inheritance, shared classes, or CSS semantics;
+- compare actual model-token counts and editing clarity against the current syntax before adopting it;
+- run an agent eval with equivalent document-editing tasks using the explicit and Tailwind-like syntaxes, measuring task success, edit correctness, token usage, and repair rate before deciding which representation performs better in practice.
+
+This is a future size optimization; the current explicit representation is acceptable.
+
 ## Feasibility and preservation
 
 Before producing requests:

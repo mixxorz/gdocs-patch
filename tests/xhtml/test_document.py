@@ -116,8 +116,7 @@ def test_round_trips_document_tab_body_and_segment_regions() -> None:
     assert "<g:document-tab>" in xhtml
     assert "<g:body>\n          <section>\n            <g:section-style />" in xhtml
     assert (
-        '<p>\n              <span g:bold="true" g:italic="false">Body<br /></span>'
-        in xhtml
+        '<p>\n              <span g:bold="true" g:italic="false">Body</span>' in xhtml
     )
     assert (
         '<g:header g:key="header-map-key" g:segment-id="embedded-header-id">' in xhtml
@@ -164,7 +163,7 @@ def test_decodes_document_tab_and_section_metadata_in_any_order() -> None:
                                 style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
                                 elements=[
                                     TextRun(content="First"),
-                                    TextRun(content="Second"),
+                                    TextRun(content="Second\n"),
                                 ],
                             ),
                         ]

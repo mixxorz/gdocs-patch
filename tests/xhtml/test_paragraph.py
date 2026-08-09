@@ -34,6 +34,13 @@ from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_d
 
 
 def document_with_runs(*runs: ParagraphElement) -> Document:
+    elements = list(runs)
+    if elements and isinstance(elements[-1], TextRun):
+        if not elements[-1].content.endswith("\n"):
+            elements[-1].content += "\n"
+    else:
+        elements.append(TextRun(content="\n"))
+
     return Document(
         document_id="doc-1",
         title="Paragraph",
@@ -49,7 +56,7 @@ def document_with_runs(*runs: ParagraphElement) -> Document:
                             SectionBreak(style=SectionStyle()),
                             Paragraph(
                                 style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
-                                elements=list(runs),
+                                elements=elements,
                             ),
                         ]
                     )
@@ -147,7 +154,10 @@ def test_round_trips_non_text_paragraph_element(
     if isinstance(paragraph_element, RichLink):
         assert 'href="https://outer-link.example/target"' in xhtml
         assert 'g:uri="https://smart-chip.example/document"' in xhtml
-    assert paragraph_from(deserialize_document(xhtml)).elements == [paragraph_element]
+    assert paragraph_from(deserialize_document(xhtml)).elements == [
+        paragraph_element,
+        TextRun(content="\n"),
+    ]
 
 
 def test_styled_auto_text_uses_canonical_attribute_order() -> None:
@@ -296,7 +306,7 @@ def test_round_trips_complete_paragraph_metadata() -> None:
     assert decoded_paragraph.positioned_object_ids == ["object-1", "object-2"]
     assert decoded_paragraph.elements == [
         TextRun(content="First"),
-        TextRun(content="Second"),
+        TextRun(content="Second\n"),
     ]
 
     moved = xhtml
@@ -315,7 +325,7 @@ def test_round_trips_complete_paragraph_metadata() -> None:
     moved = moved[:insertion] + style_xml + objects_xml + moved[insertion:]
     assert paragraph_from(deserialize_document(moved)).elements == [
         TextRun(content="First"),
-        TextRun(content="Second"),
+        TextRun(content="Second\n"),
     ]
 
 
@@ -368,6 +378,15 @@ def test_preserves_empty_paragraph_metadata_collections() -> None:
     assert decoded.positioned_object_ids == []
 
 
+def test_paragraph_terminal_newline_is_implicit() -> None:
+    document = document_with_runs(TextRun(content="First\nSecond\n"))
+
+    xhtml = serialize_document(document)
+
+    assert "<span>First<br />Second</span>" in xhtml
+    assert deserialize_document(xhtml) == document
+
+
 def test_round_trips_vertical_tabs_and_form_feeds() -> None:
     document = document_with_runs(TextRun(content="Before\vMiddle\fAfter"))
 
@@ -406,9 +425,9 @@ def test_round_trips_text_style_link_colors_and_newlines() -> None:
         'g:font-family="Arial" g:font-weight="700" '
         'g:foreground-red="0.1" g:foreground-green="0.2" '
         'g:foreground-blue="0.3" g:background-color="transparent">'
-        "First<br />Second<br /></span>"
+        "First<br />Second</span>"
     ) in xhtml
-    assert xhtml.count("<br />") == 2
+    assert xhtml.count("<br />") == 1
 
     decoded = deserialize_document(xhtml)
     content = decoded.tabs[0].content
@@ -512,7 +531,7 @@ def test_decodes_literal_line_feed_breaks_and_preserves_run_boundaries() -> None
     assert paragraph.elements == [
         TextRun(content="Literal\nBreak\nTail"),
         TextRun(content=""),
-        TextRun(content="Adjacent"),
+        TextRun(content="Adjacent\n"),
     ]
 
 

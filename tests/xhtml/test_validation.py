@@ -147,7 +147,7 @@ def test_decodes_all_unique_metadata_in_any_order_without_reordering_content() -
                             Paragraph(
                                 elements=[
                                     TextRun(content="first"),
-                                    TextRun(content="second"),
+                                    TextRun(content="second\n"),
                                 ],
                                 style=ParagraphStyle(
                                     named_style_type="NORMAL_TEXT", alignment="CENTER"
@@ -155,7 +155,7 @@ def test_decodes_all_unique_metadata_in_any_order_without_reordering_content() -
                                 positioned_object_ids=["object"],
                             ),
                             Paragraph(
-                                elements=[TextRun(content="item")],
+                                elements=[TextRun(content="item\n")],
                                 style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
                                 bullet=Bullet(
                                     list_id="list",
@@ -176,7 +176,9 @@ def test_decodes_all_unique_metadata_in_any_order_without_reordering_content() -
                                                 content=[
                                                     Paragraph(
                                                         elements=[
-                                                            TextRun(content="cell-one")
+                                                            TextRun(
+                                                                content="cell-one\n"
+                                                            )
                                                         ],
                                                         style=ParagraphStyle(
                                                             named_style_type="NORMAL_TEXT"
@@ -184,7 +186,9 @@ def test_decodes_all_unique_metadata_in_any_order_without_reordering_content() -
                                                     ),
                                                     Paragraph(
                                                         elements=[
-                                                            TextRun(content="cell-two")
+                                                            TextRun(
+                                                                content="cell-two\n"
+                                                            )
                                                         ],
                                                         style=ParagraphStyle(
                                                             named_style_type="NORMAL_TEXT"

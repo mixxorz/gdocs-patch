@@ -367,15 +367,23 @@ Every `TextRun` is represented by exactly one `<span>`, including an unstyled ru
 
 Empty text runs use an empty span. A linked run wraps its single span in `<a>`; no other text-style wrappers are used.
 
-Every line-feed character (`"\n"`) in `TextRun.content` is canonically serialized as `<br />` inside that run's span. Vertical-tab (`"\v"`) and form-feed (`"\f"`) characters cannot appear literally in XML 1.0, so they use the empty elements `<g:vertical-tab />` and `<g:form-feed />`. Carriage-return characters (`"\r"`) are canonically serialized as `&#13;`, including the carriage-return portion of `"\r\n"`, so XML parsing does not normalize representable model content:
+A paragraph's terminal line-feed character is implicit in its paragraph element. The serializer omits exactly one terminal `"\n"` from the final `TextRun`; every earlier line feed is represented by `<br />`. The deserializer restores the implicit newline to the final text run, or creates an unstyled newline run when the paragraph does not end in a span. An explicit `<br />` at the end of a span therefore represents an additional line feed before the paragraph terminator.
 
-**XML fragment:**
+The final span is retained because it carries the terminal newline's `TextStyle` and preserves the run boundary. A newline-only run becomes an empty span, whether styled or unstyled:
 
 ```xml
-<span>First<br />Second<g:vertical-tab />Third<g:form-feed />Fourth&#13;<br />Fifth</span>
+<p><span>First<br />Second</span></p>
+<p><span>Text</span><span g:bold="true" /></p>
+<p><span /></p>
 ```
 
-Deserialization converts these elements back to their corresponding characters, decodes `&#13;` as `"\r"`, and also accepts literal line-feed text inside the span as `"\n"`. A span may contain text and empty `<br />`, `<g:vertical-tab />`, and `<g:form-feed />` elements. The serializer neither adds nor removes paragraph-terminal line endings and does not require a paragraph to end with one.
+Vertical-tab (`"\v"`) and form-feed (`"\f"`) characters cannot appear literally in XML 1.0, so they use the empty elements `<g:vertical-tab />` and `<g:form-feed />`. Carriage-return characters (`"\r"`) are canonically serialized as `&#13;`, including the carriage-return portion of `"\r\n"`:
+
+```xml
+<span>First<g:vertical-tab />Second<g:form-feed />Third&#13;<br />Fourth</span>
+```
+
+Deserialization converts these elements back to their corresponding characters, decodes `&#13;` as `"\r"`, and also accepts literal line-feed text inside a span as `"\n"`. A span may contain text and empty `<br />`, `<g:vertical-tab />`, and `<g:form-feed />` elements.
 ### Text styles and links
 
 `TextStyle` fields are represented as `g:*` attributes on the corresponding style-bearing element. Dimension values are point magnitudes without unit attributes; colors use separate red, green, and blue component attributes.

@@ -60,8 +60,8 @@ def decoded_section_style(document: Document) -> SectionStyle:
 def test_round_trips_recursive_table_of_contents_in_body() -> None:
     table_of_contents = TableOfContents(
         content=[
-            Paragraph(elements=[TextRun(content="First heading")]),
-            Paragraph(elements=[TextRun(content="Second heading")]),
+            Paragraph(elements=[TextRun(content="First heading\n")]),
+            Paragraph(elements=[TextRun(content="Second heading\n")]),
             TableOfContents(content=[]),
         ]
     )
@@ -231,7 +231,7 @@ def test_rejects_section_column_missing_required_dimension(missing: str) -> None
 def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
     paragraphs = [
         Paragraph(
-            elements=[TextRun(content="existing zero")],
+            elements=[TextRun(content="existing zero\n")],
             bullet=Bullet(
                 list_id="list-1",
                 text_style=TextStyle(
@@ -240,24 +240,24 @@ def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
             ),
         ),
         Paragraph(
-            elements=[TextRun(content="existing two")],
+            elements=[TextRun(content="existing two\n")],
             bullet=Bullet(
                 list_id="list-1",
                 nesting_level=2,
                 text_style=TextStyle(italic=True),
             ),
         ),
-        Paragraph(elements=[TextRun(content="break")]),
+        Paragraph(elements=[TextRun(content="break\n")]),
         Paragraph(
-            elements=[TextRun(content="preset zero")],
+            elements=[TextRun(content="preset zero\n")],
             bullet=BulletPreset(preset="BULLET_DISC_CIRCLE_SQUARE"),
         ),
         Paragraph(
-            elements=[TextRun(content="preset one")],
+            elements=[TextRun(content="preset one\n")],
             bullet=BulletPreset(preset="BULLET_DISC_CIRCLE_SQUARE", nesting_level=1),
         ),
         Paragraph(
-            elements=[TextRun(content="numbered")],
+            elements=[TextRun(content="numbered\n")],
             bullet=BulletPreset(preset="NUMBERED_DECIMAL_ALPHA_ROMAN", nesting_level=1),
         ),
     ]
@@ -314,7 +314,7 @@ def test_accepts_bullet_style_metadata_after_item_paragraph() -> None:
     assert isinstance(decoded, DocumentTab)
     assert isinstance(decoded.body, Body)
     assert decoded.body.content[1] == Paragraph(
-        elements=[TextRun(content="item")],
+        elements=[TextRun(content="item\n")],
         style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
         bullet=Bullet(
             list_id="id",
@@ -582,9 +582,9 @@ def test_round_trips_complete_recursive_table() -> None:
             content_alignment="MIDDLE",
         ),
         content=[
-            Paragraph(elements=[TextRun(content="Cell paragraph")]),
+            Paragraph(elements=[TextRun(content="Cell paragraph\n")]),
             Table(rows=[TableRow(cells=[TableCell(content=[])])]),
-            TableOfContents(content=[Paragraph(elements=[TextRun(content="TOC")])]),
+            TableOfContents(content=[Paragraph(elements=[TextRun(content="TOC\n")])]),
         ],
     )
     table = Table(
@@ -667,8 +667,8 @@ def test_accepts_table_and_cell_metadata_after_content_without_reordering() -> N
                 cells=[
                     TableCell(
                         content=[
-                            Paragraph(elements=[TextRun(content="first")]),
-                            Paragraph(elements=[TextRun(content="second")]),
+                            Paragraph(elements=[TextRun(content="first\n")]),
+                            Paragraph(elements=[TextRun(content="second\n")]),
                         ],
                         style=TableCellStyle(content_alignment="BOTTOM"),
                     )

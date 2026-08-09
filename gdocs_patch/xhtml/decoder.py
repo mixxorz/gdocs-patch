@@ -140,8 +140,7 @@ class _Decoder:
     ) -> models.DocumentStyle:
         values = {
             name: getattr(element, name)
-            for name in tags.DocumentStyleTag.fields()
-            if name != "children"
+            for name in tags.DocumentStyleTag.attribute_fields()
         }
         background_color: models.Color | None | models.UnsetType = models.UNSET
         children = cast(list[Node], element.children)
@@ -161,9 +160,7 @@ class _Decoder:
         path: str,
     ) -> models.TextStyle | models.UnsetType:
         values = {
-            name: getattr(element, name)
-            for name in tags.SpanTag.fields()
-            if name != "children"
+            name: getattr(element, name) for name in tags.SpanTag.attribute_fields()
         }
         link: models.Link | models.UnsetType = models.UNSET
         for child in cast(list[Node], element.children):
@@ -280,8 +277,7 @@ class _Decoder:
     ) -> models.SectionStyle:
         values = {
             name: getattr(element, name)
-            for name in tags.SectionStyleTag.fields()
-            if name != "children"
+            for name in tags.SectionStyleTag.attribute_fields()
         }
         columns: list[models.SectionColumn] | models.UnsetType = models.UNSET
         children = cast(list[Node], element.children)
@@ -490,8 +486,7 @@ class _Decoder:
     ) -> dict[str, object]:
         values = {
             name: getattr(element, name)
-            for name in tags.TableCellStyleTag.fields()
-            if name != "children"
+            for name in tags.TableCellStyleTag.attribute_fields()
         }
         border_fields: dict[type[Node], str] = {
             tags.TableCellBorderLeftTag: "border_left",
@@ -560,6 +555,10 @@ class _Decoder:
                 paragraph_elements.append(
                     self.decode_paragraph_element(cast(Tag, child), child_path)
                 )
+        if paragraph_elements and isinstance(paragraph_elements[-1], models.TextRun):
+            paragraph_elements[-1].content += "\n"
+        else:
+            paragraph_elements.append(models.TextRun(content="\n"))
         if style is models.UNSET and named_style_type is not models.UNSET:
             style = models.ParagraphStyle(named_style_type=cast(Any, named_style_type))
         return models.Paragraph(
@@ -584,8 +583,7 @@ class _Decoder:
         assert isinstance(element, tags.StyledParagraphElementTag)
         style_values = {
             name: getattr(element, name)
-            for name in tags.StyledParagraphElementTag.fields()
-            if name != "children"
+            for name in tags.StyledParagraphElementTag.attribute_fields()
         }
         text_style: models.TextStyle | models.UnsetType = models.UNSET
         if any(value is not models.UNSET for value in (*style_values.values(), link)):
@@ -650,8 +648,8 @@ class _Decoder:
     ) -> models.ParagraphStyle:
         values = {
             name: getattr(style_tag, name)
-            for name in type(style_tag).fields()
-            if name not in {"children", "owned_named_style_type"}
+            for name in type(style_tag).attribute_fields()
+            if name != "owned_named_style_type"
         }
         if not isinstance(style_tag, tags.NamedParagraphStyleTag):
             values["named_style_type"] = owning_named_style
@@ -705,9 +703,7 @@ class _Decoder:
         self, span_tag: tags.SpanTag, link: models.Link | models.UnsetType, path: str
     ) -> models.TextRun:
         style_values = {
-            name: getattr(span_tag, name)
-            for name in tags.SpanTag.fields()
-            if name != "children"
+            name: getattr(span_tag, name) for name in tags.SpanTag.attribute_fields()
         }
         text_style: models.TextStyle | models.UnsetType = models.UNSET
         if (

@@ -326,6 +326,15 @@ class Tag(Node):
             raise TypeError(f"{cls.__name__} declares more than one Children field")
         return result
 
+    @classmethod
+    def attribute_fields(cls) -> dict[str, Field[Any]]:
+        """Return fields represented by XML attributes rather than child content."""
+        return {
+            name: field
+            for name, field in cls.fields().items()
+            if not isinstance(field, Children)
+        }
+
     def __init__(self, **values: object) -> None:
         fields = self.fields()
         unknown = set(values) - set(fields)
@@ -362,29 +371,19 @@ class Tag(Node):
             decoder.fail(f"expected <{cls.tag_name}>, got <{element.tag}>")
 
         allowed_attributes: set[str] = set()
-        for field in cls.fields().values():
+        for field in cls.attribute_fields().values():
             allowed_attributes.update(field.xml_names())
         unknown_attributes = set(element.attrib) - allowed_attributes
         if unknown_attributes:
             attribute_name = min(unknown_attributes)
             decoder.fail("unknown attribute", attribute_name=attribute_name)
 
-        fields = cls.fields()
         values = {
             name: field.decode_from_attributes(element.attrib, decoder)
-            for name, field in fields.items()
-            if not isinstance(field, Children)
+            for name, field in cls.attribute_fields().items()
         }
         node = cls(**values)
-        children_field = next(
-            (field for field in fields.values() if isinstance(field, Children)), None
-        )
-        if children_field is not None:
-            setattr(
-                node,
-                cast(str, children_field.name),
-                children_field.decode_from(element, decoder),
-            )
+        node.children = cls.children.decode_from(element, decoder)
         return node
 
     def __repr__(self) -> str:
@@ -497,11 +496,9 @@ class Decoder:
 class Encoder:
     def encode_element(self, node: Tag) -> ElementTree.Element:
         element = ElementTree.Element(cast(str, node.tag_name))
-        for name, field in node.fields().items():
-            if isinstance(field, Children):
-                field.encode_into(getattr(node, name), element, self)
-            else:
-                field.encode_into_attributes(getattr(node, name), element.attrib, self)
+        for name, field in node.attribute_fields().items():
+            field.encode_into_attributes(getattr(node, name), element.attrib, self)
+        type(node).children.encode_into(node.children, element, self)
         return element
 
     def encode_children(

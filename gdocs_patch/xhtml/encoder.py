@@ -94,8 +94,7 @@ class _Encoder:
     ) -> tags.DocumentStyleTag:
         values = {
             name: getattr(style, name)
-            for name in tags.DocumentStyleTag.fields()
-            if name != "children"
+            for name in tags.DocumentStyleTag.attribute_fields()
         }
         children: list[Tag] = []
         if style.background_color is not models.UNSET:
@@ -134,9 +133,7 @@ class _Encoder:
             return {}, []
         style = cast(models.TextStyle, style)
         values = {
-            name: getattr(style, name)
-            for name in tags.SpanTag.fields()
-            if name != "children"
+            name: getattr(style, name) for name in tags.SpanTag.attribute_fields()
         }
         children: list[Tag] = []
         if style.link is not models.UNSET:
@@ -226,8 +223,7 @@ class _Encoder:
         style = section_break.style
         values = {
             name: getattr(style, name)
-            for name in tags.SectionStyleTag.fields()
-            if name != "children"
+            for name in tags.SectionStyleTag.attribute_fields()
         }
         children: list[Tag] = []
         if style.columns is not models.UNSET:
@@ -408,8 +404,7 @@ class _Encoder:
     ) -> tags.TableCellStyleTag | None:
         values = {
             name: getattr(style, name)
-            for name in tags.TableCellStyleTag.fields()
-            if name != "children"
+            for name in tags.TableCellStyleTag.attribute_fields()
         }
         children: list[Tag] = []
         if style.background_color is not models.UNSET:
@@ -476,9 +471,22 @@ class _Encoder:
                     ]
                 )
             )
-        children.extend(
-            self.encode_paragraph_element(item) for item in paragraph.elements
+        has_terminal_newline = bool(
+            paragraph.elements
+            and isinstance(paragraph.elements[-1], models.TextRun)
+            and paragraph.elements[-1].content.endswith("\n")
         )
+        for index, item in enumerate(paragraph.elements):
+            children.append(
+                self.encode_paragraph_element(
+                    item,
+                    omit_terminal_newline=(
+                        has_terminal_newline and index == len(paragraph.elements) - 1
+                    ),
+                )
+            )
+        if not has_terminal_newline:
+            children.append(tags.SpanTag())
         return tag_type(children=children)
 
     def _encode_content_link(
@@ -502,9 +510,16 @@ class _Encoder:
             children=[child],
         )
 
-    def encode_paragraph_element(self, item: models.ParagraphElement) -> Tag:
+    def encode_paragraph_element(
+        self,
+        item: models.ParagraphElement,
+        *,
+        omit_terminal_newline: bool = False,
+    ) -> Tag:
         if isinstance(item, models.TextRun):
-            span, link = self._encode_text_run_span(item)
+            span, link = self._encode_text_run_span(
+                item, omit_terminal_newline=omit_terminal_newline
+            )
             return self._encode_content_link(span, link)
         if isinstance(item, models.Equation):
             return tags.EquationTag()
@@ -561,8 +576,7 @@ class _Encoder:
             link = style.link
             values.update(
                 (name, getattr(style, name))
-                for name in tags.StyledParagraphElementTag.fields()
-                if name != "children"
+                for name in tags.StyledParagraphElementTag.attribute_fields()
             )
         return self._encode_content_link(tag_type(**values), link)
 
@@ -577,8 +591,8 @@ class _Encoder:
         )
         values = {
             name: getattr(style, name)
-            for name in paragraph_style_tag_type.fields()
-            if name not in {"children", "owned_named_style_type"}
+            for name in paragraph_style_tag_type.attribute_fields()
+            if name != "owned_named_style_type"
         }
         children: list[Tag] = []
         border_tags: tuple[tuple[str, type[tags.ParagraphBorderTag]], ...] = (
@@ -622,7 +636,10 @@ class _Encoder:
         return paragraph_style_tag_type(children=children, **values)
 
     def _encode_text_run_span(
-        self, run: models.TextRun
+        self,
+        run: models.TextRun,
+        *,
+        omit_terminal_newline: bool = False,
     ) -> tuple[tags.SpanTag, models.Link | models.UnsetType]:
         children: list[
             Text | tags.BreakTag | tags.VerticalTabTag | tags.FormFeedTag
@@ -633,7 +650,8 @@ class _Encoder:
             "\v": tags.VerticalTabTag,
             "\f": tags.FormFeedTag,
         }
-        for character in run.content:
+        content = run.content[:-1] if omit_terminal_newline else run.content
+        for character in content:
             tag_type = control_tags.get(character)
             if tag_type is None:
                 text.append(character)
@@ -651,9 +669,7 @@ class _Encoder:
             style = cast(models.TextStyle, run.text_style)
             link = style.link
             style_values = {
-                name: getattr(style, name)
-                for name in tags.SpanTag.fields()
-                if name != "children"
+                name: getattr(style, name) for name in tags.SpanTag.attribute_fields()
             }
 
         return tags.SpanTag(children=children, **style_values), link

@@ -14,6 +14,8 @@ from gdocs_patch.models import (
     Table,
     TableCellStyle,
     TableOfContents,
+    TextRun,
+    TreeNode,
 )
 from gdocs_patch.xhtml import deserialize_document, serialize_document
 from tests.parsers.maximal_document import expected_maximal_document
@@ -25,6 +27,17 @@ def _prepend_leading_section(document: Document) -> None:
     body = content.body
     assert isinstance(body, Body)
     content.body = Body(content=[SectionBreak(style=SectionStyle()), *body.content])
+
+
+def _normalize_paragraph_terminators(node: TreeNode) -> None:
+    if isinstance(node, Paragraph) and not (
+        node.elements
+        and isinstance(node.elements[-1], TextRun)
+        and node.elements[-1].content.endswith("\n")
+    ):
+        node.add_child(TextRun(content="\n"))
+    for child in node.children:
+        _normalize_paragraph_terminators(child)
 
 
 def test_full_supported_document_has_normalized_stable_round_trip() -> None:
@@ -53,6 +66,13 @@ def test_full_supported_document_has_normalized_stable_round_trip() -> None:
     assert isinstance(first_cell_style, TableCellStyle)
     first_cell_style.padding_left = Dimension(magnitude=0, unit="PT")
     table.rows[0].cells[1].style = UNSET
+
+    trees: list[TreeNode] = [body]
+    for segments in (content.headers, content.footers, content.footnotes):
+        if isinstance(segments, dict):
+            trees.extend(segments.values())
+    for tree in trees:
+        _normalize_paragraph_terminators(tree)
 
     xhtml = serialize_document(input_document)
     actual = deserialize_document(xhtml)
