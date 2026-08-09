@@ -50,7 +50,7 @@ gdocs_patch/xhtml/
 - Produces contextual `DecodeError` paths with repeated-child indexes and attribute names.
 - Produces shallow per-node validation during decoding without repeatedly validating descendants; encoding trusts its typed tag tree.
 
-- [ ] Add indexed path steps to the generic decoder so repeated tags render as `g:tab[1]`, `g:named-style[1]`, and similar existing paths.
+- [ ] Add indexed path steps to `TagDecoder` so repeated tags render as `g:tab[1]`, `g:named-style[1]`, and similar existing paths.
 - [ ] Validate each decoded tag at its own current path after its children are decoded; make `Children.validate()` enforce only direct grammar and cardinality.
 - [ ] Encode each trusted tag once as recursive encoding reaches it without a second validation pass.
 - [ ] Keep whitespace policy declarative through `Children(text_error=..., tail_error=...)`.
@@ -69,14 +69,14 @@ gdocs_patch/xhtml/
 
 **Interfaces:**
 - Produces `HtmlTag`, `BodyTag`, `TabTag`, `ChildTabsTag`, `DocumentTabTag`, document-style tags, named-style wrappers, and list-definition tags.
-- Changes `_Encoder.encode_document(document: Document) -> HtmlTag`.
-- Changes `_Decoder.decode_document(root: HtmlTag) -> Document`.
+- Changes `_DocumentEncoder.encode_document(document: Document) -> HtmlTag`.
+- Changes `_DocumentDecoder.decode_document(root: HtmlTag) -> Document`.
 
 - [ ] Declare root/document/tab attributes and unique wrappers with exact defaults and canonical field order.
 - [ ] Declare full `DocumentStyle`, structured background color, `NamedStyle`, metadata link, `ListDefinition`, and `ListLevel` tags.
 - [ ] Reuse shared declarative text-style attributes for span, metadata style, inline element, and list-level contexts without sharing mutable descriptor instances.
 - [ ] Convert document, recursive tabs, document-tab metadata, named styles, and list definitions to model/tag mappings.
-- [ ] Change `serialize_document()` to encode the returned trusted `HtmlTag` through the generic encoder and render it without model revalidation.
+- [ ] Change `serialize_document()` to encode the returned trusted `HtmlTag` through `TagEncoder` and render it without model revalidation.
 - [ ] Change `deserialize_document()` to decode `HtmlTag` before model mapping; retain declaration, DTD/entity, character, and depth preflight.
 - [ ] Delete superseded envelope/document-style/named-style/list-definition XML helper methods and constants.
 - [ ] Run the full unchanged suite and static checks; commit as `refactor: map XHTML document metadata through tags`.
@@ -92,7 +92,7 @@ gdocs_patch/xhtml/
 
 **Interfaces:**
 - Produces body, section, section-style, columns, segment collection, and table-of-contents tags.
-- Produces `_Encoder.encode_structural_sequence(...) -> list[Tag]` and `_Decoder.decode_structural_sequence(...) -> list[StructuralElement]`.
+- Produces `_DocumentEncoder.encode_structural_sequence(...) -> list[Tag]` and `_DocumentDecoder.decode_structural_sequence(...) -> list[StructuralElement]`.
 
 - [ ] Declare required body sections, full section-style attributes, optional/empty columns, and context-specific header/footer/footnote segment tags.
 - [ ] Declare structural child alternatives using lazy `Child` references for paragraphs, lists, tables, and table-of-contents.

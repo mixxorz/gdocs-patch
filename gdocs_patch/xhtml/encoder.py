@@ -9,15 +9,14 @@ from .base import (
     XHTML_NAMESPACE,
     XML_DECLARATION,
 )
-from .nodes import Encoder as XHTMLEncoder
-from .nodes import Tag, Text
+from .nodes import Tag, TagEncoder, Text
 
 
 def _omit_default[T](value: T, default: T) -> T | models.UnsetType:
     return models.UNSET if value == default else value
 
 
-class _Encoder:
+class _DocumentEncoder:
     def encode_document(self, document: models.Document) -> tags.HtmlTag:
         return tags.HtmlTag(
             document_id=document.document_id,
@@ -695,7 +694,7 @@ def _indent_xml(element: ElementTree.Element, level: int = 0) -> None:
 def serialize_document(document: models.Document) -> str:
     ElementTree.register_namespace("", XHTML_NAMESPACE)
     ElementTree.register_namespace("g", GDOCS_NAMESPACE)
-    root = XHTMLEncoder().encode_element(_Encoder().encode_document(document))
+    root = TagEncoder().encode_element(_DocumentEncoder().encode_document(document))
     _indent_xml(root)
     xml = ElementTree.tostring(
         root, encoding="unicode", short_empty_elements=True

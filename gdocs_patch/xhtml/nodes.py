@@ -147,7 +147,7 @@ class Field[T](ABC):
         pass
 
     def decode_from_attributes(
-        self, _attributes: Mapping[str, str], _decoder: "Decoder"
+        self, _attributes: Mapping[str, str], _decoder: "TagDecoder"
     ) -> T | UnsetType:
         raise TypeError("field is not represented by XML attributes")
 
@@ -155,7 +155,7 @@ class Field[T](ABC):
         self,
         _value: T | UnsetType,
         _attributes: MutableMapping[str, str],
-        _encoder: "Encoder",
+        _encoder: "TagEncoder",
     ) -> None:
         raise TypeError("field is not represented by XML attributes")
 
@@ -323,7 +323,7 @@ class Children(Field[list[Node]]):
                 seen.add(key)
 
     def decode_from(
-        self, element: ElementTree.Element, decoder: "Decoder"
+        self, element: ElementTree.Element, decoder: "TagDecoder"
     ) -> list[Node]:
         return decoder.decode_children(element, self)
 
@@ -331,7 +331,7 @@ class Children(Field[list[Node]]):
         self,
         value: list[Node] | UnsetType,
         element: ElementTree.Element,
-        encoder: "Encoder",
+        encoder: "TagEncoder",
     ) -> None:
         encoder.encode_children(cast(list[Node], value), element)
 
@@ -412,7 +412,7 @@ class Tag(Node):
         self.clean()
 
     @classmethod
-    def decode_from(cls, element: ElementTree.Element, decoder: "Decoder") -> Self:
+    def decode_from(cls, element: ElementTree.Element, decoder: "TagDecoder") -> Self:
         if cls.tag_name is None:
             decoder.fail(f"{cls.__name__} has no tag_name")
         if element.tag != cls.tag_name:
@@ -444,7 +444,7 @@ class Tag(Node):
         )
 
 
-class Decoder:
+class TagDecoder:
     def __init__(self, source_positions: Iterable[SourcePosition] = ()) -> None:
         self._path: list[str] = []
         self._source_positions = iter(source_positions)
@@ -555,7 +555,7 @@ class Decoder:
         return field.normalize(result)
 
 
-class Encoder:
+class TagEncoder:
     def encode_element(self, node: Tag) -> ElementTree.Element:
         element = ElementTree.Element(cast(str, node.tag_name))
         for name, field in node.attribute_fields().items():

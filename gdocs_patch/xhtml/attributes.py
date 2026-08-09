@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from gdocs_patch.models import UNSET, Color, Dimension, UnsetType
 
-from .nodes import Decoder, Encoder, Field, ValidationError
+from .nodes import Field, TagDecoder, TagEncoder, ValidationError
 
 _CANONICAL_INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
 _CANONICAL_FLOAT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?\Z")
@@ -56,7 +56,7 @@ class Attribute[T](Field[T], ABC):
             raise ValidationError(f"{self.name} is required")
 
     def decode_from_attributes(
-        self, attributes: Mapping[str, str], decoder: Decoder
+        self, attributes: Mapping[str, str], decoder: TagDecoder
     ) -> T | UnsetType:
         raw = attributes.get(self.bound_xml_name)
         if raw is None:
@@ -75,7 +75,7 @@ class Attribute[T](Field[T], ABC):
         self,
         value: T | UnsetType,
         attributes: MutableMapping[str, str],
-        encoder: Encoder,
+        encoder: TagEncoder,
     ) -> None:
         if value is UNSET:
             return
@@ -215,7 +215,7 @@ class MultiValueAttribute[T](Field[T], ABC):
         return names
 
     def decode_from_attributes(
-        self, attributes: Mapping[str, str], decoder: Decoder
+        self, attributes: Mapping[str, str], decoder: TagDecoder
     ) -> T | UnsetType:
         values = {
             name: attribute.decode_from_attributes(attributes, decoder)
@@ -233,7 +233,7 @@ class MultiValueAttribute[T](Field[T], ABC):
         self,
         value: T | UnsetType,
         attributes: MutableMapping[str, str],
-        encoder: Encoder,
+        encoder: TagEncoder,
     ) -> None:
         values = self.decompress(value)
         for name, attribute in self.attributes.items():

@@ -25,15 +25,15 @@ from .nodes import (
     SourceMap,
     SourcePosition,
     Tag,
+    TagDecoder,
     Text,
 )
-from .nodes import Decoder as XHTMLDecoder
 
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
 
 def _decode_tag[T: Tag](
-    element: ElementTree.Element, tag_type: type[T], decoder: XHTMLDecoder
+    element: ElementTree.Element, tag_type: type[T], decoder: TagDecoder
 ) -> T:
     try:
         with decoder.at(element.tag):
@@ -61,7 +61,7 @@ def _decode_tag[T: Tag](
         parse_error(location.format(suffix), message, cause=error)
 
 
-class _Decoder:
+class _DocumentDecoder:
     def __init__(self, source_map: SourceMap) -> None:
         self.source_map = source_map
 
@@ -667,7 +667,8 @@ def _preflight_xml(payload: str) -> list[SourcePosition]:
     Parse the complete input with Expat before ElementTree decoding, rejecting DTD
     and entity declarations, external entity references, malformed XML, and element
     nesting beyond ``MAX_ELEMENT_DEPTH``. Return the one-based line and column of
-    every start element in document order; ``nodes.Decoder`` consumes these positions
+    every start element in document order; ``nodes.TagDecoder`` consumes these
+    positions
     in the same preorder to build its tag source map.
     """
     if _FORBIDDEN_XML_DECLARATION.search(payload) is not None:
@@ -737,9 +738,9 @@ def deserialize_document(xhtml: str) -> models.Document:
             root.tag == "html" or root.tag.endswith("}html")
         ):
             raise XHTMLParseError("/html: unsupported XHTML namespace")
-        xhtml_decoder = XHTMLDecoder(source_positions)
-        html = _decode_tag(root, tags.HtmlTag, xhtml_decoder)
-        return _Decoder(xhtml_decoder.source_map).decode_document(html)
+        tag_decoder = TagDecoder(source_positions)
+        html = _decode_tag(root, tags.HtmlTag, tag_decoder)
+        return _DocumentDecoder(tag_decoder.source_map).decode_document(html)
     except XHTMLParseError:
         raise
     except (ElementTree.ParseError, RecursionError) as error:

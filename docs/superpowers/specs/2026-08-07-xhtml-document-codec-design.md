@@ -101,19 +101,19 @@ A private model mapper converts each supported `Document` model object into its 
 The following abridged signatures show the relevant data flow (module qualifiers are omitted, but parameter order matches the implementation):
 
 ```python
-class _Encoder:
+class _DocumentEncoder:
     def encode_document(self, document: Document) -> HtmlTag: ...
     def encode_structural_sequence(
         self, elements: list[StructuralElement]
     ) -> list[Tag]: ...
 ```
 
-`serialize_document()` calls the generic XHTML `Encoder` exactly once at the XML boundary:
+`serialize_document()` calls the generic `TagEncoder` exactly once at the XML boundary:
 
 ```text
 trusted Document models
-└── _Encoder → declared Tag/Text tree
-    └── nodes.Encoder → ElementTree
+└── _DocumentEncoder → declared Tag/Text tree
+    └── nodes.TagEncoder → ElementTree
         └── encoder.py → indentation and XML rendering
 ```
 
@@ -121,24 +121,24 @@ The model mapper retains the two unavoidable sibling projections: body sections 
 
 ### Decoder
 
-After XML security preflight and `ElementTree.fromstring()`, the generic XHTML `Decoder` parses the entire tree from the expected `HtmlTag` root. A private model mapper then converts typed tags into `Document` models:
+After XML security preflight and `ElementTree.fromstring()`, the generic `TagDecoder` parses the entire tree from the expected `HtmlTag` root. A private model mapper then converts typed tags into `Document` models:
 
-These are likewise abridged signatures with implementation-accurate parameter order and path propagation:
+These are likewise abridged signatures with implementation-accurate parameter order:
 
 ```python
-class _Decoder:
+class _DocumentDecoder:
     def decode_document(self, root: HtmlTag) -> Document: ...
     def decode_structural_sequence(
-        self, elements: list[Node], path: str, body: bool = False
+        self, elements: list[Node]
     ) -> list[StructuralElement]: ...
 ```
 
 ```text
 XML text
 ├── decoder.py → security preflight and ElementTree.fromstring
-├── nodes.Decoder → validated Tag/Text tree
-├── decoder.py → public error-path adaptation
-└── _Decoder → semantic projections and Document model construction
+├── nodes.TagDecoder → validated Tag/Text tree and source map
+├── decoder.py → public source-location adaptation
+└── _DocumentDecoder → semantic projections and Document model construction
 ```
 
 The mapper handles only semantic projections and model construction: flattening sections, flattening list containers into bullet paragraphs, selecting semantic paragraph styles, reconstructing links and text styles, and preserving `UNSET`/empty collection distinctions. Model constructors receive completed child lists and establish ordinary parent links. Parent references and absolute indices are never represented in the XHTML tree.
