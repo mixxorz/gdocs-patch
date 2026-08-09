@@ -368,6 +368,15 @@ def test_preserves_empty_paragraph_metadata_collections() -> None:
     assert decoded.positioned_object_ids == []
 
 
+def test_round_trips_vertical_tabs_and_form_feeds() -> None:
+    document = document_with_runs(TextRun(content="Before\vMiddle\fAfter"))
+
+    xhtml = serialize_document(document)
+
+    assert "<span>Before<g:vertical-tab />Middle<g:form-feed />After</span>" in xhtml
+    assert deserialize_document(xhtml) == document
+
+
 def test_round_trips_text_style_link_colors_and_newlines() -> None:
     run = TextRun(
         content="First\nSecond\n",

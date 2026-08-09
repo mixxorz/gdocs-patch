@@ -624,14 +624,26 @@ class _Encoder:
     def _encode_text_run_span(
         self, run: models.TextRun
     ) -> tuple[tags.SpanTag, models.Link | models.UnsetType]:
-        children: list[Text | tags.BreakTag] = []
-        parts = run.content.split("\n")
-        if parts[0]:
-            children.append(Text(parts[0]))
-        for part in parts[1:]:
-            children.append(tags.BreakTag())
-            if part:
-                children.append(Text(part))
+        children: list[
+            Text | tags.BreakTag | tags.VerticalTabTag | tags.FormFeedTag
+        ] = []
+        text: list[str] = []
+        control_tags = {
+            "\n": tags.BreakTag,
+            "\v": tags.VerticalTabTag,
+            "\f": tags.FormFeedTag,
+        }
+        for character in run.content:
+            tag_type = control_tags.get(character)
+            if tag_type is None:
+                text.append(character)
+                continue
+            if text:
+                children.append(Text("".join(text)))
+                text = []
+            children.append(tag_type())
+        if text:
+            children.append(Text("".join(text)))
 
         link: models.Link | models.UnsetType = models.UNSET
         style_values: dict[str, object] = {}

@@ -80,6 +80,14 @@ class BreakTag(Tag):
     tag_name = xhtml_name("br")
 
 
+class VerticalTabTag(Tag):
+    tag_name = gdocs_name("vertical-tab")
+
+
+class FormFeedTag(Tag):
+    tag_name = gdocs_name("form-feed")
+
+
 class SpanTag(Tag):
     tag_name = xhtml_name("span")
 
@@ -96,7 +104,9 @@ class SpanTag(Tag):
         foreground_color,
         background_color,
     ) = _text_style_attributes()
-    children = Children(Child(Text), Child(BreakTag))
+    children = Children(
+        Child(Text), Child(BreakTag), Child(VerticalTabTag), Child(FormFeedTag)
+    )
 
 
 def _structured_color_attribute() -> ColorAttribute:

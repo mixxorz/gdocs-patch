@@ -367,15 +367,15 @@ Every `TextRun` is represented by exactly one `<span>`, including an unstyled ru
 
 Empty text runs use an empty span. A linked run wraps its single span in `<a>`; no other text-style wrappers are used.
 
-Every line-feed character (`"\n"`) in `TextRun.content` is canonically serialized as `<br />` inside that run's span. Carriage-return characters (`"\r"`) are canonically serialized as `&#13;`, including the carriage-return portion of `"\r\n"`, so XML parsing does not normalize representable model content:
+Every line-feed character (`"\n"`) in `TextRun.content` is canonically serialized as `<br />` inside that run's span. Vertical-tab (`"\v"`) and form-feed (`"\f"`) characters cannot appear literally in XML 1.0, so they use the empty elements `<g:vertical-tab />` and `<g:form-feed />`. Carriage-return characters (`"\r"`) are canonically serialized as `&#13;`, including the carriage-return portion of `"\r\n"`, so XML parsing does not normalize representable model content:
 
 **XML fragment:**
 
 ```xml
-<span>First<br />Second<br />Third&#13;Fourth&#13;<br />Fifth</span>
+<span>First<br />Second<g:vertical-tab />Third<g:form-feed />Fourth&#13;<br />Fifth</span>
 ```
 
-Deserialization converts each `<br />` back to `"\n"`, decodes `&#13;` as `"\r"`, and also accepts literal line-feed text inside the span as `"\n"`. A span may contain only text and empty `<br />` elements. The serializer neither adds nor removes paragraph-terminal line endings and does not require a paragraph to end with one.
+Deserialization converts these elements back to their corresponding characters, decodes `&#13;` as `"\r"`, and also accepts literal line-feed text inside the span as `"\n"`. A span may contain text and empty `<br />`, `<g:vertical-tab />`, and `<g:form-feed />` elements. The serializer neither adds nor removes paragraph-terminal line endings and does not require a paragraph to end with one.
 ### Text styles and links
 
 `TextStyle` fields are represented as `g:*` attributes on the corresponding style-bearing element. Dimension values are point magnitudes without unit attributes; colors use separate red, green, and blue component attributes.
@@ -423,7 +423,7 @@ A linked `TextRun` uses `<a>` around its single span. A `UrlLink` uses the XHTML
 
 Exactly one primary target is required: `href` for `UrlLink`, `g:tab-id` alone for `TabLink`, `g:bookmark-id` for `BookmarkLink`, or `g:heading-id` for `HeadingLink`. Bookmark and heading links may additionally carry optional `g:tab-id`. All other target-attribute combinations are rejected.
 
-Each `<span>` creates one `TextRun`; an ancestor `<a>` supplies that run's `TextStyle.link`, while the span attributes supply all other text-style fields. Formatting whitespace between elements is ignored, while whitespace inside a span is preserved as run content. A run span may contain text and empty `<br />` elements only.
+Each `<span>` creates one `TextRun`; an ancestor `<a>` supplies that run's `TextStyle.link`, while the span attributes supply all other text-style fields. Formatting whitespace between elements is ignored, while whitespace inside a span is preserved as run content. A run span may contain text and empty `<br />`, `<g:vertical-tab />`, and `<g:form-feed />` elements only.
 
 A content-level `<a>` contains exactly one style-bearing paragraph element: a run span or one non-text inline element. When a `TextStyle` is metadata rather than rendered content, its owning metadata element contains one empty `<a>` child instead. This preserves one link element and target-attribute syntax without pretending that the metadata has visible linked text.
 ### Non-text paragraph elements

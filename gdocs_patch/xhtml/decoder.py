@@ -724,9 +724,13 @@ class _Decoder:
         for child in children:
             if isinstance(child, Text):
                 content += child.value
-            else:
-                assert isinstance(child, tags.BreakTag)
+            elif isinstance(child, tags.BreakTag):
                 content += "\n"
+            elif isinstance(child, tags.VerticalTabTag):
+                content += "\v"
+            else:
+                assert isinstance(child, tags.FormFeedTag)
+                content += "\f"
         return models.TextRun(content=content, text_style=text_style)
 
 
