@@ -133,10 +133,7 @@ class _Decoder:
     def decode_document_style(
         self, element: tags.DocumentStyleTag, path: str
     ) -> models.DocumentStyle:
-        values = {
-            name: getattr(element, name)
-            for name in tags.DocumentStyleTag.attribute_fields()
-        }
+        values = element.attribute_values
         background_color: models.Color | None | models.UnsetType = models.UNSET
         children = cast(list[Node], element.children)
         if children:
@@ -267,10 +264,7 @@ class _Decoder:
     def decode_section_style(
         self, element: tags.SectionStyleTag, path: str
     ) -> models.SectionStyle:
-        values = {
-            name: getattr(element, name)
-            for name in tags.SectionStyleTag.attribute_fields()
-        }
+        values = element.attribute_values
         columns: list[models.SectionColumn] | models.UnsetType = models.UNSET
         children = cast(list[Node], element.children)
         if children:
@@ -474,10 +468,7 @@ class _Decoder:
     def decode_table_cell_style(
         self, element: tags.TableCellStyleTag, path: str
     ) -> dict[str, object]:
-        values = {
-            name: getattr(element, name)
-            for name in tags.TableCellStyleTag.attribute_fields()
-        }
+        values = element.attribute_values
         border_fields: dict[type[Node], str] = {
             tags.TableCellBorderLeftTag: "border_left",
             tags.TableCellBorderRightTag: "border_right",
@@ -635,11 +626,8 @@ class _Decoder:
         *,
         owning_named_style: object = models.UNSET,
     ) -> models.ParagraphStyle:
-        values = {
-            name: getattr(style_tag, name)
-            for name in type(style_tag).attribute_fields()
-            if name != "owned_named_style_type"
-        }
+        values = style_tag.attribute_values
+        values.pop("owned_named_style_type", None)
         if not isinstance(style_tag, tags.NamedParagraphStyleTag):
             values["named_style_type"] = owning_named_style
         border_fields: dict[type[Node], str] = {
@@ -691,9 +679,7 @@ class _Decoder:
     def _decode_text_run_span(
         self, span_tag: tags.SpanTag, link: models.Link | models.UnsetType, path: str
     ) -> models.TextRun:
-        style_values = {
-            name: getattr(span_tag, name) for name in tags.SpanTag.attribute_fields()
-        }
+        style_values = span_tag.attribute_values
         text_style: models.TextStyle | models.UnsetType = models.UNSET
         if (
             any(value is not models.UNSET for value in style_values.values())

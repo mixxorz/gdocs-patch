@@ -335,6 +335,11 @@ class Tag(Node):
             if not isinstance(field, Children)
         }
 
+    @property
+    def attribute_values(self) -> dict[str, object]:
+        """Return this tag's decoded XML attribute values."""
+        return {name: getattr(self, name) for name in self.attribute_fields()}
+
     def __init__(self, **values: object) -> None:
         fields = self.fields()
         unknown = set(values) - set(fields)
