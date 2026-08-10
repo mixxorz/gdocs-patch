@@ -18,12 +18,13 @@ from .document import (
     walk_tabs,
 )
 from .edit_script import (
+    ApplyBulletRun,
     ApplyParagraphStyle,
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
     ApplyTextStyle,
-    CreateParagraphBullets,
+    BulletParagraph,
     DeleteContent,
     DeleteParagraphBullets,
     DeleteTableColumn,
@@ -42,15 +43,16 @@ from .edit_script import (
 from .lowering import lower_edit_script
 
 __all__ = [
+    "ApplyBulletRun",
     "ApplyParagraphStyle",
     "ApplyTableCellStyle",
     "ApplyTableColumnProperties",
     "ApplyTableRowStyle",
     "ApplyTextStyle",
+    "BulletParagraph",
     "BulletPreset",
     "ContentStream",
     "ContentUnit",
-    "CreateParagraphBullets",
     "DeleteContent",
     "DeleteParagraphBullets",
     "DeleteTableColumn",

@@ -1,11 +1,12 @@
 import pytest
 
 from gdocs_patch.compiler import (
+    ApplyBulletRun,
     ApplyParagraphStyle,
     ApplyTextStyle,
+    BulletParagraph,
     BulletPreset,
     ContentStream,
-    CreateParagraphBullets,
     DeleteContent,
     DeleteParagraphBullets,
     EquationUnit,
@@ -473,15 +474,20 @@ def test_generate_edit_script_preserves_removes_and_creates_list_items() -> None
 
     assert script.edits == [
         DeleteParagraphBullets(start_index=5, end_index=12),
-        CreateParagraphBullets(
-            start_index=12,
-            end_index=19,
-            bullet_preset=parent_preset,
-        ),
-        CreateParagraphBullets(
-            start_index=19,
-            end_index=25,
-            bullet_preset=child_preset,
+        ApplyBulletRun(
+            paragraphs=(
+                BulletParagraph(
+                    start_index=12,
+                    end_index=19,
+                    nesting_level=0,
+                ),
+                BulletParagraph(
+                    start_index=19,
+                    end_index=25,
+                    nesting_level=1,
+                ),
+            ),
+            preset="BULLET_DISC_CIRCLE_SQUARE",
         ),
     ]
 

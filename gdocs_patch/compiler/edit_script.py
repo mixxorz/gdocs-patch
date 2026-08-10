@@ -146,10 +146,16 @@ class DeleteContent(Edit):
 
 
 @dataclass(frozen=True, kw_only=True)
-class CreateParagraphBullets(Edit):
+class BulletParagraph:
     start_index: int
     end_index: int
-    bullet_preset: BulletPreset
+    nesting_level: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class ApplyBulletRun(Edit):
+    paragraphs: tuple[BulletParagraph, ...]
+    preset: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -707,6 +713,8 @@ def generate_edit_script(
     # Content edits leave the document with the target shape, so style edits can
     # now use target indices. Equal opcodes provide a source style to compare;
     # inserted and replaced target items have no dependable inherited style.
+    bullet_edits: list[Edit] = []
+    style_edits: list[Edit] = []
     for tag, source_start, _source_end, target_start, target_end in opcodes:
         for target_position in range(target_start, target_end):
             if target_position in handled_table_target_positions:
@@ -739,7 +747,7 @@ def generate_edit_script(
                         source_text is None
                         or source_text.text_style != target_text.text_style
                     ):
-                        edits.append(
+                        style_edits.append(
                             ApplyTextStyle(
                                 start_index=item_start_index,
                                 end_index=item_end_index,
@@ -764,19 +772,41 @@ def generate_edit_script(
 
                     if isinstance(target_boundary.bullet, BulletPreset):
                         if source_bullet is not UNSET:
-                            edits.append(
+                            bullet_edits.append(
                                 DeleteParagraphBullets(
                                     start_index=paragraph_start,
                                     end_index=paragraph_end,
                                 )
                             )
-                        edits.append(
-                            CreateParagraphBullets(
-                                start_index=paragraph_start,
-                                end_index=paragraph_end,
-                                bullet_preset=target_boundary.bullet,
-                            )
+                        bullet_paragraph = BulletParagraph(
+                            start_index=paragraph_start,
+                            end_index=paragraph_end,
+                            nesting_level=target_boundary.bullet.nesting_level,
                         )
+                        previous_bullet_edit = (
+                            bullet_edits[-1] if bullet_edits else None
+                        )
+                        if (
+                            isinstance(previous_bullet_edit, ApplyBulletRun)
+                            and previous_bullet_edit.preset
+                            == target_boundary.bullet.preset
+                            and previous_bullet_edit.paragraphs[-1].end_index
+                            == paragraph_start
+                        ):
+                            bullet_edits[-1] = ApplyBulletRun(
+                                paragraphs=(
+                                    *previous_bullet_edit.paragraphs,
+                                    bullet_paragraph,
+                                ),
+                                preset=target_boundary.bullet.preset,
+                            )
+                        else:
+                            bullet_edits.append(
+                                ApplyBulletRun(
+                                    paragraphs=(bullet_paragraph,),
+                                    preset=target_boundary.bullet.preset,
+                                )
+                            )
                     elif isinstance(target_boundary.bullet, Bullet):
                         if (
                             source_boundary is not None
@@ -786,7 +816,7 @@ def generate_edit_script(
                                 "changing existing Google-assigned bullets is not supported"
                             )
                     elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
-                        edits.append(
+                        bullet_edits.append(
                             DeleteParagraphBullets(
                                 start_index=paragraph_start,
                                 end_index=paragraph_end,
@@ -797,7 +827,7 @@ def generate_edit_script(
                         source_boundary is None
                         or source_boundary.text_style != target_boundary.text_style
                     ):
-                        edits.append(
+                        style_edits.append(
                             ApplyTextStyle(
                                 start_index=item_start_index,
                                 end_index=item_end_index,
@@ -810,7 +840,7 @@ def generate_edit_script(
                         or writable_paragraph_style(source_boundary.paragraph_style)
                         != writable_paragraph_style(target_boundary.paragraph_style)
                     ):
-                        edits.append(
+                        style_edits.append(
                             ApplyParagraphStyle(
                                 start_index=paragraph_start,
                                 end_index=paragraph_end,
@@ -820,6 +850,9 @@ def generate_edit_script(
 
                 case _:
                     raise NotImplementedError(type(target_item).__name__)
+
+    edits.extend(bullet_edits)
+    edits.extend(style_edits)
 
     # Matching works one stream unit at a time. Merge adjacent text-style edits
     # so lowering can produce one Docs request for each continuous style range.

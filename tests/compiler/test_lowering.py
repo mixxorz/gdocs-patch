@@ -1,10 +1,11 @@
 from gdocs_patch.compiler.edit_script import (
+    ApplyBulletRun,
     ApplyParagraphStyle,
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
     ApplyTextStyle,
-    CreateParagraphBullets,
+    BulletParagraph,
     DeleteContent,
     DeleteParagraphBullets,
     DeleteTableColumn,
@@ -21,7 +22,6 @@ from gdocs_patch.compiler.lowering import lower_edit_script
 from gdocs_patch.models import (
     UNSET,
     BookmarkLink,
-    BulletPreset,
     Color,
     Dimension,
     ParagraphBorder,
@@ -85,21 +85,20 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                 end_index=13,
                 paragraph_style=UNSET,
             ),
-            CreateParagraphBullets(
-                start_index=13,
-                end_index=20,
-                bullet_preset=BulletPreset(
-                    preset="BULLET_DISC_CIRCLE_SQUARE",
-                    nesting_level=0,
+            ApplyBulletRun(
+                paragraphs=(
+                    BulletParagraph(
+                        start_index=13,
+                        end_index=20,
+                        nesting_level=0,
+                    ),
+                    BulletParagraph(
+                        start_index=20,
+                        end_index=27,
+                        nesting_level=2,
+                    ),
                 ),
-            ),
-            CreateParagraphBullets(
-                start_index=20,
-                end_index=27,
-                bullet_preset=BulletPreset(
-                    preset="BULLET_DISC_CIRCLE_SQUARE",
-                    nesting_level=2,
-                ),
+                preset="BULLET_DISC_CIRCLE_SQUARE",
             ),
             DeleteParagraphBullets(start_index=27, end_index=34),
         ]
@@ -216,6 +215,17 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                     "pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,"
                     "borderRight,shading"
                 ),
+            }
+        },
+        {
+            "updateParagraphStyle": {
+                "range": {
+                    "startIndex": 13,
+                    "endIndex": 27,
+                    "tabId": "tab-1",
+                },
+                "paragraphStyle": {},
+                "fields": "indentStart,indentFirstLine",
             }
         },
         {

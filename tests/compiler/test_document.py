@@ -1161,21 +1161,28 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 }
             },
             {
-                "updateParagraphStyle": {
-                    "range": {"startIndex": 10, "endIndex": 12, "tabId": "tab-stress"},
-                    "paragraphStyle": {"alignment": "CENTER"},
-                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
+                "deleteParagraphBullets": {
+                    "range": {"startIndex": 14, "endIndex": 16, "tabId": "tab-stress"}
                 }
             },
             {
-                "deleteParagraphBullets": {
-                    "range": {"startIndex": 14, "endIndex": 16, "tabId": "tab-stress"}
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 16, "endIndex": 18, "tabId": "tab-stress"},
+                    "paragraphStyle": {},
+                    "fields": "indentStart,indentFirstLine",
                 }
             },
             {
                 "createParagraphBullets": {
                     "range": {"startIndex": 16, "endIndex": 18, "tabId": "tab-stress"},
                     "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 18, "endIndex": 20, "tabId": "tab-stress"},
+                    "paragraphStyle": {},
+                    "fields": "indentStart,indentFirstLine",
                 }
             },
             {
@@ -1188,6 +1195,13 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "createParagraphBullets": {
                     "range": {"startIndex": 18, "endIndex": 22, "tabId": "tab-stress"},
                     "bulletPreset": "NUMBERED_DECIMAL_NESTED",
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 10, "endIndex": 12, "tabId": "tab-stress"},
+                    "paragraphStyle": {"alignment": "CENTER"},
+                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
                 }
             },
             {
