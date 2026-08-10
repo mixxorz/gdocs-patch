@@ -281,7 +281,9 @@ def lower_edit_script(
         context["segmentId"] = segment_id
 
     requests: list[dict[str, object]] = []
-    for edit in edit_script.edits:
+    edit_index = 0
+    while edit_index < len(edit_script.edits):
+        edit = edit_script.edits[edit_index]
         match edit:
             case InsertText():
                 requests.append(
@@ -335,30 +337,54 @@ def lower_edit_script(
                     }
                 )
             case CreateParagraphBullets():
-                # Docs derives nesting from leading tabs, then removes those
-                # tabs when it creates the bullets.
-                nesting_level = edit.bullet_preset.nesting_level
-                if nesting_level > 0:
-                    requests.append(
-                        {
-                            "insertText": {
-                                "location": {"index": edit.start_index, **context},
-                                "text": "\t" * nesting_level,
+                bullet_edits = [edit]
+                for following_edit in edit_script.edits[edit_index + 1 :]:
+                    previous_edit = bullet_edits[-1]
+                    if (
+                        not isinstance(following_edit, CreateParagraphBullets)
+                        or following_edit.start_index != previous_edit.end_index
+                        or following_edit.bullet_preset.preset
+                        != edit.bullet_preset.preset
+                    ):
+                        break
+                    bullet_edits.append(following_edit)
+
+                # Docs determines nesting from leading tabs, but only preserves
+                # mixed levels when adjacent items are created in one request.
+                # Insert from highest index to lowest so each insertion leaves
+                # every remaining insertion location unchanged.
+                for bullet_edit in reversed(bullet_edits):
+                    nesting_level = bullet_edit.bullet_preset.nesting_level
+                    if nesting_level > 0:
+                        requests.append(
+                            {
+                                "insertText": {
+                                    "location": {
+                                        "index": bullet_edit.start_index,
+                                        **context,
+                                    },
+                                    "text": "\t" * nesting_level,
+                                }
                             }
-                        }
-                    )
+                        )
                 requests.append(
                     {
                         "createParagraphBullets": {
                             "range": {
-                                "startIndex": edit.start_index,
-                                "endIndex": edit.end_index + nesting_level,
+                                "startIndex": bullet_edits[0].start_index,
+                                "endIndex": bullet_edits[-1].end_index
+                                + sum(
+                                    bullet_edit.bullet_preset.nesting_level
+                                    for bullet_edit in bullet_edits
+                                ),
                                 **context,
                             },
                             "bulletPreset": edit.bullet_preset.preset,
                         }
                     }
                 )
+                edit_index += len(bullet_edits)
+                continue
             case DeleteParagraphBullets():
                 requests.append(
                     {
@@ -547,4 +573,5 @@ def lower_edit_script(
                 )
             case _:
                 raise NotImplementedError(type(edit).__name__)
+        edit_index += 1
     return requests

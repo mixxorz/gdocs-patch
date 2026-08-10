@@ -90,10 +90,18 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                 end_index=20,
                 bullet_preset=BulletPreset(
                     preset="BULLET_DISC_CIRCLE_SQUARE",
+                    nesting_level=0,
+                ),
+            ),
+            CreateParagraphBullets(
+                start_index=20,
+                end_index=27,
+                bullet_preset=BulletPreset(
+                    preset="BULLET_DISC_CIRCLE_SQUARE",
                     nesting_level=2,
                 ),
             ),
-            DeleteParagraphBullets(start_index=20, end_index=27),
+            DeleteParagraphBullets(start_index=27, end_index=34),
         ]
     )
 
@@ -212,7 +220,7 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
         },
         {
             "insertText": {
-                "location": {"index": 13, "tabId": "tab-1"},
+                "location": {"index": 20, "tabId": "tab-1"},
                 "text": "\t\t",
             }
         },
@@ -220,7 +228,7 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
             "createParagraphBullets": {
                 "range": {
                     "startIndex": 13,
-                    "endIndex": 22,
+                    "endIndex": 29,
                     "tabId": "tab-1",
                 },
                 "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
@@ -229,8 +237,8 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
         {
             "deleteParagraphBullets": {
                 "range": {
-                    "startIndex": 20,
-                    "endIndex": 27,
+                    "startIndex": 27,
+                    "endIndex": 34,
                     "tabId": "tab-1",
                 }
             }
