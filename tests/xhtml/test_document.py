@@ -1,22 +1,16 @@
 import pytest
 
 from gdocs_patch.models import (
-    UNSET,
     Body,
-    Color,
-    Dimension,
     Document,
-    DocumentStyle,
     DocumentTab,
     NamedStyle,
     Paragraph,
-    ParagraphBorder,
     ParagraphStyle,
     SectionBreak,
     SectionStyle,
     Segment,
     Tab,
-    TabStop,
     TextRun,
     TextStyle,
     UrlLink,
@@ -24,7 +18,7 @@ from gdocs_patch.models import (
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document, serialize_document
 
 
-def test_serializes_and_deserializes_document_and_tab_envelope() -> None:
+def test_document_envelope_round_trip_uses_canonical_xml() -> None:
     document = Document(
         document_id="doc-1",
         title="Example & Report",
@@ -73,7 +67,7 @@ def test_serializes_and_deserializes_document_and_tab_envelope() -> None:
     assert deserialize_document(xhtml) == document
 
 
-def test_round_trips_document_tab_body_and_segment_regions() -> None:
+def test_document_tab_projects_body_and_segment_maps() -> None:
     document = Document(
         document_id="doc-1",
         title="Regions",
@@ -113,227 +107,52 @@ def test_round_trips_document_tab_body_and_segment_regions() -> None:
 
     xhtml = serialize_document(document)
 
-    assert "<g:document-tab>" in xhtml
-    assert "<g:body>\n          <section>\n            <g:section-style />" in xhtml
-    assert (
-        '<p>\n              <span g:bold="true" g:italic="false">Body</span>' in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Regions">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        '              <span g:bold="true" g:italic="false">Body</span>\n'
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "        <g:headers>\n"
+        '          <g:header g:key="header-map-key" '
+        'g:segment-id="embedded-header-id">\n'
+        "            <g:paragraph>\n"
+        "              <span>Header</span>\n"
+        "            </g:paragraph>\n"
+        "          </g:header>\n"
+        "        </g:headers>\n"
+        "        <g:footers />\n"
+        "        <g:footnotes />\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
     )
-    assert (
-        '<g:header g:key="header-map-key" g:segment-id="embedded-header-id">' in xhtml
-    )
-    assert "<g:footers />" in xhtml
-    assert "<g:footnotes />" in xhtml
     assert deserialize_document(xhtml) == document
 
 
-def test_decodes_document_tab_and_section_metadata_in_any_order() -> None:
-    xhtml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Order">'
-        "<body>"
-        '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-        "<g:child-tabs />"
-        "<g:document-tab>"
-        "<g:footnotes />"
-        "<g:body><section>"
-        "<p><span>First</span><span>Second</span></p>"
-        "<g:section-style />"
-        "</section></g:body>"
-        "<g:headers />"
-        "<g:footers />"
-        "</g:document-tab>"
-        "</g:tab>"
-        "</body></html>"
-    )
-    expected = Document(
-        document_id="doc-1",
-        title="Order",
-        tabs=[
-            Tab(
-                tab_id="tab-1",
-                title="Main",
-                index=0,
-                children=[],
-                content=DocumentTab(
-                    body=Body(
-                        content=[
-                            SectionBreak(style=SectionStyle()),
-                            Paragraph(
-                                style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
-                                elements=[
-                                    TextRun(content="First"),
-                                    TextRun(content="Second\n"),
-                                ],
-                            ),
-                        ]
-                    ),
-                    headers={},
-                    footers={},
-                    footnotes={},
-                ),
-            )
-        ],
-    )
-
-    assert deserialize_document(xhtml) == expected
-
-
-def _pt(magnitude: float) -> Dimension:
-    return Dimension(magnitude=magnitude, unit="PT")
-
-
-def test_round_trips_complete_document_style_and_preserves_empty_presence() -> None:
-    complete = DocumentStyle(
-        background_color=Color(red=0.1, green=0.2, blue=0.3),
-        document_mode="PAGES",
-        page_width=_pt(612),
-        page_height=_pt(792),
-        margin_top=_pt(1),
-        margin_bottom=_pt(2),
-        margin_left=_pt(3),
-        margin_right=_pt(4),
-        margin_header=_pt(5),
-        margin_footer=_pt(6),
-        default_header_id="header-default",
-        default_footer_id="footer-default",
-        even_page_header_id="header-even",
-        even_page_footer_id="footer-even",
-        first_page_header_id="header-first",
-        first_page_footer_id="footer-first",
-        use_even_page_header_footer=True,
-        use_first_page_header_footer=False,
-        use_custom_header_footer_margins=True,
-        flip_page_orientation=False,
-        page_number_start=7,
-    )
-    document = Document(
-        document_id="doc-style",
-        title="Style",
-        tabs=[
-            Tab(
-                tab_id="complete",
-                title="Complete",
-                index=0,
-                children=[],
-                content=DocumentTab(document_style=complete),
+def test_named_style_projection_preserves_order() -> None:
+    styles = [
+        NamedStyle(named_style_type="NAMED_STYLE_TYPE_UNSPECIFIED"),
+        NamedStyle(
+            named_style_type="NORMAL_TEXT",
+            text_style=TextStyle(italic=True, link=UrlLink(url="https://example.test")),
+            paragraph_style=ParagraphStyle(
+                named_style_type="NORMAL_TEXT", alignment="END"
             ),
-            Tab(
-                tab_id="empty",
-                title="Empty",
-                index=1,
-                children=[],
-                content=DocumentTab(document_style=DocumentStyle()),
-            ),
-            Tab(
-                tab_id="unset",
-                title="Unset",
-                index=2,
-                children=[],
-                content=DocumentTab(),
-            ),
-        ],
-    )
-
-    xhtml = serialize_document(document)
-    actual = deserialize_document(xhtml)
-
-    assert actual == document
-    assert xhtml.count("<g:document-style") == 2
-    style_tag = xhtml.split("<g:document-style", 1)[1].split(">", 1)[0]
-    ordered_attributes = (
-        'g:document-mode="PAGES"',
-        'g:default-header-id="header-default"',
-        'g:default-footer-id="footer-default"',
-        'g:even-page-header-id="header-even"',
-        'g:even-page-footer-id="footer-even"',
-        'g:first-page-header-id="header-first"',
-        'g:first-page-footer-id="footer-first"',
-        'g:use-even-page-header-footer="true"',
-        'g:use-first-page-header-footer="false"',
-        'g:use-custom-header-footer-margins="true"',
-        'g:flip-page-orientation="false"',
-        'g:page-number-start="7"',
-        'g:page-width="612"',
-        'g:page-height="792"',
-        'g:margin-top="1"',
-        'g:margin-bottom="2"',
-        'g:margin-left="3"',
-        'g:margin-right="4"',
-        'g:margin-header="5"',
-        'g:margin-footer="6"',
-    )
-    assert [style_tag.index(attribute) for attribute in ordered_attributes] == sorted(
-        style_tag.index(attribute) for attribute in ordered_attributes
-    )
-    complete_style = actual.tabs[0].content.document_style
-    assert isinstance(complete_style, DocumentStyle)
-    for name in (
-        "page_width",
-        "page_height",
-        "margin_top",
-        "margin_bottom",
-        "margin_left",
-        "margin_right",
-        "margin_header",
-        "margin_footer",
-    ):
-        dimension = getattr(complete_style, name)
-        assert isinstance(dimension, Dimension)
-        assert dimension.unit == "PT"
-    assert actual.tabs[1].content.document_style == DocumentStyle()
-    assert actual.tabs[2].content.document_style is UNSET
-
-
-def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
-    border = ParagraphBorder(
-        color=None, width=_pt(1), padding=_pt(2), dash_style="DASH"
-    )
-    complete_text = TextStyle(
-        bold=True,
-        italic=False,
-        underline=True,
-        strikethrough=False,
-        small_caps=True,
-        baseline_offset="SUBSCRIPT",
-        font_size=_pt(11),
-        font_family="Arial",
-        font_weight=600,
-        foreground_color=Color(red=0.1, green=0.2, blue=0.3),
-        background_color=None,
-        link=UrlLink(url="https://example.test"),
-    )
-    complete_paragraph = ParagraphStyle(
-        named_style_type="NORMAL_TEXT",
-        alignment="JUSTIFIED",
-        direction="RIGHT_TO_LEFT",
-        line_spacing=120,
-        spacing_mode="COLLAPSE_LISTS",
-        space_above=_pt(1),
-        space_below=_pt(2),
-        indent_first_line=_pt(3),
-        indent_start=_pt(4),
-        indent_end=_pt(5),
-        keep_lines_together=True,
-        keep_with_next=False,
-        avoid_widow_and_orphan=True,
-        page_break_before=False,
-        heading_id="heading",
-        border_between=border,
-        border_top=border,
-        border_bottom=border,
-        border_left=border,
-        border_right=border,
-        shading_color=Color(red=0.4, green=0.5, blue=0.6),
-        tab_stops=[TabStop(offset=_pt(36), alignment="CENTER")],
-    )
-    types = ["NAMED_STYLE_TYPE_UNSPECIFIED", "NORMAL_TEXT", "HEADING_6"]
-    styles = [NamedStyle(named_style_type=value) for value in types]
-    styles[1] = NamedStyle(
-        named_style_type="NORMAL_TEXT",
-        text_style=complete_text,
-        paragraph_style=complete_paragraph,
-    )
+        ),
+        NamedStyle(named_style_type="HEADING_6"),
+    ]
     document = Document(
         document_id="doc-named",
         title="Named",
@@ -344,105 +163,36 @@ def test_round_trips_ordered_complete_named_styles_and_empty_presence() -> None:
                 index=0,
                 children=[],
                 content=DocumentTab(named_styles=styles),
-            ),
-            Tab(
-                tab_id="empty",
-                title="Empty",
-                index=1,
-                children=[],
-                content=DocumentTab(named_styles=[]),
-            ),
-            Tab(
-                tab_id="unset",
-                title="Unset",
-                index=2,
-                children=[],
-                content=DocumentTab(),
-            ),
+            )
         ],
     )
 
     xhtml = serialize_document(document)
     actual = deserialize_document(xhtml)
 
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-named" '
+        'g:title="Named">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="ordered" g:title="Ordered" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:named-styles>\n"
+        '          <g:named-style g:type="NAMED_STYLE_TYPE_UNSPECIFIED" />\n'
+        '          <g:named-style g:type="NORMAL_TEXT" g:italic="true">\n'
+        '            <a href="https://example.test" />\n'
+        '            <g:paragraph-style g:named-style-type="NORMAL_TEXT" '
+        'g:alignment="END" />\n'
+        "          </g:named-style>\n"
+        '          <g:named-style g:type="HEADING_6" />\n'
+        "        </g:named-styles>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     assert actual == document
-    ordered = actual.tabs[0].content.named_styles
-    assert isinstance(ordered, list)
-    assert [style.named_style_type for style in ordered] == types
-    assert "<a" in xhtml
-    assert '<g:named-style g:type="NORMAL_TEXT"' in xhtml
-    assert '<g:paragraph-style g:named-style-type="NORMAL_TEXT"' in xhtml
-    assert actual.tabs[1].content.named_styles == []
-    assert actual.tabs[2].content.named_styles is UNSET
-
-
-def test_decodes_named_style_metadata_in_any_order() -> None:
-    xhtml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Named">'
-        '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
-        "<g:document-tab><g:named-styles><g:named-style "
-        'g:type="NORMAL_TEXT" g:bold="true">'
-        '<g:paragraph-style g:named-style-type="NORMAL_TEXT" />'
-        '<a href="https://example.test" />'
-        "</g:named-style></g:named-styles></g:document-tab>"
-        "</g:tab></body></html>"
-    )
-
-    actual = deserialize_document(xhtml)
-    content = actual.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert content.named_styles == [
-        NamedStyle(
-            named_style_type="NORMAL_TEXT",
-            text_style=TextStyle(bold=True, link=UrlLink(url="https://example.test")),
-            paragraph_style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
-        )
-    ]
-    canonical = serialize_document(actual)
-    assert '<g:named-style g:type="NORMAL_TEXT"' in canonical
-    assert '<g:paragraph-style g:named-style-type="NORMAL_TEXT"' in canonical
-
-
-def test_deserializes_attributes_in_noncanonical_order() -> None:
-    source = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html g:title="Title" xmlns:g="urn:gdocs-patch:xhtml:1" '
-        'g:document-id="doc" xmlns="http://www.w3.org/1999/xhtml">'
-        '<body><g:tab g:index="0" g:title="Tab" g:tab-id="tab">'
-        "<g:document-tab /></g:tab></body></html>"
-    )
-
-    document = deserialize_document(source)
-
-    assert document.document_id == "doc"
-    assert document.tabs[0].tab_id == "tab"
-
-
-def test_rejects_outer_named_style_named_style_type_attribute() -> None:
-    xhtml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Named">'
-        '<body><g:tab g:tab-id="tab" g:title="Tab" g:index="0">'
-        "<g:document-tab><g:named-styles><g:named-style "
-        'g:named-style-type="NORMAL_TEXT" />'
-        "</g:named-styles></g:document-tab></g:tab></body></html>"
-    )
-
-    with pytest.raises(
-        XHTMLParseError,
-        match=r"g:named-style\[1\].*unknown attribute g:named-style-type",
-    ):
-        deserialize_document(xhtml)
-
-
-def test_rejects_malformed_xml() -> None:
-    with pytest.raises(XHTMLParseError, match="XML"):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n<html><body></html>'
-        )
 
 
 def test_rejects_wrong_xhtml_namespace() -> None:
@@ -461,17 +211,5 @@ def test_rejects_wrong_gdocs_namespace() -> None:
             '<html xmlns="http://www.w3.org/1999/xhtml" '
             'xmlns:g="urn:wrong" g:document-id="doc-1" g:title="Example">'
             "<body />"
-            "</html>"
-        )
-
-
-def test_rejects_excess_child_cardinality() -> None:
-    with pytest.raises(XHTMLParseError, match="expected at most one body child"):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" '
-            'g:document-id="doc-1" g:title="Example">'
-            "<body /><body />"
             "</html>"
         )

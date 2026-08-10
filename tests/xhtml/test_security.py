@@ -1,3 +1,5 @@
+from xml.parsers import expat
+
 import pytest
 
 from gdocs_patch.xhtml import XHTMLParseError, deserialize_document
@@ -17,11 +19,25 @@ def xhtml(structure: str = "") -> str:
     )
 
 
-def test_wraps_invalid_unicode_input_as_xhtml_parse_error() -> None:
+@pytest.mark.parametrize(
+    ("source", "cause_type"),
+    [
+        (DECLARATION + "<html>\ud800</html>", UnicodeEncodeError),
+        (DECLARATION + "<html>", expat.ExpatError),
+    ],
+)
+def test_invalid_xml_input_is_wrapped_with_original_cause(
+    source: str, cause_type: type[Exception]
+) -> None:
     with pytest.raises(XHTMLParseError, match="malformed XML") as error:
-        deserialize_document(DECLARATION + "<html>\ud800</html>")
+        deserialize_document(source)
 
-    assert isinstance(error.value.__cause__, UnicodeEncodeError)
+    assert isinstance(error.value.__cause__, cause_type)
+
+
+def test_xml_declaration_is_required() -> None:
+    with pytest.raises(XHTMLParseError, match="XML declaration"):
+        deserialize_document(xhtml()[len(DECLARATION) :])
 
 
 @pytest.mark.parametrize(

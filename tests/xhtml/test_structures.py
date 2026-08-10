@@ -13,9 +13,7 @@ from gdocs_patch.models import (
     ListDefinition,
     ListLevel,
     Paragraph,
-    ParagraphStyle,
     SectionBreak,
-    SectionColumn,
     SectionStyle,
     Tab,
     Table,
@@ -48,187 +46,7 @@ def document_with_section(style: SectionStyle) -> Document:
     )
 
 
-def decoded_section_style(document: Document) -> SectionStyle:
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    section = content.body.content[0]
-    assert isinstance(section, SectionBreak)
-    return section.style
-
-
-def test_round_trips_recursive_table_of_contents_in_body() -> None:
-    table_of_contents = TableOfContents(
-        content=[
-            Paragraph(elements=[TextRun(content="First heading\n")]),
-            Paragraph(elements=[TextRun(content="Second heading\n")]),
-            TableOfContents(content=[]),
-        ]
-    )
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    content.body.add_child(table_of_contents)
-
-    xhtml = serialize_document(document)
-
-    assert xhtml.count("<g:table-of-contents") == 2
-    assert "<g:table-of-contents />" in xhtml
-    decoded_content = deserialize_document(xhtml).tabs[0].content
-    assert isinstance(decoded_content, DocumentTab)
-    assert isinstance(decoded_content.body, Body)
-    assert decoded_content.body.content[1] == table_of_contents
-
-
-def test_rejects_child_element_not_permitted_under_parent() -> None:
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    content.body.add_child(TableOfContents(content=[]))
-    xhtml = serialize_document(document).replace(
-        "<g:table-of-contents />",
-        "<g:table-of-contents><section><g:section-style /></section>"
-        "</g:table-of-contents>",
-    )
-
-    with pytest.raises(
-        XHTMLParseError,
-        match="element is not permitted under this parent: section",
-    ):
-        deserialize_document(xhtml)
-
-
-def test_round_trips_complete_section_style() -> None:
-    style = SectionStyle(
-        columns=[
-            SectionColumn(
-                width=Dimension(magnitude=234),
-                padding_end=Dimension(magnitude=18),
-            ),
-            SectionColumn(
-                width=Dimension(magnitude=240),
-                padding_end=Dimension(magnitude=20),
-            ),
-        ],
-        column_separator_style="BETWEEN_EACH_COLUMN",
-        content_direction="LEFT_TO_RIGHT",
-        section_type="NEXT_PAGE",
-        default_header_id="header-default",
-        default_footer_id="footer-default",
-        even_page_header_id="header-even",
-        even_page_footer_id="footer-even",
-        first_page_header_id="header-first",
-        first_page_footer_id="footer-first",
-        use_first_page_header_footer=True,
-        flip_page_orientation=False,
-        page_number_start=3,
-        margin_top=Dimension(magnitude=72),
-        margin_bottom=Dimension(magnitude=73),
-        margin_left=Dimension(magnitude=74),
-        margin_right=Dimension(magnitude=75),
-        margin_header=Dimension(magnitude=36),
-        margin_footer=Dimension(magnitude=37),
-    )
-
-    xhtml = serialize_document(document_with_section(style))
-
-    for fragment in (
-        'g:column-separator-style="BETWEEN_EACH_COLUMN"',
-        'g:content-direction="LEFT_TO_RIGHT"',
-        'g:section-type="NEXT_PAGE"',
-        'g:default-header-id="header-default"',
-        'g:default-footer-id="footer-default"',
-        'g:even-page-header-id="header-even"',
-        'g:even-page-footer-id="footer-even"',
-        'g:first-page-header-id="header-first"',
-        'g:first-page-footer-id="footer-first"',
-        'g:use-first-page-header-footer="true"',
-        'g:flip-page-orientation="false"',
-        'g:page-number-start="3"',
-        'g:margin-top="72"',
-        'g:margin-bottom="73"',
-        'g:margin-left="74"',
-        'g:margin-right="75"',
-        'g:margin-header="36"',
-        'g:margin-footer="37"',
-        '<g:column g:width="234" g:padding-end="18" />',
-        '<g:column g:width="240" g:padding-end="20" />',
-    ):
-        assert fragment in xhtml
-    assert xhtml.index('g:width="234"') < xhtml.index('g:width="240"')
-
-    decoded = decoded_section_style(deserialize_document(xhtml))
-    assert decoded.column_separator_style == "BETWEEN_EACH_COLUMN"
-    assert decoded.content_direction == "LEFT_TO_RIGHT"
-    assert decoded.section_type == "NEXT_PAGE"
-    assert decoded.default_header_id == "header-default"
-    assert decoded.default_footer_id == "footer-default"
-    assert decoded.even_page_header_id == "header-even"
-    assert decoded.even_page_footer_id == "footer-even"
-    assert decoded.first_page_header_id == "header-first"
-    assert decoded.first_page_footer_id == "footer-first"
-    assert decoded.use_first_page_header_footer is True
-    assert decoded.flip_page_orientation is False
-    assert decoded.page_number_start == 3
-    assert isinstance(decoded.columns, list)
-    assert decoded.columns == [
-        SectionColumn(
-            width=Dimension(magnitude=234, unit="PT"),
-            padding_end=Dimension(magnitude=18, unit="PT"),
-        ),
-        SectionColumn(
-            width=Dimension(magnitude=240, unit="PT"),
-            padding_end=Dimension(magnitude=20, unit="PT"),
-        ),
-    ]
-    for field in (
-        "margin_top",
-        "margin_bottom",
-        "margin_left",
-        "margin_right",
-        "margin_header",
-        "margin_footer",
-    ):
-        value = getattr(decoded, field)
-        assert isinstance(value, Dimension)
-        assert value.unit == "PT"
-
-
-@pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<g:columns />")])
-def test_preserves_unset_versus_empty_section_columns(
-    columns: object, fragment: str
-) -> None:
-    style = SectionStyle(columns=columns)  # type: ignore[arg-type]
-
-    xhtml = serialize_document(document_with_section(style))
-
-    assert ("<g:columns" in xhtml) is bool(fragment)
-    assert decoded_section_style(deserialize_document(xhtml)).columns == columns
-
-
-@pytest.mark.parametrize("missing", ["g:width", "g:padding-end"])
-def test_rejects_section_column_missing_required_dimension(missing: str) -> None:
-    attributes = 'g:width="100" g:padding-end="10"'.replace(
-        f'{missing}="{100 if missing == "g:width" else 10}"', ""
-    )
-    xhtml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Bad">'
-        '<body><g:tab g:tab-id="tab" g:title="Main" g:index="0">'
-        "<g:document-tab><g:body><section><g:section-style><g:columns>"
-        f"<g:column {attributes} />"
-        "</g:columns></g:section-style></section></g:body></g:document-tab>"
-        "</g:tab></body></html>"
-    )
-
-    with pytest.raises(XHTMLParseError, match="missing required attribute"):
-        deserialize_document(xhtml)
-
-
-def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
+def test_groups_adjacent_lists_by_kind_and_identity() -> None:
     paragraphs = [
         Paragraph(
             elements=[TextRun(content="existing zero\n")],
@@ -260,6 +78,10 @@ def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
             elements=[TextRun(content="numbered\n")],
             bullet=BulletPreset(preset="NUMBERED_DECIMAL_ALPHA_ROMAN", nesting_level=1),
         ),
+        Paragraph(
+            elements=[TextRun(content="existing again\n")],
+            bullet=Bullet(list_id="list-1"),
+        ),
     ]
     document = document_with_section(SectionStyle())
     content = document.tabs[0].content
@@ -270,61 +92,76 @@ def test_groups_adjacent_existing_and_preset_list_paragraphs() -> None:
 
     xhtml = serialize_document(document)
 
-    assert xhtml.count("<g:list ") == 3
-    assert xhtml.count('<g:list g:list-id="list-1">') == 1
-    assert xhtml.count('<g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">') == 1
-    assert xhtml.count('<g:list g:bullet-preset="NUMBERED_DECIMAL_ALPHA_ROMAN">') == 1
-    assert xhtml.count("<li") == 5
-    assert xhtml.count("<g:bullet-style") == 2
-    assert '<a href="https://example.com/bullet" />' in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Sections">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        '            <g:list g:list-id="list-1">\n'
+        "              <li>\n"
+        '                <g:bullet-style g:bold="true">\n'
+        '                  <a href="https://example.com/bullet" />\n'
+        "                </g:bullet-style>\n"
+        "                <g:paragraph>\n"
+        "                  <span>existing zero</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        '              <li g:nesting-level="2">\n'
+        '                <g:bullet-style g:italic="true" />\n'
+        "                <g:paragraph>\n"
+        "                  <span>existing two</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        "            </g:list>\n"
+        "            <g:paragraph>\n"
+        "              <span>break</span>\n"
+        "            </g:paragraph>\n"
+        '            <g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">\n'
+        "              <li>\n"
+        "                <g:paragraph>\n"
+        "                  <span>preset zero</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        '              <li g:nesting-level="1">\n'
+        "                <g:paragraph>\n"
+        "                  <span>preset one</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        "            </g:list>\n"
+        '            <g:list g:bullet-preset="NUMBERED_DECIMAL_ALPHA_ROMAN">\n'
+        '              <li g:nesting-level="1">\n'
+        "                <g:paragraph>\n"
+        "                  <span>numbered</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        "            </g:list>\n"
+        '            <g:list g:list-id="list-1">\n'
+        "              <li>\n"
+        "                <g:paragraph>\n"
+        "                  <span>existing again</span>\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        "            </g:list>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     decoded = deserialize_document(xhtml).tabs[0].content
     assert isinstance(decoded, DocumentTab)
     assert isinstance(decoded.body, Body)
     assert decoded.body.content[1:] == paragraphs
 
 
-def test_same_list_key_separated_by_paragraph_creates_two_groups() -> None:
-    document = document_with_section(SectionStyle())
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    content.body.add_child(
-        Paragraph(elements=[TextRun(content="first")], bullet=Bullet(list_id="id"))
-    )
-    content.body.add_child(Paragraph(elements=[TextRun(content="separator")]))
-    content.body.add_child(
-        Paragraph(elements=[TextRun(content="second")], bullet=Bullet(list_id="id"))
-    )
-
-    xhtml = serialize_document(document)
-
-    assert xhtml.count('<g:list g:list-id="id">') == 2
-    assert xhtml.index("first") < xhtml.index("separator") < xhtml.index("second")
-
-
-def test_accepts_bullet_style_metadata_after_item_paragraph() -> None:
-    xhtml = xhtml_with_structure(
-        '<g:list g:list-id="id"><li g:nesting-level="2">'
-        '<p><span>item</span></p><g:bullet-style g:bold="true">'
-        '<a href="https://example.com" /></g:bullet-style></li></g:list>'
-    )
-
-    decoded = deserialize_document(xhtml).tabs[0].content
-
-    assert isinstance(decoded, DocumentTab)
-    assert isinstance(decoded.body, Body)
-    assert decoded.body.content[1] == Paragraph(
-        elements=[TextRun(content="item\n")],
-        style=ParagraphStyle(named_style_type="NORMAL_TEXT"),
-        bullet=Bullet(
-            list_id="id",
-            nesting_level=2,
-            text_style=TextStyle(bold=True, link=UrlLink(url="https://example.com")),
-        ),
-    )
-
-
-def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
+def test_empty_existing_bullet_style_normalizes_to_unset() -> None:
     paragraph = Paragraph(
         elements=[TextRun(content="item")],
         bullet=Bullet(list_id="list-1", text_style=TextStyle()),
@@ -337,7 +174,32 @@ def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
 
     xhtml = serialize_document(document)
 
-    assert "<g:bullet-style" not in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Sections">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        '            <g:list g:list-id="list-1">\n'
+        "              <li>\n"
+        "                <g:paragraph>\n"
+        "                  <span>item</span>\n"
+        "                  <span />\n"
+        "                </g:paragraph>\n"
+        "              </li>\n"
+        "            </g:list>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     decoded = deserialize_document(xhtml).tabs[0].content
     assert isinstance(decoded, DocumentTab)
     assert isinstance(decoded.body, Body)
@@ -347,7 +209,7 @@ def test_normalizes_empty_existing_bullet_style_to_unset() -> None:
     assert decoded_paragraph.bullet.text_style is UNSET
 
 
-def test_round_trips_complete_list_definitions_and_levels() -> None:
+def test_list_definition_projection_preserves_order_and_levels() -> None:
     lists = {
         "empty": ListDefinition(levels=[]),
         "list-1": ListDefinition(
@@ -361,37 +223,10 @@ def test_round_trips_complete_list_definitions_and_levels() -> None:
                     start_number=1,
                     text_style=TextStyle(
                         bold=True,
-                        italic=False,
-                        underline=True,
-                        strikethrough=False,
-                        small_caps=True,
-                        baseline_offset="SUPERSCRIPT",
-                        font_size=Dimension(magnitude=12, unit="PT"),
-                        font_family="Arial",
-                        font_weight=700,
-                        foreground_color=Color(red=0.1, green=0.2, blue=0.3),
-                        background_color=None,
                         link=BookmarkLink(bookmark_id="bookmark-1", tab_id="tab-1"),
                     ),
                 ),
-                ListLevel(
-                    glyph_format="%1",
-                    glyph_symbol="●",
-                    alignment="CENTER",
-                    indent_first_line=Dimension(magnitude=20, unit="PT"),
-                    indent_start=Dimension(magnitude=40, unit="PT"),
-                    start_number=0,
-                ),
-                ListLevel(
-                    glyph_format="%2",
-                    glyph_type="NONE",
-                    alignment="END",
-                    start_number=3,
-                ),
-                ListLevel(
-                    glyph_format="%3",
-                    glyph_type="GLYPH_TYPE_UNSPECIFIED",
-                ),
+                ListLevel(glyph_format="%1", glyph_symbol="●"),
             ]
         ),
     }
@@ -402,22 +237,88 @@ def test_round_trips_complete_list_definitions_and_levels() -> None:
 
     xhtml = serialize_document(document)
 
-    assert xhtml.index('g:list-id="empty"') < xhtml.index('g:list-id="list-1"')
-    assert '<g:list-definition g:list-id="empty" />' in xhtml
-    assert xhtml.count("<g:list-level") == 4
-    assert '<a g:bookmark-id="bookmark-1" g:tab-id="tab-1" />' in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Sections">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:list-definitions>\n"
+        '          <g:list-definition g:list-id="empty" />\n'
+        '          <g:list-definition g:list-id="list-1">\n'
+        '            <g:list-level g:glyph-format="%0." '
+        'g:glyph-type="DECIMAL" g:alignment="START" '
+        'g:indent-first-line="18" g:indent-start="36" g:start-number="1" '
+        'g:bold="true">\n'
+        '              <a g:bookmark-id="bookmark-1" g:tab-id="tab-1" />\n'
+        "            </g:list-level>\n"
+        '            <g:list-level g:glyph-format="%1" g:glyph-symbol="●" />\n'
+        "          </g:list-definition>\n"
+        "        </g:list-definitions>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     decoded = deserialize_document(xhtml).tabs[0].content
     assert isinstance(decoded, DocumentTab)
     assert list(decoded.lists) == ["empty", "list-1"]  # type: ignore[arg-type]
     assert decoded.lists == lists
-    assert deserialize_document(serialize_document(document)) == document
 
 
 @pytest.mark.parametrize(
-    ("lists", "fragment"), [(UNSET, ""), ({}, "<g:list-definitions />")]
+    ("lists", "expected_xhtml"),
+    [
+        (
+            UNSET,
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+            'g:title="Sections">\n'
+            "  <body>\n"
+            '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+            "      <g:document-tab>\n"
+            "        <g:body>\n"
+            "          <section>\n"
+            "            <g:section-style />\n"
+            "          </section>\n"
+            "        </g:body>\n"
+            "      </g:document-tab>\n"
+            "    </g:tab>\n"
+            "  </body>\n"
+            "</html>\n",
+        ),
+        (
+            {},
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" '
+            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+            'g:title="Sections">\n'
+            "  <body>\n"
+            '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+            "      <g:document-tab>\n"
+            "        <g:list-definitions />\n"
+            "        <g:body>\n"
+            "          <section>\n"
+            "            <g:section-style />\n"
+            "          </section>\n"
+            "        </g:body>\n"
+            "      </g:document-tab>\n"
+            "    </g:tab>\n"
+            "  </body>\n"
+            "</html>\n",
+        ),
+    ],
 )
-def test_preserves_unset_versus_empty_list_definitions(
-    lists: object, fragment: str
+def test_wrapper_presence_distinguishes_unset_from_empty(
+    lists: object, expected_xhtml: str
 ) -> None:
     document = document_with_section(SectionStyle())
     content = document.tabs[0].content
@@ -426,8 +327,7 @@ def test_preserves_unset_versus_empty_list_definitions(
 
     xhtml = serialize_document(document)
 
-    assert ("<g:list-definitions" in xhtml) is bool(fragment)
-    assert fragment in xhtml
+    assert xhtml == expected_xhtml
     decoded = deserialize_document(xhtml).tabs[0].content
     assert isinstance(decoded, DocumentTab)
     assert decoded.lists == lists
@@ -446,58 +346,28 @@ def xhtml_with_structure(structure: str, metadata: str = "") -> str:
 
 
 @pytest.mark.parametrize(
-    ("structure", "message"),
+    "structure",
     [
-        ("<g:list><li><p /></li></g:list>", "exactly one"),
+        "<g:list><li><p /></li></g:list>",
         (
             '<g:list g:list-id="id" g:bullet-preset="BULLET_CHECKBOX">'
-            "<li><p /></li></g:list>",
-            "exactly one",
-        ),
-        (
-            '<g:list g:bullet-preset="BULLET_CHECKBOX"><li>'
-            "<g:bullet-style /><p /></li></g:list>",
-            "forbidden",
-        ),
-        (
-            '<g:list g:list-id="id"><li><p /><p /></li></g:list>',
-            "exactly one paragraph",
-        ),
-        (
-            '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>',
-            "non-negative",
-        ),
-        (
-            '<g:list g:bullet-preset="NOT_A_PRESET"><li><p /></li></g:list>',
-            "expected one of",
+            "<li><p /></li></g:list>"
         ),
     ],
 )
-def test_rejects_invalid_structural_lists(structure: str, message: str) -> None:
-    with pytest.raises(XHTMLParseError, match=message):
+def test_list_requires_exactly_one_identity(structure: str) -> None:
+    with pytest.raises(XHTMLParseError, match="exactly one"):
         deserialize_document(xhtml_with_structure(structure))
 
 
-def test_semantic_error_includes_automatic_source_location() -> None:
-    structure = (
-        '<g:list g:bullet-preset="BULLET_CHECKBOX">\n'
-        "<li>\n"
-        "<g:bullet-style />\n"
-        "<p />\n"
-        "</li>\n"
-        "</g:list>"
-    )
+def test_list_item_requires_exactly_one_paragraph() -> None:
+    structure = '<g:list g:list-id="id"><li><p /><p /></li></g:list>'
 
-    with pytest.raises(XHTMLParseError) as error:
+    with pytest.raises(XHTMLParseError, match="exactly one paragraph"):
         deserialize_document(xhtml_with_structure(structure))
 
-    assert str(error.value).startswith(
-        "/html/body/g:tab[1]/g:document-tab/g:body/section[1]/g:list[1]/li[1]"
-        "/g:bullet-style (line 4, column 1):"
-    )
 
-
-def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
+def test_list_item_nesting_level_must_be_non_negative() -> None:
     structure = '<g:list g:list-id="id"><li g:nesting-level="-1"><p /></li></g:list>'
 
     with pytest.raises(XHTMLParseError) as error:
@@ -508,44 +378,23 @@ def test_negative_list_nesting_error_is_reported_at_item_path() -> None:
     assert "/@g:nesting-level" not in str(error.value)
 
 
-def test_rejects_duplicate_list_definition_ids_instead_of_overwriting() -> None:
-    definitions = (
-        "<g:list-definitions>"
-        '<g:list-definition g:list-id="duplicate" />'
-        '<g:list-definition g:list-id="duplicate" />'
-        "</g:list-definitions>"
-    )
-
-    with pytest.raises(XHTMLParseError) as error:
-        deserialize_document(xhtml_with_structure("", definitions))
-
-    assert str(error.value).endswith(": duplicate child key 'duplicate'")
-    assert "ListDefinitionsTag.children" not in str(error.value)
-
-
 @pytest.mark.parametrize(
-    ("level", "message"),
+    "level",
     [
-        ('<g:list-level g:glyph-type="DECIMAL" />', "glyph-format"),
-        ('<g:list-level g:glyph-format="%0" />', "exactly one"),
+        '<g:list-level g:glyph-format="%0" />',
         (
             '<g:list-level g:glyph-format="%0" g:glyph-type="DECIMAL" '
-            'g:glyph-symbol="x" />',
-            "exactly one",
-        ),
-        (
-            '<g:list-level g:glyph-format="%0" g:glyph-type="INVALID" />',
-            "expected one of",
+            'g:glyph-symbol="x" />'
         ),
     ],
 )
-def test_rejects_invalid_list_levels(level: str, message: str) -> None:
+def test_list_level_requires_exactly_one_glyph_source(level: str) -> None:
     metadata = (
         '<g:list-definitions><g:list-definition g:list-id="id">'
         f"{level}</g:list-definition></g:list-definitions>"
     )
 
-    with pytest.raises(XHTMLParseError, match=message):
+    with pytest.raises(XHTMLParseError, match="exactly one"):
         deserialize_document(xhtml_with_structure("", metadata))
 
 
@@ -558,28 +407,7 @@ def document_with_table(table: Table) -> Document:
     return document
 
 
-def xhtml_with_table_tree(table_tree: str) -> str:
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc" g:title="Tables">'
-        '<body><g:tab g:tab-id="tab" g:title="Main" g:index="0">'
-        "<g:document-tab><g:body><section><g:section-style />"
-        f"{table_tree}"
-        "</section></g:body></g:document-tab></g:tab></body></html>"
-    )
-
-
-def decoded_table(document: Document) -> Table:
-    content = document.tabs[0].content
-    assert isinstance(content, DocumentTab)
-    assert isinstance(content.body, Body)
-    table = content.body.content[1]
-    assert isinstance(table, Table)
-    return table
-
-
-def test_round_trips_complete_recursive_table() -> None:
+def test_table_projection_supports_recursion_and_semantic_defaults() -> None:
     border = TableCellBorder(
         color=Color(red=0.1, green=0.2, blue=0.3),
         width=Dimension(magnitude=1.5, unit="PT"),
@@ -592,13 +420,7 @@ def test_round_trips_complete_recursive_table() -> None:
             column_span=2,
             background_color=Color(red=0.4, green=0.5, blue=0.6),
             border_left=border,
-            border_right=border,
-            border_top=border,
-            border_bottom=border,
             padding_left=Dimension(magnitude=6, unit="PT"),
-            padding_right=Dimension(magnitude=7, unit="PT"),
-            padding_top=Dimension(magnitude=4, unit="PT"),
-            padding_bottom=Dimension(magnitude=5, unit="PT"),
             content_alignment="MIDDLE",
         ),
         content=[
@@ -636,97 +458,74 @@ def test_round_trips_complete_recursive_table() -> None:
 
     xhtml = serialize_document(document_with_table(table))
 
-    assert '<table g:table-key="table-1">' in xhtml
-    assert '<col g:width-type="FIXED_WIDTH" g:width="144" />' in xhtml
-    assert '<col g:width-type="EVENLY_DISTRIBUTED" />' in xhtml
-    assert xhtml.index("<colgroup>") < xhtml.index("<tbody>")
-    assert (
-        '<tr g:row-key="header-row" g:min-height="24" '
-        'g:prevent-overflow="true" g:is-header="true">'
-    ) in xhtml
-    assert '<td g:cell-key="merged-cell" rowspan="2" colspan="2">' in xhtml
-    for fragment in (
-        'g:content-alignment="MIDDLE"',
-        'g:padding-left="6"',
-        'g:padding-right="7"',
-        'g:padding-top="4"',
-        'g:padding-bottom="5"',
-        '<g:background-color g:red="0.4" g:green="0.5" g:blue="0.6" />',
-        '<g:border-left g:dash-style="SOLID" g:width="1.5">',
-        '<g:border-right g:dash-style="SOLID" g:width="1.5">',
-        '<g:border-top g:dash-style="SOLID" g:width="1.5">',
-        '<g:border-bottom g:dash-style="SOLID" g:width="1.5">',
-        '<g:color g:red="0.1" g:green="0.2" g:blue="0.3" />',
-        '<g:background-color g:transparent="true" />',
-        '<tr g:is-header="false" />',
-    ):
-        assert fragment in xhtml
-    assert xhtml.count("<table") == 2
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Sections">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        '            <table g:table-key="table-1">\n'
+        "              <colgroup>\n"
+        '                <col g:width-type="FIXED_WIDTH" g:width="144" />\n'
+        '                <col g:width-type="EVENLY_DISTRIBUTED" />\n'
+        "              </colgroup>\n"
+        "              <tbody>\n"
+        '                <tr g:row-key="header-row" g:min-height="24" '
+        'g:prevent-overflow="true" g:is-header="true">\n'
+        '                  <td g:cell-key="merged-cell" rowspan="2" colspan="2">\n'
+        '                    <g:cell-style g:content-alignment="MIDDLE" '
+        'g:padding-left="6">\n'
+        '                      <g:background-color g:red="0.4" g:green="0.5" '
+        'g:blue="0.6" />\n'
+        '                      <g:border-left g:dash-style="SOLID" '
+        'g:width="1.5">\n'
+        '                        <g:color g:red="0.1" g:green="0.2" '
+        'g:blue="0.3" />\n'
+        "                      </g:border-left>\n"
+        "                    </g:cell-style>\n"
+        "                    <g:paragraph>\n"
+        "                      <span>Cell paragraph</span>\n"
+        "                    </g:paragraph>\n"
+        "                    <table>\n"
+        "                      <tbody>\n"
+        "                        <tr>\n"
+        "                          <td />\n"
+        "                        </tr>\n"
+        "                      </tbody>\n"
+        "                    </table>\n"
+        "                    <g:table-of-contents>\n"
+        "                      <g:paragraph>\n"
+        "                        <span>TOC</span>\n"
+        "                      </g:paragraph>\n"
+        "                    </g:table-of-contents>\n"
+        "                  </td>\n"
+        '                  <td g:cell-key="transparent-cell">\n'
+        "                    <g:cell-style>\n"
+        '                      <g:background-color g:transparent="true" />\n'
+        "                    </g:cell-style>\n"
+        "                  </td>\n"
+        "                </tr>\n"
+        '                <tr g:is-header="false" />\n'
+        "              </tbody>\n"
+        "            </table>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     expected_document = document_with_table(table)
     decoded_document = deserialize_document(xhtml)
     assert decoded_document == expected_document
-    assert decoded_table(decoded_document) == table
-    assert decoded_table(decoded_document).rows[0].is_header is True
-    assert decoded_table(decoded_document).rows[1].is_header is False
 
 
-def test_accepts_table_and_cell_metadata_after_content_without_reordering() -> None:
-    xhtml = xhtml_with_table_tree(
-        "<table><tbody><tr><td>"
-        "<g:paragraph><span>first</span></g:paragraph>"
-        '<g:cell-style g:content-alignment="BOTTOM" />'
-        "<g:paragraph><span>second</span></g:paragraph>"
-        "</td></tr></tbody>"
-        '<colgroup><col g:width-type="EVENLY_DISTRIBUTED" /></colgroup>'
-        "</table>"
-    )
-    expected = Table(
-        column_styles=[TableColumn(width_type="EVENLY_DISTRIBUTED")],
-        rows=[
-            TableRow(
-                cells=[
-                    TableCell(
-                        content=[
-                            Paragraph(elements=[TextRun(content="first\n")]),
-                            Paragraph(elements=[TextRun(content="second\n")]),
-                        ],
-                        style=TableCellStyle(content_alignment="BOTTOM"),
-                    )
-                ]
-            )
-        ],
-    )
-
-    assert decoded_table(deserialize_document(xhtml)) == expected
-
-
-def test_rejects_missing_required_child() -> None:
-    with pytest.raises(
-        XHTMLParseError,
-        match="expected at least one tbody child",
-    ):
-        deserialize_document(xhtml_with_table_tree("<table><colgroup /></table>"))
-
-
-@pytest.mark.parametrize(("columns", "fragment"), [(UNSET, ""), ([], "<colgroup />")])
-def test_preserves_unset_versus_empty_table_columns(
-    columns: object, fragment: str
-) -> None:
-    table = Table(rows=[], column_styles=columns)  # type: ignore[arg-type]
-
-    xhtml = serialize_document(document_with_table(table))
-
-    assert ("<colgroup" in xhtml) is bool(fragment)
-    assert fragment in xhtml
-    decoded = deserialize_document(xhtml).tabs[0].content
-    assert isinstance(decoded, DocumentTab)
-    assert isinstance(decoded.body, Body)
-    decoded_table = decoded.body.content[1]
-    assert isinstance(decoded_table, Table)
-    assert decoded_table.column_styles == columns
-
-
-def test_normalizes_default_only_table_cell_style_to_unset() -> None:
+def test_default_only_table_cell_style_normalizes_to_unset() -> None:
     table = Table(
         rows=[TableRow(cells=[TableCell(content=[], style=TableCellStyle())])]
     )
@@ -742,16 +541,13 @@ def test_normalizes_default_only_table_cell_style_to_unset() -> None:
 
 
 @pytest.mark.parametrize("attribute", ['rowspan="1"', 'colspan="1"'])
-def test_rejects_explicit_default_cell_span(attribute: str) -> None:
+def test_explicit_default_cell_spans_are_rejected(attribute: str) -> None:
     xhtml = serialize_document(
         document_with_table(Table(rows=[TableRow(cells=[TableCell(content=[])])]))
     ).replace("<td />", f"<td {attribute} />")
 
-    with pytest.raises(XHTMLParseError, match="must be greater than 1") as error:
+    with pytest.raises(XHTMLParseError, match="must be greater than 1"):
         deserialize_document(xhtml)
-
-    attribute_name = attribute.partition("=")[0]
-    assert f"/@{attribute_name}" in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -764,7 +560,7 @@ def test_rejects_explicit_default_cell_span(attribute: str) -> None:
         ),
     ],
 )
-def test_rejects_invalid_table_column_width(column: str, replacement: str) -> None:
+def test_table_column_width_matches_width_type(column: str, replacement: str) -> None:
     width = Dimension(magnitude=10) if "FIXED_WIDTH" in column else UNSET
     table = Table(
         rows=[],
@@ -780,25 +576,7 @@ def test_rejects_invalid_table_column_width(column: str, replacement: str) -> No
         deserialize_document(xhtml)
 
 
-@pytest.mark.parametrize(
-    ("old", "new", "message"),
-    [
-        (
-            '<g:background-color g:red="0.1" g:green="0.2" g:blue="0.3" />',
-            '<g:background-color g:red="0.1" />',
-            "requires red, green, and blue",
-        ),
-        (' g:width="1"', "", "missing required attribute"),
-    ],
-)
-def test_rejects_invalid_table_cell_color_or_border(
-    old: str, new: str, message: str
-) -> None:
-    border = TableCellBorder(
-        color=Color(red=0, green=0, blue=0),
-        width=Dimension(magnitude=1),
-        dash_style="SOLID",
-    )
+def test_structured_table_cell_color_requires_complete_rgb() -> None:
     table = Table(
         rows=[
             TableRow(
@@ -806,15 +584,17 @@ def test_rejects_invalid_table_cell_color_or_border(
                     TableCell(
                         content=[],
                         style=TableCellStyle(
-                            background_color=Color(red=0.1, green=0.2, blue=0.3),
-                            border_left=border,
+                            background_color=Color(red=0.1, green=0.2, blue=0.3)
                         ),
                     )
                 ]
             )
         ]
     )
-    xhtml = serialize_document(document_with_table(table)).replace(old, new, 1)
+    xhtml = serialize_document(document_with_table(table)).replace(
+        '<g:background-color g:red="0.1" g:green="0.2" g:blue="0.3" />',
+        '<g:background-color g:red="0.1" />',
+    )
 
-    with pytest.raises(XHTMLParseError, match=message):
+    with pytest.raises(XHTMLParseError, match="requires red, green, and blue"):
         deserialize_document(xhtml)

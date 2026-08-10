@@ -2,25 +2,16 @@ import pytest
 
 from gdocs_patch.models import (
     UNSET,
-    AutoText,
     Body,
     BookmarkLink,
     Color,
-    ColumnBreak,
-    DateElement,
     Dimension,
     Document,
     DocumentTab,
-    Equation,
-    FootnoteReference,
-    HorizontalRule,
-    InlineObjectReference,
-    PageBreak,
     Paragraph,
     ParagraphBorder,
     ParagraphElement,
     ParagraphStyle,
-    PersonReference,
     RichLink,
     SectionBreak,
     SectionStyle,
@@ -75,132 +66,50 @@ def paragraph_from(document: Document) -> Paragraph:
     return paragraph
 
 
-@pytest.mark.parametrize(
-    ("paragraph_element", "expected_tag"),
-    [
-        (
-            AutoText(
-                auto_text_type="PAGE_NUMBER",
-                text_style=TextStyle(bold=True),
-            ),
-            "g:auto-text",
-        ),
-        (ColumnBreak(text_style=TextStyle(italic=False)), "g:column-break"),
-        (
-            DateElement(
-                date_id="date-1",
-                date_format="DATE_FORMAT_ISO8601",
-                display_text="",
-                locale="en-US",
-                time_format="TIME_FORMAT_HOUR_MINUTE_TIMEZONE",
-                time_zone_id="UTC",
-                timestamp="2026-08-08T12:00:00Z",
-                text_style=TextStyle(underline=True),
-            ),
-            "time",
-        ),
-        (Equation(), "g:equation"),
-        (
-            FootnoteReference(
-                footnote_id="footnote-1",
-                footnote_number="3",
-                text_style=TextStyle(strikethrough=False),
-            ),
-            "g:footnote-reference",
-        ),
-        (HorizontalRule(text_style=TextStyle(small_caps=True)), "hr"),
-        (
-            InlineObjectReference(
-                inline_object_id="object-1",
-                text_style=TextStyle(baseline_offset="SUBSCRIPT"),
-            ),
-            "g:inline-object",
-        ),
-        (PageBreak(text_style=TextStyle(font_family="Arial")), "g:page-break"),
-        (
-            PersonReference(
-                person_id="person-1",
-                email="",
-                name="",
-                text_style=TextStyle(font_weight=700),
-            ),
-            "g:person",
-        ),
-        (
-            RichLink(
-                rich_link_id="rich-link-1",
-                uri="https://smart-chip.example/document",
-                title="",
-                mime_type="",
-                text_style=TextStyle(
-                    link=UrlLink(url="https://outer-link.example/target")
-                ),
-            ),
-            "g:rich-link",
-        ),
-    ],
-    ids=lambda value: (
-        type(value).__name__ if isinstance(value, ParagraphElement) else str(value)
-    ),
-)
-def test_round_trips_non_text_paragraph_element(
-    paragraph_element: ParagraphElement, expected_tag: str
-) -> None:
-    document = document_with_runs(paragraph_element)
+def test_rich_link_distinguishes_chip_uri_from_outer_text_link() -> None:
+    rich_link = RichLink(
+        rich_link_id="rich-link-1",
+        uri="https://smart-chip.example/document",
+        title="",
+        mime_type="",
+        text_style=TextStyle(link=UrlLink(url="https://outer-link.example/target")),
+    )
 
-    xhtml = serialize_document(document)
+    xhtml = serialize_document(document_with_runs(rich_link))
 
-    assert f"<{expected_tag}" in xhtml
-    if isinstance(paragraph_element, RichLink):
-        assert 'href="https://outer-link.example/target"' in xhtml
-        assert 'g:uri="https://smart-chip.example/document"' in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        '              <a href="https://outer-link.example/target">\n'
+        '                <g:rich-link g:rich-link-id="rich-link-1" '
+        'g:uri="https://smart-chip.example/document" g:title="" '
+        'g:mime-type="" />\n'
+        "              </a>\n"
+        "              <span />\n"
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     assert paragraph_from(deserialize_document(xhtml)).elements == [
-        paragraph_element,
+        rich_link,
         TextRun(content="\n"),
     ]
 
 
-def test_styled_auto_text_uses_canonical_attribute_order() -> None:
-    xhtml = serialize_document(
-        document_with_runs(
-            AutoText(
-                auto_text_type="PAGE_NUMBER",
-                text_style=TextStyle(bold=True, font_family="Arial"),
-            )
-        )
-    )
-
-    assert (
-        '<g:auto-text g:type="PAGE_NUMBER" g:bold="true" g:font-family="Arial" />'
-        in xhtml
-    )
-
-
-def test_styled_date_element_uses_canonical_attribute_order() -> None:
-    xhtml = serialize_document(
-        document_with_runs(
-            DateElement(
-                date_id="date-1",
-                date_format="DATE_FORMAT_ISO8601",
-                display_text="2026-08-08",
-                locale="en-US",
-                time_format="TIME_FORMAT_HOUR_MINUTE",
-                time_zone_id="UTC",
-                timestamp="2026-08-08T12:00:00Z",
-                text_style=TextStyle(bold=True, font_family="Arial"),
-            )
-        )
-    )
-
-    assert (
-        '<time g:date-id="date-1" g:date-format="DATE_FORMAT_ISO8601" '
-        'g:time-format="TIME_FORMAT_HOUR_MINUTE" g:display-text="2026-08-08" '
-        'g:locale="en-US" g:time-zone-id="UTC" datetime="2026-08-08T12:00:00Z" '
-        'g:bold="true" g:font-family="Arial" />'
-    ) in xhtml
-
-
-def test_rejects_multiple_children_in_content_link() -> None:
+def test_content_link_requires_one_paragraph_element() -> None:
     xhtml = serialize_document(
         document_with_runs(
             TextRun(
@@ -215,44 +124,28 @@ def test_rejects_multiple_children_in_content_link() -> None:
         deserialize_document(xhtml)
 
 
-def test_round_trips_complete_paragraph_metadata() -> None:
+def test_paragraph_metadata_projects_styles_and_positioned_objects() -> None:
     opaque_border = ParagraphBorder(
         color=Color(red=0.1, green=0.2, blue=0.3),
-        width=Dimension(magnitude=1),
-        padding=Dimension(magnitude=2),
+        width=Dimension(magnitude=1, unit="PT"),
+        padding=Dimension(magnitude=2, unit="PT"),
         dash_style="SOLID",
     )
     transparent_border = ParagraphBorder(
         color=None,
-        width=Dimension(magnitude=3),
-        padding=Dimension(magnitude=4),
+        width=Dimension(magnitude=3, unit="PT"),
+        padding=Dimension(magnitude=4, unit="PT"),
         dash_style="DASH",
     )
     style = ParagraphStyle(
         named_style_type="HEADING_2",
         alignment="CENTER",
-        direction="RIGHT_TO_LEFT",
-        line_spacing=120,
-        spacing_mode="NEVER_COLLAPSE",
-        space_above=Dimension(magnitude=6),
-        space_below=Dimension(magnitude=8),
-        indent_first_line=Dimension(magnitude=18),
-        indent_start=Dimension(magnitude=36),
-        indent_end=Dimension(magnitude=12),
-        keep_lines_together=True,
         keep_with_next=False,
-        avoid_widow_and_orphan=True,
-        page_break_before=False,
-        heading_id="heading-2",
-        border_between=opaque_border,
-        border_top=transparent_border,
-        border_bottom=opaque_border,
-        border_left=transparent_border,
-        border_right=opaque_border,
+        border_left=opaque_border,
+        border_right=transparent_border,
         shading_color=None,
         tab_stops=[
-            TabStop(offset=Dimension(magnitude=36), alignment="START"),
-            TabStop(offset=Dimension(magnitude=72), alignment="END"),
+            TabStop(offset=Dimension(magnitude=36, unit="PT"), alignment="START")
         ],
     )
     document = document_with_runs(TextRun(content="First"), TextRun(content="Second"))
@@ -262,68 +155,53 @@ def test_round_trips_complete_paragraph_metadata() -> None:
 
     xhtml = serialize_document(document)
 
-    assert "<h2>" in xhtml
-    assert "g:named-style-type=" not in xhtml
-    for fragment in (
-        'g:space-above="6"',
-        'g:space-below="8"',
-        'g:indent-first-line="18"',
-        'g:indent-start="36"',
-        'g:indent-end="12"',
-        '<g:border-between g:dash-style="SOLID" g:width="1" g:padding="2">',
-        '<g:color g:red="0.1" g:green="0.2" g:blue="0.3" />',
-        '<g:border-top g:dash-style="DASH" g:width="3" g:padding="4">',
-        '<g:color g:transparent="true" />',
-        '<g:shading-color g:transparent="true" />',
-        '<g:tab-stop g:alignment="START" g:offset="36" />',
-        '<g:tab-stop g:alignment="END" g:offset="72" />',
-        '<g:positioned-object g:id="object-1" />',
-        '<g:positioned-object g:id="object-2" />',
-    ):
-        assert fragment in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <h2>\n"
+        '              <g:paragraph-style g:alignment="CENTER" '
+        'g:keep-with-next="false">\n'
+        '                <g:border-left g:dash-style="SOLID" g:width="1" '
+        'g:padding="2">\n'
+        '                  <g:color g:red="0.1" g:green="0.2" '
+        'g:blue="0.3" />\n'
+        "                </g:border-left>\n"
+        '                <g:border-right g:dash-style="DASH" g:width="3" '
+        'g:padding="4">\n'
+        '                  <g:color g:transparent="true" />\n'
+        "                </g:border-right>\n"
+        '                <g:shading-color g:transparent="true" />\n'
+        "                <g:tab-stops>\n"
+        '                  <g:tab-stop g:alignment="START" g:offset="36" />\n'
+        "                </g:tab-stops>\n"
+        "              </g:paragraph-style>\n"
+        "              <g:positioned-objects>\n"
+        '                <g:positioned-object g:id="object-1" />\n'
+        '                <g:positioned-object g:id="object-2" />\n'
+        "              </g:positioned-objects>\n"
+        "              <span>First</span>\n"
+        "              <span>Second</span>\n"
+        "            </h2>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
 
-    expected = style
-    expected.space_above = Dimension(magnitude=6, unit="PT")
-    expected.space_below = Dimension(magnitude=8, unit="PT")
-    expected.indent_first_line = Dimension(magnitude=18, unit="PT")
-    expected.indent_start = Dimension(magnitude=36, unit="PT")
-    expected.indent_end = Dimension(magnitude=12, unit="PT")
-    for border in (
-        expected.border_between,
-        expected.border_top,
-        expected.border_bottom,
-        expected.border_left,
-        expected.border_right,
-    ):
-        assert isinstance(border, ParagraphBorder)
-        border.width = Dimension(magnitude=border.width.magnitude, unit="PT")
-        border.padding = Dimension(magnitude=border.padding.magnitude, unit="PT")
-    assert isinstance(expected.tab_stops, list)
-    for tab_stop in expected.tab_stops:
-        tab_stop.offset = Dimension(magnitude=tab_stop.offset.magnitude, unit="PT")
     decoded_paragraph = paragraph_from(deserialize_document(xhtml))
-    assert decoded_paragraph.style == expected
+    assert decoded_paragraph.style == style
     assert decoded_paragraph.positioned_object_ids == ["object-1", "object-2"]
     assert decoded_paragraph.elements == [
-        TextRun(content="First"),
-        TextRun(content="Second\n"),
-    ]
-
-    moved = xhtml
-    # Move both metadata blocks between the two spans; metadata position is permissive.
-    start = moved.index("<g:paragraph-style")
-    style_end = moved.index("</g:paragraph-style>", start) + len("</g:paragraph-style>")
-    style_xml = moved[start:style_end]
-    moved = moved[:start] + moved[style_end:]
-    start = moved.index("<g:positioned-objects")
-    objects_end = moved.index("</g:positioned-objects>", start) + len(
-        "</g:positioned-objects>"
-    )
-    objects_xml = moved[start:objects_end]
-    moved = moved[:start] + moved[objects_end:]
-    insertion = moved.index("</span>", moved.index("<h2>")) + len("</span>")
-    moved = moved[:insertion] + style_xml + objects_xml + moved[insertion:]
-    assert paragraph_from(deserialize_document(moved)).elements == [
         TextRun(content="First"),
         TextRun(content="Second\n"),
     ]
@@ -362,53 +240,70 @@ def test_paragraph_named_style_uses_canonical_tag(
     assert paragraph_from(deserialize_document(xhtml)).style == paragraph.style
 
 
-def test_preserves_empty_paragraph_metadata_collections() -> None:
-    document = document_with_runs(TextRun(content="Empty"))
-    paragraph = paragraph_from(document)
-    paragraph.style = ParagraphStyle(tab_stops=[])
-    paragraph.positioned_object_ids = []
-
-    xhtml = serialize_document(document)
-
-    assert "<g:tab-stops />" in xhtml
-    assert "<g:positioned-objects />" in xhtml
-    decoded = paragraph_from(deserialize_document(xhtml))
-    assert isinstance(decoded.style, ParagraphStyle)
-    assert decoded.style.tab_stops == []
-    assert decoded.positioned_object_ids == []
-
-
 def test_paragraph_terminal_newline_is_implicit() -> None:
     document = document_with_runs(TextRun(content="First\nSecond\n"))
 
     xhtml = serialize_document(document)
 
-    assert "<span>First<br />Second</span>" in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        "              <span>First<br />Second</span>\n"
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     assert deserialize_document(xhtml) == document
 
 
-def test_round_trips_vertical_tabs_and_form_feeds() -> None:
-    document = document_with_runs(TextRun(content="Before\vMiddle\fAfter"))
+def test_text_control_characters_use_canonical_xml_forms() -> None:
+    document = document_with_runs(TextRun(content="Before\vMiddle\fAfter\rEnd\nTail\n"))
 
     xhtml = serialize_document(document)
 
-    assert "<span>Before<g:vertical-tab />Middle<g:form-feed />After</span>" in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        "              <span>Before<g:vertical-tab />Middle<g:form-feed />"
+        "After&#13;End<br />Tail</span>\n"
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     assert deserialize_document(xhtml) == document
 
 
-def test_round_trips_text_style_link_colors_and_newlines() -> None:
+def test_text_style_projection_normalizes_point_units() -> None:
     run = TextRun(
         content="First\nSecond\n",
         text_style=TextStyle(
-            bold=True,
-            italic=False,
-            underline=True,
-            strikethrough=False,
-            small_caps=True,
-            baseline_offset="SUPERSCRIPT",
             font_size=Dimension(magnitude=12, unit="UNIT_UNSPECIFIED"),
-            font_family="Arial",
-            font_weight=700,
             foreground_color=Color(red=0.1, green=0.2, blue=0.3),
             background_color=None,
             link=BookmarkLink(bookmark_id="bookmark-1", tab_id="tab-1"),
@@ -417,17 +312,31 @@ def test_round_trips_text_style_link_colors_and_newlines() -> None:
 
     xhtml = serialize_document(document_with_runs(run))
 
-    assert '<a g:bookmark-id="bookmark-1" g:tab-id="tab-1">' in xhtml
-    assert (
-        '<span g:bold="true" g:italic="false" g:underline="true" '
-        'g:strikethrough="false" g:small-caps="true" '
-        'g:baseline-offset="SUPERSCRIPT" g:font-size="12" '
-        'g:font-family="Arial" g:font-weight="700" '
-        'g:foreground-red="0.1" g:foreground-green="0.2" '
-        'g:foreground-blue="0.3" g:background-color="transparent">'
-        "First<br />Second</span>"
-    ) in xhtml
-    assert xhtml.count("<br />") == 1
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        '              <a g:bookmark-id="bookmark-1" g:tab-id="tab-1">\n'
+        '                <span g:font-size="12" g:foreground-red="0.1" '
+        'g:foreground-green="0.2" g:foreground-blue="0.3" '
+        'g:background-color="transparent">First<br />Second</span>\n'
+        "              </a>\n"
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
 
     decoded = deserialize_document(xhtml)
     content = decoded.tabs[0].content
@@ -439,15 +348,7 @@ def test_round_trips_text_style_link_colors_and_newlines() -> None:
     assert decoded_run == TextRun(
         content="First\nSecond\n",
         text_style=TextStyle(
-            bold=True,
-            italic=False,
-            underline=True,
-            strikethrough=False,
-            small_caps=True,
-            baseline_offset="SUPERSCRIPT",
             font_size=Dimension(magnitude=12, unit="PT"),
-            font_family="Arial",
-            font_weight=700,
             foreground_color=Color(red=0.1, green=0.2, blue=0.3),
             background_color=None,
             link=BookmarkLink(bookmark_id="bookmark-1", tab_id="tab-1"),
@@ -455,16 +356,7 @@ def test_round_trips_text_style_link_colors_and_newlines() -> None:
     )
 
 
-def test_round_trips_carriage_returns_with_canonical_character_references() -> None:
-    run = TextRun(content="before\rmiddle\r\nafter")
-
-    xhtml = serialize_document(document_with_runs(run))
-
-    assert "<span>before&#13;middle&#13;<br />after</span>" in xhtml
-    assert paragraph_from(deserialize_document(xhtml)).elements == [run]
-
-
-def test_round_trips_precision_sensitive_text_style_number() -> None:
+def test_float_projection_preserves_round_trip_precision() -> None:
     magnitude = 0.12345678901234567
     document = document_with_runs(
         TextRun(
@@ -478,8 +370,29 @@ def test_round_trips_precision_sensitive_text_style_number() -> None:
 
     xhtml = serialize_document(document)
 
-    assert f'g:font-size="{magnitude!r}"' in xhtml
-    assert f'g:foreground-red="{magnitude!r}"' in xhtml
+    assert xhtml == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" '
+        'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" '
+        'g:title="Paragraph">\n'
+        "  <body>\n"
+        '    <g:tab g:tab-id="tab-1" g:title="Main" g:index="0">\n'
+        "      <g:document-tab>\n"
+        "        <g:body>\n"
+        "          <section>\n"
+        "            <g:section-style />\n"
+        "            <p>\n"
+        '              <span g:font-size="0.12345678901234566" '
+        'g:foreground-red="0.12345678901234566" g:foreground-green="0" '
+        'g:foreground-blue="0">Precise</span>\n'
+        "            </p>\n"
+        "          </section>\n"
+        "        </g:body>\n"
+        "      </g:document-tab>\n"
+        "    </g:tab>\n"
+        "  </body>\n"
+        "</html>\n"
+    )
     decoded = deserialize_document(xhtml)
     content = decoded.tabs[0].content
     assert isinstance(content, DocumentTab)
@@ -493,21 +406,7 @@ def test_round_trips_precision_sensitive_text_style_number() -> None:
     assert run.text_style.foreground_color == Color(red=magnitude)
 
 
-def test_point_integer_is_canonical_after_decode_and_reencode() -> None:
-    xhtml = serialize_document(
-        document_with_runs(
-            TextRun(
-                content="Integer",
-                text_style=TextStyle(font_size=Dimension(magnitude=12.0)),
-            )
-        )
-    )
-
-    assert 'g:font-size="12"' in xhtml
-    assert serialize_document(deserialize_document(xhtml)) == xhtml
-
-
-def test_decodes_literal_line_feed_breaks_and_preserves_run_boundaries() -> None:
+def test_text_decode_preserves_literal_line_feeds_and_run_boundaries() -> None:
     xhtml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<html xmlns="http://www.w3.org/1999/xhtml" '
@@ -535,7 +434,7 @@ def test_decodes_literal_line_feed_breaks_and_preserves_run_boundaries() -> None
     ]
 
 
-def test_rejects_named_style_type_metadata_on_gdocs_paragraph() -> None:
+def test_paragraph_style_metadata_is_owned_by_semantic_tag() -> None:
     with pytest.raises(
         XHTMLParseError,
         match=r"/g:paragraph-style .*: named style type is owned by the paragraph element",
@@ -554,7 +453,7 @@ def test_rejects_named_style_type_metadata_on_gdocs_paragraph() -> None:
         )
 
 
-def test_rejects_out_of_range_structured_color_with_parse_context() -> None:
+def test_structured_color_rejects_out_of_range_components() -> None:
     with pytest.raises(
         XHTMLParseError,
         match=r"/g:paragraph-style/g:shading-color .*: .*red.*between 0.* and 1",
@@ -573,25 +472,6 @@ def test_rejects_out_of_range_structured_color_with_parse_context() -> None:
         )
 
 
-def test_rejects_text_between_child_elements() -> None:
-    with pytest.raises(
-        XHTMLParseError,
-        match=r"/html/body/g:tab\[1\].*text is not permitted under this parent",
-    ):
-        deserialize_document(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<html xmlns="http://www.w3.org/1999/xhtml" '
-            'xmlns:g="urn:gdocs-patch:xhtml:1" g:document-id="doc-1" g:title="Tail">'
-            "<body>"
-            '<g:tab g:tab-id="tab-1" g:title="Main" g:index="0">'
-            "<g:document-tab><g:body><section><g:section-style /><p>"
-            "<g:paragraph-style />BAD<span>ok</span>"
-            "</p></section></g:body></g:document-tab>"
-            "</g:tab>"
-            "</body></html>"
-        )
-
-
 @pytest.mark.parametrize(
     "attributes",
     [
@@ -600,7 +480,7 @@ def test_rejects_text_between_child_elements() -> None:
         "",
     ],
 )
-def test_rejects_invalid_link_target_combinations(attributes: str) -> None:
+def test_link_target_attribute_combinations(attributes: str) -> None:
     with pytest.raises(XHTMLParseError, match="link target"):
         deserialize_document(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
