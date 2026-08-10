@@ -1161,27 +1161,6 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 }
             },
             {
-                "updateTextStyle": {
-                    "range": {"startIndex": 2, "endIndex": 3, "tabId": "tab-stress"},
-                    "textStyle": {},
-                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
-                }
-            },
-            {
-                "updateTextStyle": {
-                    "range": {"startIndex": 6, "endIndex": 8, "tabId": "tab-stress"},
-                    "textStyle": {"bold": True},
-                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
-                }
-            },
-            {
-                "updateTextStyle": {
-                    "range": {"startIndex": 8, "endIndex": 10, "tabId": "tab-stress"},
-                    "textStyle": {},
-                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
-                }
-            },
-            {
                 "updateParagraphStyle": {
                     "range": {"startIndex": 10, "endIndex": 12, "tabId": "tab-stress"},
                     "paragraphStyle": {"alignment": "CENTER"},
@@ -1209,6 +1188,27 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "createParagraphBullets": {
                     "range": {"startIndex": 18, "endIndex": 22, "tabId": "tab-stress"},
                     "bulletPreset": "NUMBERED_DECIMAL_NESTED",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 2, "endIndex": 3, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 6, "endIndex": 8, "tabId": "tab-stress"},
+                    "textStyle": {"bold": True},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 8, "endIndex": 10, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {

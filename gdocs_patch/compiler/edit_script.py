@@ -840,4 +840,12 @@ def generate_edit_script(
         else:
             collapsed_edits.append(edit)
 
-    return EditScript(edits=collapsed_edits)
+    # Applying a named paragraph style can reset inline formatting, so text
+    # styles must be the final requests after the document has its target shape.
+    ordered_edits = [
+        edit for edit in collapsed_edits if not isinstance(edit, ApplyTextStyle)
+    ]
+    ordered_edits.extend(
+        edit for edit in collapsed_edits if isinstance(edit, ApplyTextStyle)
+    )
+    return EditScript(edits=ordered_edits)

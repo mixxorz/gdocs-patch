@@ -317,17 +317,18 @@ def test_generate_edit_script_handles_longer_content_and_style_ranges() -> None:
         # original source start index.
         DeleteContent(start_index=6, end_index=9),
         InsertText(index=6, text="abcdef"),
-        # Adjacent ranges with the same target style are collapsed.
+        ApplyParagraphStyle(
+            start_index=0,
+            end_index=21,
+            paragraph_style=target_paragraph_style,
+        ),
+        # Text styles come after paragraph styles because applying a named
+        # paragraph style can reset inline formatting.
         ApplyTextStyle(start_index=6, end_index=12, text_style=UNSET),
         ApplyTextStyle(
             start_index=15,
             end_index=20,
             text_style=target_text_style,
-        ),
-        ApplyParagraphStyle(
-            start_index=0,
-            end_index=21,
-            paragraph_style=target_paragraph_style,
         ),
     ]
 
