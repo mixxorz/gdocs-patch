@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from gdocs_patch.models import (
     UNSET,
     Body,
+    Bullet,
     Document,
     DocumentTab,
     Equation,
+    ListDefinition,
     Paragraph,
     Tab,
     Table,
@@ -44,7 +46,11 @@ class DocumentContent:
     tabs: dict[str, TabContent]
 
 
-def normalize_tree(tree: TreeNode) -> ContentStream:
+def normalize_tree(
+    tree: TreeNode,
+    *,
+    list_definitions: dict[str, ListDefinition] | None = None,
+) -> ContentStream:
     if isinstance(tree, TextRun):
         return ContentStream(
             items=[
@@ -59,7 +65,7 @@ def normalize_tree(tree: TreeNode) -> ContentStream:
     if isinstance(tree, Paragraph):
         items: list[ContentUnit] = []
         for child in tree.children:
-            items.extend(normalize_tree(child).items)
+            items.extend(normalize_tree(child, list_definitions=list_definitions).items)
 
         boundary_text_style: TextStyle | UnsetType = UNSET
         if items:
@@ -73,6 +79,11 @@ def normalize_tree(tree: TreeNode) -> ContentStream:
                 text_style=boundary_text_style,
                 paragraph_style=tree.style,
                 bullet=tree.bullet,
+                list_definition=(
+                    list_definitions.get(tree.bullet.list_id, UNSET)
+                    if isinstance(tree.bullet, Bullet) and list_definitions is not None
+                    else UNSET
+                ),
             )
         )
         return ContentStream(items=items)
@@ -91,7 +102,10 @@ def normalize_tree(tree: TreeNode) -> ContentStream:
                 cells.append(
                     TableCellUnit(
                         cell_key=cell.cell_key,
-                        content=normalize_tree(cell),
+                        content=normalize_tree(
+                            cell,
+                            list_definitions=list_definitions,
+                        ),
                         row_span=row_span,
                         column_span=column_span,
                         style=cell.style,
@@ -118,7 +132,7 @@ def normalize_tree(tree: TreeNode) -> ContentStream:
 
     items: list[ContentUnit] = []
     for child in tree.children:
-        items.extend(normalize_tree(child).items)
+        items.extend(normalize_tree(child, list_definitions=list_definitions).items)
     return ContentStream(items=items)
 
 
@@ -138,11 +152,15 @@ def normalize_document(document: Document) -> DocumentContent:
         if not isinstance(body, Body):
             raise ValueError("tab body must be loaded")
         content = tab.content
+        list_definitions = content.lists if isinstance(content.lists, dict) else {}
         tabs[tab.tab_id] = TabContent(
-            body=normalize_tree(body),
+            body=normalize_tree(body, list_definitions=list_definitions),
             headers=(
                 {
-                    segment_id: normalize_tree(segment)
+                    segment_id: normalize_tree(
+                        segment,
+                        list_definitions=list_definitions,
+                    )
                     for segment_id, segment in content.headers.items()
                 }
                 if isinstance(content.headers, dict)
@@ -150,7 +168,10 @@ def normalize_document(document: Document) -> DocumentContent:
             ),
             footers=(
                 {
-                    segment_id: normalize_tree(segment)
+                    segment_id: normalize_tree(
+                        segment,
+                        list_definitions=list_definitions,
+                    )
                     for segment_id, segment in content.footers.items()
                 }
                 if isinstance(content.footers, dict)
@@ -158,7 +179,10 @@ def normalize_document(document: Document) -> DocumentContent:
             ),
             footnotes=(
                 {
-                    segment_id: normalize_tree(segment)
+                    segment_id: normalize_tree(
+                        segment,
+                        list_definitions=list_definitions,
+                    )
                     for segment_id, segment in content.footnotes.items()
                 }
                 if isinstance(content.footnotes, dict)
@@ -173,6 +197,7 @@ def compile_document(
     *,
     source: Document,
     target: Document,
+    allow_bullet_normalization: bool = False,
 ) -> dict[str, object]:
     source_content = normalize_document(source)
     target_content = normalize_document(target)
@@ -199,6 +224,7 @@ def compile_document(
             source=source_tab.body,
             target=target_tab.body,
             start_index=1,
+            allow_bullet_normalization=allow_bullet_normalization,
         )
         requests.extend(
             lower_edit_script(
@@ -216,6 +242,7 @@ def compile_document(
                 segment_script = generate_edit_script(
                     source=source_segments[segment_id],
                     target=target_segment,
+                    allow_bullet_normalization=allow_bullet_normalization,
                 )
                 requests.extend(
                     lower_edit_script(

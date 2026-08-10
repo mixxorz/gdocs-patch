@@ -1,3 +1,5 @@
+import pytest
+
 from gdocs_patch.compiler import (
     ContentStream,
     DocumentContent,
@@ -8,6 +10,7 @@ from gdocs_patch.compiler import (
     TableRowUnit,
     TableUnit,
     TextUnit,
+    UnsupportedTransformation,
     compile_document,
     normalize_document,
     normalize_tree,
@@ -22,6 +25,8 @@ from gdocs_patch.models import (
     Document,
     DocumentTab,
     Equation,
+    ListDefinition,
+    ListLevel,
     Paragraph,
     ParagraphStyle,
     SectionBreak,
@@ -1281,4 +1286,167 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
         ],
         "writeControl": {"requiredRevisionId": "revision-stress"},
+    }
+
+
+def test_compile_document_normalizes_custom_bullets_only_when_enabled() -> None:
+    custom_list = ListDefinition(
+        levels=[
+            ListLevel(glyph_symbol="●", glyph_format="%0"),
+            ListLevel(glyph_symbol="⇑", glyph_format="%1"),
+            ListLevel(glyph_symbol="■", glyph_format="%2"),
+            ListLevel(glyph_symbol="●", glyph_format="%3"),
+            ListLevel(glyph_symbol="○", glyph_format="%4"),
+            ListLevel(glyph_symbol="■", glyph_format="%5"),
+            ListLevel(glyph_symbol="●", glyph_format="%6"),
+            ListLevel(glyph_symbol="○", glyph_format="%7"),
+            ListLevel(glyph_symbol="■", glyph_format="%8"),
+        ]
+    )
+    source = Document(
+        document_id="document-custom-list",
+        title="Custom list",
+        revision_id="revision-custom-list",
+        tabs=[
+            Tab(
+                tab_id="tab-custom-list",
+                title="Custom list",
+                index=0,
+                children=[],
+                content=DocumentTab(
+                    body=Body(
+                        content=[
+                            SectionBreak(style=SectionStyle()),
+                            Paragraph(
+                                elements=[TextRun(content="A\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=0,
+                                ),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="B\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=1,
+                                ),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="C\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=0,
+                                ),
+                            ),
+                        ]
+                    ),
+                    lists={"list-custom": custom_list},
+                ),
+            )
+        ],
+    )
+    target = Document(
+        document_id="document-custom-list",
+        title="Custom list",
+        tabs=[
+            Tab(
+                tab_id="tab-custom-list",
+                title="Custom list",
+                index=0,
+                children=[],
+                content=DocumentTab(
+                    body=Body(
+                        content=[
+                            SectionBreak(style=SectionStyle()),
+                            Paragraph(
+                                elements=[TextRun(content="A\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=0,
+                                ),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="B\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=1,
+                                ),
+                            ),
+                            Paragraph(
+                                elements=[TextRun(content="C\n")],
+                                bullet=Bullet(
+                                    list_id="list-custom",
+                                    nesting_level=1,
+                                ),
+                            ),
+                        ]
+                    ),
+                    lists={"list-custom": custom_list},
+                ),
+            )
+        ],
+    )
+
+    with pytest.raises(
+        UnsupportedTransformation,
+        match="customized bullet list",
+    ):
+        compile_document(source=source, target=target)
+
+    assert compile_document(
+        source=source,
+        target=target,
+        allow_bullet_normalization=True,
+    ) == {
+        "requests": [
+            {
+                "deleteParagraphBullets": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 7,
+                        "tabId": "tab-custom-list",
+                    }
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 7,
+                        "tabId": "tab-custom-list",
+                    },
+                    "paragraphStyle": {},
+                    "fields": "indentStart,indentFirstLine",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {
+                        "index": 5,
+                        "tabId": "tab-custom-list",
+                    },
+                    "text": "\t",
+                }
+            },
+            {
+                "insertText": {
+                    "location": {
+                        "index": 3,
+                        "tabId": "tab-custom-list",
+                    },
+                    "text": "\t",
+                }
+            },
+            {
+                "createParagraphBullets": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 9,
+                        "tabId": "tab-custom-list",
+                    },
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+                }
+            },
+        ],
+        "writeControl": {"requiredRevisionId": "revision-custom-list"},
     }

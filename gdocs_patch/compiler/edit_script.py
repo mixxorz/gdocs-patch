@@ -6,6 +6,7 @@ from gdocs_patch.models import (
     UNSET,
     Bullet,
     Dimension,
+    ListDefinition,
     ParagraphStyle,
     TableCellStyle,
     TableColumn,
@@ -13,6 +14,7 @@ from gdocs_patch.models import (
     UnsetType,
 )
 
+from .bullets import closest_preset, exact_preset
 from .content_stream import (
     BulletPreset,
     ContentStream,
@@ -297,6 +299,7 @@ def compile_table(
     source: TableUnit,
     target: TableUnit,
     table_start_index: int,
+    allow_bullet_normalization: bool,
 ) -> list[Edit]:
     available_source_rows = list(enumerate(source.rows))
     matched_rows: list[tuple[int, int]] = []
@@ -459,6 +462,7 @@ def compile_table(
                     row_index=row_index,
                     cell_index=cell_index,
                 ),
+                allow_bullet_normalization=allow_bullet_normalization,
             ).edits
         )
 
@@ -593,7 +597,11 @@ def compile_content(
 
 
 def generate_edit_script(
-    *, source: ContentStream, target: ContentStream, start_index: int = 0
+    *,
+    source: ContentStream,
+    target: ContentStream,
+    start_index: int = 0,
+    allow_bullet_normalization: bool = False,
 ) -> EditScript:
     """Describe how to change source content and styles into the target."""
 
@@ -657,6 +665,7 @@ def generate_edit_script(
                                 source_start + target_position - target_start,
                                 start_index=start_index,
                             ),
+                            allow_bullet_normalization=allow_bullet_normalization,
                         )
                     )
                     handled_table_target_positions.add(target_position)
@@ -715,6 +724,8 @@ def generate_edit_script(
     # inserted and replaced target items have no dependable inherited style.
     bullet_edits: list[Edit] = []
     style_edits: list[Edit] = []
+    handled_bullet_target_positions: set[int] = set()
+    target_boundary_positions = list(target_paragraph_ranges)
     for tag, source_start, _source_end, target_start, target_end in opcodes:
         for target_position in range(target_start, target_end):
             if target_position in handled_table_target_positions:
@@ -809,12 +820,130 @@ def generate_edit_script(
                             )
                     elif isinstance(target_boundary.bullet, Bullet):
                         if (
-                            source_boundary is not None
-                            and target_boundary.bullet != source_boundary.bullet
-                        ):
-                            raise UnsupportedTransformation(
-                                "changing existing Google-assigned bullets is not supported"
+                            target_position not in handled_bullet_target_positions
+                            and isinstance(source_bullet, Bullet)
+                            and (
+                                target_boundary.bullet.list_id != source_bullet.list_id
+                                or target_boundary.bullet.nesting_level
+                                != source_bullet.nesting_level
                             )
+                        ):
+                            if target_boundary.bullet.list_id != source_bullet.list_id:
+                                raise UnsupportedTransformation(
+                                    "moving paragraphs between existing lists is not supported"
+                                )
+                            definition = (
+                                target_boundary.list_definition
+                                if isinstance(
+                                    target_boundary.list_definition,
+                                    ListDefinition,
+                                )
+                                else (
+                                    source_boundary.list_definition
+                                    if source_boundary is not None
+                                    else UNSET
+                                )
+                            )
+                            if not isinstance(definition, ListDefinition):
+                                raise UnsupportedTransformation(
+                                    "the existing bullet list definition is not loaded"
+                                )
+                            preset = exact_preset(definition)
+                            if preset is None:
+                                if not allow_bullet_normalization:
+                                    raise UnsupportedTransformation(
+                                        "editing a customized bullet list requires "
+                                        "bullet normalization"
+                                    )
+                                preset = closest_preset(definition)
+
+                            run_boundary_index = target_boundary_positions.index(
+                                target_position
+                            )
+                            first_boundary_index = run_boundary_index
+                            while first_boundary_index > 0:
+                                candidate_position = target_boundary_positions[
+                                    first_boundary_index - 1
+                                ]
+                                candidate = target.items[candidate_position]
+                                if (
+                                    not isinstance(candidate, ParagraphBoundary)
+                                    or not isinstance(candidate.bullet, Bullet)
+                                    or candidate.bullet.list_id
+                                    != target_boundary.bullet.list_id
+                                    or any(
+                                        isinstance(item, TableUnit)
+                                        for item in target.items[
+                                            candidate_position
+                                            + 1 : target_boundary_positions[
+                                                first_boundary_index
+                                            ]
+                                        ]
+                                    )
+                                ):
+                                    break
+                                first_boundary_index -= 1
+
+                            last_boundary_index = run_boundary_index
+                            while last_boundary_index + 1 < len(
+                                target_boundary_positions
+                            ):
+                                candidate_position = target_boundary_positions[
+                                    last_boundary_index + 1
+                                ]
+                                candidate = target.items[candidate_position]
+                                if (
+                                    not isinstance(candidate, ParagraphBoundary)
+                                    or not isinstance(candidate.bullet, Bullet)
+                                    or candidate.bullet.list_id
+                                    != target_boundary.bullet.list_id
+                                    or any(
+                                        isinstance(item, TableUnit)
+                                        for item in target.items[
+                                            target_boundary_positions[
+                                                last_boundary_index
+                                            ]
+                                            + 1 : candidate_position
+                                        ]
+                                    )
+                                ):
+                                    break
+                                last_boundary_index += 1
+
+                            run_positions = target_boundary_positions[
+                                first_boundary_index : last_boundary_index + 1
+                            ]
+                            run_paragraph_list: list[BulletParagraph] = []
+                            for position in run_positions:
+                                run_boundary = target.items[position]
+                                if isinstance(
+                                    run_boundary, ParagraphBoundary
+                                ) and isinstance(run_boundary.bullet, Bullet):
+                                    run_paragraph_list.append(
+                                        BulletParagraph(
+                                            start_index=target_paragraph_ranges[
+                                                position
+                                            ][0],
+                                            end_index=target_paragraph_ranges[position][
+                                                1
+                                            ],
+                                            nesting_level=run_boundary.bullet.nesting_level,
+                                        )
+                                    )
+                            run_paragraphs = tuple(run_paragraph_list)
+                            bullet_edits.append(
+                                DeleteParagraphBullets(
+                                    start_index=run_paragraphs[0].start_index,
+                                    end_index=run_paragraphs[-1].end_index,
+                                )
+                            )
+                            bullet_edits.append(
+                                ApplyBulletRun(
+                                    paragraphs=run_paragraphs,
+                                    preset=preset,
+                                )
+                            )
+                            handled_bullet_target_positions.update(run_positions)
                     elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
                         bullet_edits.append(
                             DeleteParagraphBullets(

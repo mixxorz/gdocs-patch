@@ -5,6 +5,7 @@ from gdocs_patch.models import (
     Bullet,
     BulletPreset,
     Dimension,
+    ListDefinition,
     ParagraphStyle,
     TableCellStyle,
     TableColumn,
@@ -41,6 +42,7 @@ class ParagraphBoundary(ContentUnit):
     text_style: TextStyle | UnsetType = UNSET
     paragraph_style: ParagraphStyle | UnsetType = UNSET
     bullet: Bullet | BulletPreset | UnsetType = UNSET
+    list_definition: ListDefinition | UnsetType = UNSET
 
     @property
     def utf16_width(self) -> int:

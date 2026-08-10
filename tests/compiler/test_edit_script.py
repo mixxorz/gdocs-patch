@@ -493,7 +493,7 @@ def test_generate_edit_script_preserves_removes_and_creates_list_items() -> None
 
     with pytest.raises(
         UnsupportedTransformation,
-        match="changing existing Google-assigned bullets is not supported",
+        match="moving paragraphs between existing lists is not supported",
     ):
         generate_edit_script(
             source=ContentStream(
