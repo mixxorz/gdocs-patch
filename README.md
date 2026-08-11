@@ -44,7 +44,8 @@ jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \
 ```
 
 The command fetches the current document, compiles the target against that
-source revision, and applies the resulting Google Docs batch update.
+source revision, and applies the resulting Google Docs batch update. The target
+must preserve compatible existing tab and segment structure.
 
 ## Edit a document
 
@@ -64,8 +65,15 @@ cat <<'JSON' | uv run gdocs-patch edit
 JSON
 ```
 
+Each `oldText` must be non-empty, unique, and exact, including whitespace and
+newlines. Edits must target disjoint regions and are all applied to the original
+XHTML, not earlier replacement results.
+
 The command fetches the document once, performs the replacements, compiles the
 edited XHTML against the fetched source revision, and applies the batch update.
+The edited XHTML must preserve compatible existing tab and segment structure.
+If the source revision is stale when the update runs, read the document again
+and retry the edit against that new XHTML.
 
 ## Google authentication
 

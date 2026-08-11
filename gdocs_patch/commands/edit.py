@@ -18,22 +18,26 @@ class XhtmlEdit:
     new_text: str
 
 
-def apply_xhtml_edits(
-    *, xhtml: str, edits: Sequence[XhtmlEdit], document_id: str
-) -> str:
-    """Apply exact-text replacements located in the original canonical XHTML."""
+def _validate_edits(*, edits: Sequence[XhtmlEdit], document_id: str) -> None:
     if not edits:
         raise XhtmlEditError(
             "Edit command input is invalid. edits must contain at least one replacement."
         )
-
-    locations: list[tuple[int, int, int]] = []
     for edit_index, edit in enumerate(edits):
         if not edit.old_text:
             raise XhtmlEditError(
                 f"edits[{edit_index}].oldText must not be empty in {document_id}."
             )
 
+
+def apply_xhtml_edits(
+    *, xhtml: str, edits: Sequence[XhtmlEdit], document_id: str
+) -> str:
+    """Apply exact-text replacements located in the original canonical XHTML."""
+    _validate_edits(edits=edits, document_id=document_id)
+
+    locations: list[tuple[int, int, int]] = []
+    for edit_index, edit in enumerate(edits):
         starts: list[int] = []
         start = -1
         while (start := xhtml.find(edit.old_text, start + 1)) >= 0:
@@ -79,6 +83,7 @@ def edit_document(
     *, client: GoogleDocsClient, doc_id: str, edits: Sequence[XhtmlEdit]
 ) -> int:
     """Edit canonical XHTML and apply the compiled changes to a Google document."""
+    _validate_edits(edits=edits, document_id=doc_id)
     response = client.get_document(document_id=doc_id)
     source = document_parser.parse(response)
     xhtml = serialize_document(source)
@@ -88,7 +93,27 @@ def edit_document(
         document_id=doc_id,
     )
     target = deserialize_document(edited_xhtml)
+    identity_fields = (
+        "document_id",
+        "title",
+        "revision_id",
+        "suggestions_view_mode",
+    )
+    changed_identity_fields = [
+        field
+        for field in identity_fields
+        if getattr(target, field) != getattr(source, field)
+    ]
+    if changed_identity_fields:
+        fields = ", ".join(changed_identity_fields)
+        raise XhtmlEditError(
+            f"Cannot change read-only root metadata in {doc_id}: {fields}."
+        )
+
     batch = compile_document(source=source, target=target)
-    if batch["requests"]:
-        client.batch_update(document_id=doc_id, body=batch)
+    if not batch["requests"]:
+        raise XhtmlEditError(
+            f"Edits to {doc_id} produced no writable Google Docs changes."
+        )
+    client.batch_update(document_id=doc_id, body=batch)
     return len(edits)

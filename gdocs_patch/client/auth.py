@@ -12,6 +12,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from google.auth.credentials import Credentials as GoogleCredentials
+from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import (  # pyright: ignore[reportMissingTypeStubs]
@@ -46,12 +47,12 @@ class ThreadingWSGIServer(
 
 
 def save_credentials(credentials: Credentials) -> None:
-    credentials_directory = DEFAULT_CREDENTIALS_PATH.parent
-    credentials_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    to_json = cast(Callable[[], str], cast(Any, credentials).to_json)
-
     temporary_path: Path | None = None
     try:
+        credentials_directory = DEFAULT_CREDENTIALS_PATH.parent
+        credentials_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        to_json = cast(Callable[[], str], cast(Any, credentials).to_json)
+
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -66,9 +67,14 @@ def save_credentials(credentials: Credentials) -> None:
             os.fsync(temporary_file.fileno())
         os.replace(temporary_path, DEFAULT_CREDENTIALS_PATH)
         temporary_path = None
+    except (OSError, ValueError, GoogleAuthError) as error:
+        raise AuthenticationError("Could not save Google credentials.") from error
     finally:
         if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def login(*, client_secrets: Path | None = None) -> Path:
@@ -204,12 +210,20 @@ def load_credentials() -> GoogleCredentials:
         Callable[..., Credentials],
         cast(Any, Credentials).from_authorized_user_file,
     )
-    credentials = from_authorized_user_file(
-        str(DEFAULT_CREDENTIALS_PATH),
-        scopes=[DOCS_SCOPE],
-    )
+    try:
+        credentials = from_authorized_user_file(
+            str(DEFAULT_CREDENTIALS_PATH),
+            scopes=[DOCS_SCOPE],
+        )
+    except (OSError, ValueError, GoogleAuthError) as error:
+        raise AuthenticationError("Could not load saved Google credentials.") from error
     if credentials.expired:
         refresh = cast(Callable[[Request], None], cast(Any, credentials).refresh)
-        refresh(Request())
+        try:
+            refresh(Request())
+        except (OSError, ValueError, GoogleAuthError) as error:
+            raise AuthenticationError(
+                "Could not refresh Google credentials."
+            ) from error
         save_credentials(credentials)
     return credentials

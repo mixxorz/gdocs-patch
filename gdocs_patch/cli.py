@@ -8,6 +8,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import cast
 
+from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError  # pyright: ignore[reportMissingTypeStubs]
 
 from gdocs_patch.client import (
@@ -34,7 +35,7 @@ class InputError(Exception):
 def _read_json_object() -> dict[str, object]:
     try:
         value = json.load(sys.stdin)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         raise InputError("Input must contain one valid JSON object.") from None
     if not isinstance(value, dict):
         raise InputError("Input must be a JSON object.")
@@ -115,7 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 offset=offset,
                 limit=cast(int | None, limit),
             )
-        except (InputError, AuthenticationError, HttpError) as error:
+        except (InputError, AuthenticationError, GoogleAuthError, HttpError) as error:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         sys.stdout.write(output)
@@ -144,6 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             XHTMLParseError,
             UnsupportedTransformation,
             AuthenticationError,
+            GoogleAuthError,
             HttpError,
         ) as error:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
@@ -168,22 +170,39 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise InputError("Edit command input requires array field: edits.")
 
             edits: list[XhtmlEdit] = []
-            for input_edit_value in cast(list[object], input_edits):
+            for edit_index, input_edit_value in enumerate(
+                cast(list[object], input_edits)
+            ):
                 if not isinstance(input_edit_value, dict):
-                    raise InputError("Edit command edits must contain objects.")
+                    raise InputError(
+                        f"Edit command edits[{edit_index}] must be an object."
+                    )
                 input_edit = cast(dict[str, object], input_edit_value)
                 edit_fields = input_edit.keys()
                 if edit_fields != {"oldText", "newText"}:
                     raise InputError(
-                        "Edit command edits require exactly oldText and newText."
+                        f"Edit command edits[{edit_index}] requires exactly "
+                        "oldText and newText."
                     )
                 old_text = input_edit["oldText"]
                 new_text = input_edit["newText"]
                 if not isinstance(old_text, str) or not isinstance(new_text, str):
                     raise InputError(
-                        "Edit command oldText and newText must be strings."
+                        f"Edit command edits[{edit_index}].oldText and "
+                        f"edits[{edit_index}].newText must be strings."
                     )
                 edits.append(XhtmlEdit(old_text=old_text, new_text=new_text))
+
+            if not edits:
+                raise InputError(
+                    "Edit command input is invalid. edits must contain at least one "
+                    "replacement."
+                )
+            for edit_index, edit in enumerate(edits):
+                if not edit.old_text:
+                    raise InputError(
+                        f"edits[{edit_index}].oldText must not be empty in {doc_id}."
+                    )
 
             client = GoogleDocsClient(credentials=load_credentials())
             count = edit_document(client=client, doc_id=doc_id, edits=edits)
@@ -193,6 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             XHTMLParseError,
             UnsupportedTransformation,
             AuthenticationError,
+            GoogleAuthError,
             HttpError,
         ) as error:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
