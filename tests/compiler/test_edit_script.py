@@ -3,17 +3,21 @@ import pytest
 from gdocs_patch.compiler import (
     ApplyBulletRun,
     ApplyParagraphStyle,
+    ApplySectionStyle,
     ApplyTextStyle,
     BulletParagraph,
     BulletPreset,
     ContentStream,
     DeleteContent,
     DeleteParagraphBullets,
+    DeleteSectionBreak,
     EquationUnit,
+    InsertSectionBreak,
     InsertTable,
     InsertTableRow,
     InsertText,
     ParagraphBoundary,
+    SectionBreakUnit,
     TableCellUnit,
     TableRowUnit,
     TableUnit,
@@ -21,7 +25,14 @@ from gdocs_patch.compiler import (
     UnsupportedTransformation,
     generate_edit_script,
 )
-from gdocs_patch.models import UNSET, Bullet, ParagraphStyle, TextStyle
+from gdocs_patch.models import (
+    UNSET,
+    Bullet,
+    Dimension,
+    ParagraphStyle,
+    SectionStyle,
+    TextStyle,
+)
 
 
 def test_generate_edit_script_inserts_two_table_rows() -> None:
@@ -183,173 +194,44 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
     ]
 
 
-def test_generate_edit_script_inserts_text_and_table_between_existing_tables() -> None:
-    first_table = TableUnit(
-        table_key="table-1",
-        rows=[
-            TableRowUnit(
-                row_key="row-1",
-                cells=[
-                    TableCellUnit(
-                        cell_key="cell",
-                        content=ContentStream(
-                            items=[TextUnit(content="A"), ParagraphBoundary()]
-                        ),
-                    ),
-                    TableCellUnit(
-                        cell_key="cell",
-                        content=ContentStream(
-                            items=[TextUnit(content="B"), ParagraphBoundary()]
-                        ),
-                    ),
-                ],
-            ),
-            TableRowUnit(
-                row_key="row-2",
-                cells=[
-                    TableCellUnit(
-                        cell_key="cell",
-                        content=ContentStream(
-                            items=[TextUnit(content="C"), ParagraphBoundary()]
-                        ),
-                    ),
-                    TableCellUnit(
-                        cell_key="cell",
-                        content=ContentStream(
-                            items=[TextUnit(content="D"), ParagraphBoundary()]
-                        ),
-                    ),
-                ],
-            ),
-        ],
-    )
-    second_table = TableUnit(
+def test_generate_edit_script_inserts_table_between_existing_paragraphs() -> None:
+    initial_section = SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS"))
+    empty_table = TableUnit(
         rows=[
             TableRowUnit(
                 cells=[
-                    TableCellUnit(
-                        content=ContentStream(
-                            items=[
-                                TextUnit(content="E"),
-                                ParagraphBoundary(
-                                    bullet=BulletPreset(
-                                        preset="BULLET_DISC_CIRCLE_SQUARE",
-                                        nesting_level=0,
-                                    )
-                                ),
-                            ]
-                        ),
-                    ),
-                    TableCellUnit(
-                        content=ContentStream(
-                            items=[TextUnit(content="F"), ParagraphBoundary()]
-                        ),
-                    ),
-                ],
-            ),
-            TableRowUnit(
-                cells=[
-                    TableCellUnit(
-                        content=ContentStream(
-                            items=[TextUnit(content="G"), ParagraphBoundary()]
-                        ),
-                    ),
-                    TableCellUnit(
-                        content=ContentStream(
-                            items=[
-                                TextUnit(content="H"),
-                                ParagraphBoundary(
-                                    paragraph_style=ParagraphStyle(
-                                        named_style_type="NORMAL_TEXT",
-                                        alignment="CENTER",
-                                    )
-                                ),
-                            ]
-                        ),
-                    ),
-                ],
-            ),
-        ],
+                    TableCellUnit(content=ContentStream(items=[ParagraphBoundary()]))
+                ]
+            )
+        ]
     )
-    last_table = TableUnit(table_key="table-3", rows=first_table.rows)
     source = ContentStream(
         items=[
-            first_table,
+            initial_section,
             TextUnit(content="A"),
             ParagraphBoundary(),
-            last_table,
+            TextUnit(content="B"),
+            ParagraphBoundary(),
         ]
     )
     target = ContentStream(
         items=[
-            first_table,
+            initial_section,
             TextUnit(content="A"),
             ParagraphBoundary(),
-            TextUnit(content="X"),
+            empty_table,
+            TextUnit(content="B"),
             ParagraphBoundary(),
-            second_table,
-            last_table,
         ]
     )
 
-    script = generate_edit_script(source=source, target=target)
-
-    assert script.edits == [
-        InsertText(index=18, text="X\n"),
-        InsertTable(index=20, rows=2, columns=2),
-        InsertText(index=30, text="H"),
-        InsertText(index=28, text="G"),
-        InsertText(index=25, text="F"),
-        InsertText(index=23, text="E"),
-        ApplyParagraphStyle(
-            start_index=33,
-            end_index=35,
-            paragraph_style=ParagraphStyle(
-                named_style_type="NORMAL_TEXT",
-                alignment="CENTER",
-            ),
-            inside_table=True,
-        ),
-        ApplyBulletRun(
-            paragraphs=(
-                BulletParagraph(
-                    start_index=23,
-                    end_index=25,
-                    nesting_level=0,
-                ),
-            ),
-            preset="BULLET_DISC_CIRCLE_SQUARE",
-        ),
-        ApplyParagraphStyle(
-            start_index=18,
-            end_index=20,
-            paragraph_style=UNSET,
-        ),
-        ApplyTextStyle(
-            start_index=33,
-            end_index=34,
-            text_style=UNSET,
-        ),
-        ApplyTextStyle(
-            start_index=30,
-            end_index=31,
-            text_style=UNSET,
-        ),
-        ApplyTextStyle(
-            start_index=26,
-            end_index=27,
-            text_style=UNSET,
-        ),
-        ApplyTextStyle(
-            start_index=23,
-            end_index=24,
-            text_style=UNSET,
-        ),
-        ApplyTextStyle(
-            start_index=18,
-            end_index=20,
-            text_style=UNSET,
-        ),
+    assert generate_edit_script(source=source, target=target).edits == [
+        InsertTable(
+            index=3,
+            rows=1,
+            columns=1,
+            preceding_boundary="RETAINED",
+        )
     ]
 
 
@@ -656,3 +538,152 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
 
     with pytest.raises(UnsupportedTransformation, match="Equation"):
         generate_edit_script(source=source, target=target)
+
+
+def test_generate_edit_script_inserts_section_break_with_inserted_boundary() -> None:
+    source = ContentStream(
+        items=[
+            SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS")),
+            TextUnit(content="A"),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS")),
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            SectionBreakUnit(style=SectionStyle(section_type="NEXT_PAGE")),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    assert generate_edit_script(source=source, target=target).edits == [
+        InsertSectionBreak(
+            index=3,
+            section_type="NEXT_PAGE",
+            preceding_boundary="INSERTED",
+        )
+    ]
+
+
+def test_generate_edit_script_inserts_section_break_after_retained_boundary() -> None:
+    initial_section = SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS"))
+    source = ContentStream(
+        items=[
+            initial_section,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            initial_section,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS")),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    assert generate_edit_script(source=source, target=target).edits == [
+        InsertSectionBreak(
+            index=3,
+            section_type="CONTINUOUS",
+            preceding_boundary="RETAINED",
+        )
+    ]
+
+
+def test_generate_edit_script_deletes_section_break_after_retained_boundary() -> None:
+    initial_section = SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS"))
+    source = ContentStream(
+        items=[
+            initial_section,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS")),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            initial_section,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    assert generate_edit_script(source=source, target=target).edits == [
+        DeleteSectionBreak(index=3)
+    ]
+
+
+def test_generate_edit_script_applies_retained_section_style() -> None:
+    source_style = SectionStyle(
+        section_type="CONTINUOUS",
+        margin_left=Dimension(magnitude=72, unit="PT"),
+        default_header_id="source-header",
+    )
+    target_style = SectionStyle(
+        section_type="CONTINUOUS",
+        margin_left=Dimension(magnitude=90, unit="PT"),
+        default_header_id="target-header",
+    )
+
+    assert generate_edit_script(
+        source=ContentStream(items=[SectionBreakUnit(style=source_style)]),
+        target=ContentStream(items=[SectionBreakUnit(style=target_style)]),
+    ).edits == [
+        ApplySectionStyle(
+            start_index=0,
+            end_index=1,
+            section_style=target_style,
+        )
+    ]
+
+
+def test_generate_edit_script_rejects_retained_section_type_change() -> None:
+    with pytest.raises(UnsupportedTransformation):
+        generate_edit_script(
+            source=ContentStream(
+                items=[SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS"))]
+            ),
+            target=ContentStream(
+                items=[SectionBreakUnit(style=SectionStyle(section_type="NEXT_PAGE"))]
+            ),
+        )
+
+
+def test_generate_edit_script_rejects_clearing_concrete_section_style() -> None:
+    with pytest.raises(UnsupportedTransformation):
+        generate_edit_script(
+            source=ContentStream(
+                items=[
+                    SectionBreakUnit(
+                        style=SectionStyle(
+                            section_type="CONTINUOUS",
+                            margin_left=Dimension(magnitude=72, unit="PT"),
+                        )
+                    )
+                ]
+            ),
+            target=ContentStream(
+                items=[
+                    SectionBreakUnit(
+                        style=SectionStyle(
+                            section_type="CONTINUOUS",
+                            margin_left=UNSET,
+                        )
+                    )
+                ]
+            ),
+        )

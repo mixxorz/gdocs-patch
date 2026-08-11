@@ -2,6 +2,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
+from typing import Literal, cast
 
 from gdocs_patch.models import (
     UNSET,
@@ -9,6 +10,7 @@ from gdocs_patch.models import (
     Dimension,
     ListDefinition,
     ParagraphStyle,
+    SectionStyle,
     TableCellStyle,
     TableColumn,
     TextStyle,
@@ -71,6 +73,23 @@ def writable_paragraph_style(
     )
 
 
+def writable_section_style(style: SectionStyle) -> tuple[object, ...]:
+    return (
+        style.columns,
+        style.column_separator_style,
+        style.content_direction,
+        style.use_first_page_header_footer,
+        style.flip_page_orientation,
+        style.page_number_start,
+        style.margin_top,
+        style.margin_bottom,
+        style.margin_left,
+        style.margin_right,
+        style.margin_header,
+        style.margin_footer,
+    )
+
+
 def writable_table_cell_style(
     style: TableCellStyle | UnsetType,
 ) -> tuple[object, ...]:
@@ -104,6 +123,30 @@ class InsertTable(Edit):
     index: int
     rows: int
     columns: int
+    preceding_boundary: Literal["INSERTED", "RETAINED"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class InsertSectionBreak(Edit):
+    index: int
+    section_type: Literal[
+        "SECTION_TYPE_UNSPECIFIED",
+        "CONTINUOUS",
+        "NEXT_PAGE",
+    ]
+    preceding_boundary: Literal["INSERTED", "RETAINED"]
+
+
+@dataclass(frozen=True, kw_only=True)
+class DeleteSectionBreak(Edit):
+    index: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class ApplySectionStyle(Edit):
+    start_index: int
+    end_index: int
+    section_style: SectionStyle
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -245,6 +288,7 @@ def compile_inserted_table(
     table: TableUnit,
     source_table_start_index: int,
     target_table_start_index: int,
+    preceding_boundary: Literal["INSERTED", "RETAINED"],
     context: EditScriptContext,
 ) -> list[Edit]:
     table_context = replace(context, inside_table=True)
@@ -253,6 +297,7 @@ def compile_inserted_table(
             index=source_table_start_index,
             rows=len(table.rows),
             columns=table.column_count,
+            preceding_boundary=preceding_boundary,
         )
     ]
     # Google creates an inserted table as a blank grid, with one empty paragraph
@@ -737,7 +782,7 @@ def generate_edit_script(
     target_utf16_index = target.utf16_start_index
     for target_pos, target_unit in enumerate(target.items):
         target_utf16_index += target_unit.utf16_width
-        if isinstance(target_unit, SectionBreakUnit):
+        if isinstance(target_unit, (TableUnit, SectionBreakUnit)):
             paragraph_start_utf16_index = target_utf16_index
         elif isinstance(target_unit, ParagraphBoundary):
             target_paragraph_utf16_range_by_target_pos[target_pos] = (
@@ -819,6 +864,7 @@ def generate_edit_script(
     # The loop below inspects the units covered by each opcode. Most equal units
     # need no content edit. Tables are the exception because their outer unit can
     # match while rows, cells, or cell content still need to change.
+    inserted_structural_boundary_positions: set[int] = set()
     for opcode in reversed(opcodes):
         tag, source_start_pos, source_end_pos, target_start_pos, target_end_pos = opcode
 
@@ -857,12 +903,28 @@ def generate_edit_script(
         # target range and create whatever units it contains.
         insertion_utf16_index = source.utf16_index(source_start_pos)
         if tag in {"delete", "replace"}:
-            edits.append(
-                DeleteContent(
-                    start_index=insertion_utf16_index,
-                    end_index=source.utf16_index(source_end_pos),
+            source_range = source.items[source_start_pos:source_end_pos]
+            if any(isinstance(unit, ParagraphBoundary) for unit in source_range):
+                edits.append(
+                    DeleteContent(
+                        start_index=insertion_utf16_index,
+                        end_index=source.utf16_index(source_end_pos),
+                    )
                 )
-            )
+            elif source_range and all(
+                isinstance(unit, SectionBreakUnit) for unit in source_range
+            ):
+                for source_pos in range(source_end_pos - 1, source_start_pos - 1, -1):
+                    edits.append(
+                        DeleteSectionBreak(index=source.utf16_index(source_pos))
+                    )
+            else:
+                edits.append(
+                    DeleteContent(
+                        start_index=insertion_utf16_index,
+                        end_index=source.utf16_index(source_end_pos),
+                    )
+                )
 
         # New content
         # -----------
@@ -874,6 +936,20 @@ def generate_edit_script(
         target_pos = target_start_pos
         while target_pos < target_end_pos:
             target_unit = target.items[target_pos]
+            preceding_boundary: Literal["INSERTED", "RETAINED"] = "RETAINED"
+            if (
+                isinstance(target_unit, ParagraphBoundary)
+                and target_pos + 1 < target_end_pos
+                and isinstance(
+                    target.items[target_pos + 1],
+                    (TableUnit, SectionBreakUnit),
+                )
+            ):
+                preceding_boundary = "INSERTED"
+                inserted_structural_boundary_positions.add(target_pos)
+                target_pos += 1
+                target_unit = target.items[target_pos]
+
             if is_insert_text_unit(target_unit):
                 text_start_pos = target_pos
                 target_pos += 1
@@ -913,7 +989,34 @@ def generate_edit_script(
                             insertion_utf16_index + table_utf16_offset
                         ),
                         target_table_start_index=target.utf16_index(target_pos),
+                        preceding_boundary=preceding_boundary,
                         context=context,
+                    )
+                )
+                target_pos += 1
+                continue
+
+            if isinstance(target_unit, SectionBreakUnit):
+                section_type = target_unit.style.section_type
+                if isinstance(section_type, UnsetType):
+                    raise UnsupportedTransformation(
+                        "cannot insert a section break with an unset section type"
+                    )
+                section_break_utf16_offset = (
+                    target.utf16_index(target_pos) - target_range_start_utf16_index
+                )
+                edits.append(
+                    InsertSectionBreak(
+                        index=(insertion_utf16_index + section_break_utf16_offset),
+                        section_type=cast(
+                            Literal[
+                                "SECTION_TYPE_UNSPECIFIED",
+                                "CONTINUOUS",
+                                "NEXT_PAGE",
+                            ],
+                            section_type,
+                        ),
+                        preceding_boundary=preceding_boundary,
                     )
                 )
                 target_pos += 1
@@ -949,6 +1052,9 @@ def generate_edit_script(
                 source_units_by_target_pos[target_start_pos + range_offset] = (
                     source.items[source_start_pos + range_offset]
                 )
+
+    for target_pos in inserted_structural_boundary_positions:
+        source_units_by_target_pos[target_pos] = ParagraphBoundary()
 
     # Bullet formatting
     # -----------------
@@ -1188,9 +1294,54 @@ def generate_edit_script(
         unit_end_utf16_index = target.utf16_index(target_pos + 1)
 
         match target_unit:
+            # Section formatting
+            # ------------------
+            case SectionBreakUnit() as target_section_unit:
+                source_section_unit = (
+                    source_unit if isinstance(source_unit, SectionBreakUnit) else None
+                )
+                if (
+                    source_section_unit is not None
+                    and source_section_unit.style.section_type
+                    != target_section_unit.style.section_type
+                ):
+                    raise UnsupportedTransformation(
+                        "changing a retained section break type is not supported"
+                    )
+                target_writable_style = writable_section_style(
+                    target_section_unit.style
+                )
+                if source_section_unit is not None:
+                    source_writable_style = writable_section_style(
+                        source_section_unit.style
+                    )
+                    if any(
+                        source_value is not UNSET and target_value is UNSET
+                        for source_value, target_value in zip(
+                            source_writable_style,
+                            target_writable_style,
+                        )
+                    ):
+                        raise UnsupportedTransformation(
+                            "clearing a concrete section style is not supported"
+                        )
+                else:
+                    source_writable_style = (UNSET,) * len(target_writable_style)
+
+                if source_writable_style != target_writable_style and any(
+                    value is not UNSET for value in target_writable_style
+                ):
+                    style_edits.append(
+                        ApplySectionStyle(
+                            start_index=unit_start_utf16_index,
+                            end_index=unit_end_utf16_index,
+                            section_style=target_section_unit.style,
+                        )
+                    )
+
             # Opaque and container units
             # --------------------------
-            case EquationUnit() | SectionBreakUnit() | TableUnit():
+            case EquationUnit() | TableUnit():
                 pass
 
             # Text styles
@@ -1293,6 +1444,7 @@ def generate_edit_script(
         ApplyBulletRun,
         DeleteParagraphBullets,
         ApplyParagraphStyle,
+        ApplySectionStyle,
         ApplyTableColumnProperties,
         ApplyTableRowStyle,
         ApplyTableCellStyle,

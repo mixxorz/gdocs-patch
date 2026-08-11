@@ -259,7 +259,12 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
 def test_lowers_all_table_edits() -> None:
     edit_script = EditScript(
         edits=[
-            InsertTable(index=10, rows=2, columns=3),
+            InsertTable(
+                index=10,
+                rows=2,
+                columns=3,
+                preceding_boundary="RETAINED",
+            ),
             InsertTableRow(
                 table_start_index=10,
                 row_index=0,
