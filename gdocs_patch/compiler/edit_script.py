@@ -904,16 +904,12 @@ def generate_edit_script(
         insertion_utf16_index = source.utf16_index(source_start_pos)
         if tag in {"delete", "replace"}:
             source_range = source.items[source_start_pos:source_end_pos]
-            if any(isinstance(unit, ParagraphBoundary) for unit in source_range):
-                edits.append(
-                    DeleteContent(
-                        start_index=insertion_utf16_index,
-                        end_index=source.utf16_index(source_end_pos),
-                    )
-                )
-            elif source_range and all(
-                isinstance(unit, SectionBreakUnit) for unit in source_range
-            ):
+            # Most changed ranges can go straight to deleteContentRange. A
+            # SectionBreak cannot be deleted alone: Google requires its preceding
+            # paragraph boundary to be removed with it. Keep that operation
+            # semantic so lowering can insert temporary boundaries on both sides
+            # and preserve the neighboring paragraph styles and bullets.
+            if all(isinstance(unit, SectionBreakUnit) for unit in source_range):
                 for source_pos in range(source_end_pos - 1, source_start_pos - 1, -1):
                     edits.append(
                         DeleteSectionBreak(index=source.utf16_index(source_pos))
