@@ -49,7 +49,7 @@ PARAGRAPH_STYLE_FIELDS = (
     "borderBottom,borderLeft,borderRight,shading"
 )
 TABLE_COLUMN_FIELDS = "widthType,width"
-TABLE_ROW_FIELDS = "minRowHeight,preventOverflow,tableHeader"
+TABLE_ROW_FIELDS = "minRowHeight,preventOverflow"
 TABLE_CELL_STYLE_FIELDS = (
     "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,"
     "paddingRight,paddingTop,paddingBottom,contentAlignment"
@@ -319,6 +319,14 @@ def lower_edit_script(
                     }
                 )
             case ApplyParagraphStyle():
+                paragraph_style_fields = PARAGRAPH_STYLE_FIELDS
+                if edit.inside_table:
+                    # Google rejects pageBreakBefore whenever the range contains
+                    # a table paragraph, even when the request is only clearing it.
+                    paragraph_style_fields = paragraph_style_fields.replace(
+                        ",pageBreakBefore",
+                        "",
+                    )
                 requests.append(
                     {
                         "updateParagraphStyle": {
@@ -330,7 +338,7 @@ def lower_edit_script(
                             "paragraphStyle": serialize_paragraph_style(
                                 edit.paragraph_style
                             ),
-                            "fields": PARAGRAPH_STYLE_FIELDS,
+                            "fields": paragraph_style_fields,
                         }
                     }
                 )
@@ -529,8 +537,6 @@ def lower_edit_script(
                     )
                 if edit.prevent_overflow is not UNSET:
                     table_row_style["preventOverflow"] = edit.prevent_overflow
-                if edit.is_header is not UNSET:
-                    table_row_style["tableHeader"] = edit.is_header
                 requests.append(
                     {
                         "updateTableRowStyle": {

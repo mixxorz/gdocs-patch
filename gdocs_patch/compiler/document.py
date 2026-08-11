@@ -29,7 +29,11 @@ from .content_stream import (
     TableUnit,
     TextUnit,
 )
-from .edit_script import UnsupportedTransformation, generate_edit_script
+from .edit_script import (
+    EditScriptContext,
+    UnsupportedTransformation,
+    generate_edit_script,
+)
 from .lowering import lower_edit_script
 
 
@@ -153,8 +157,16 @@ def normalize_document(document: Document) -> DocumentContent:
             raise ValueError("tab body must be loaded")
         content = tab.content
         list_definitions = content.lists if isinstance(content.lists, dict) else {}
+        normalized_body = normalize_tree(body, list_definitions=list_definitions)
+        # Use utf16_start_index=1 while ContentStream has no SectionBreak unit.
+        # Once it does, the leading SectionBreak's width of 1 will provide the
+        # body stream's origin directly.
+        normalized_body = ContentStream(
+            items=normalized_body.items,
+            utf16_start_index=1,
+        )
         tabs[tab.tab_id] = TabContent(
-            body=normalize_tree(body, list_definitions=list_definitions),
+            body=normalized_body,
             headers=(
                 {
                     segment_id: normalize_tree(
@@ -201,6 +213,9 @@ def compile_document(
 ) -> dict[str, object]:
     source_content = normalize_document(source)
     target_content = normalize_document(target)
+    context = EditScriptContext(
+        allow_bullet_normalization=allow_bullet_normalization,
+    )
 
     if source_content.tabs.keys() != target_content.tabs.keys():
         raise UnsupportedTransformation("tab creation and deletion are not supported")
@@ -217,14 +232,10 @@ def compile_document(
                 "segment creation and deletion are not supported"
             )
 
-        # Use start_index=1 while ContentStream has no SectionBreak unit.
-        # Once it does, the leading SectionBreak's width of 1 will account for
-        # this offset and start_index should return to 0.
         body_script = generate_edit_script(
             source=source_tab.body,
             target=target_tab.body,
-            start_index=1,
-            allow_bullet_normalization=allow_bullet_normalization,
+            context=context,
         )
         requests.extend(
             lower_edit_script(
@@ -242,7 +253,7 @@ def compile_document(
                 segment_script = generate_edit_script(
                     source=source_segments[segment_id],
                     target=target_segment,
-                    allow_bullet_normalization=allow_bullet_normalization,
+                    context=context,
                 )
                 requests.extend(
                     lower_edit_script(

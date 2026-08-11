@@ -84,6 +84,7 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                 start_index=12,
                 end_index=13,
                 paragraph_style=UNSET,
+                inside_table=True,
             ),
             ApplyBulletRun(
                 paragraphs=(
@@ -212,8 +213,7 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
                     "namedStyleType,alignment,direction,lineSpacing,spacingMode,"
                     "spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,"
                     "keepLinesTogether,keepWithNext,avoidWidowAndOrphan,"
-                    "pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,"
-                    "borderRight,shading"
+                    "borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading"
                 ),
             }
         },
@@ -306,7 +306,7 @@ def test_lowers_all_table_edits() -> None:
                 row_index=0,
                 min_height=Dimension(magnitude=24, unit="PT"),
                 prevent_overflow=True,
-                is_header=False,
+                is_header=UNSET,
             ),
             ApplyTableCellStyle(
                 table_start_index=10,
@@ -475,9 +475,8 @@ def test_lowers_all_table_edits() -> None:
                 "tableRowStyle": {
                     "minRowHeight": {"magnitude": 24, "unit": "PT"},
                     "preventOverflow": True,
-                    "tableHeader": False,
                 },
-                "fields": "minRowHeight,preventOverflow,tableHeader",
+                "fields": "minRowHeight,preventOverflow",
             }
         },
         {

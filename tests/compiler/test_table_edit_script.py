@@ -1,9 +1,11 @@
 from gdocs_patch.compiler import (
+    ApplyParagraphStyle,
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
     ApplyTextStyle,
     ContentStream,
+    DeleteContent,
     DeleteTableColumn,
     DeleteTableRow,
     InsertTableColumn,
@@ -127,7 +129,7 @@ def test_generate_edit_script_inserts_a_table_column() -> None:
             column_index=0,
             insert_right=True,
         ),
-        InsertText(index=16, text="E"),
+        InsertText(index=15, text="E"),
         InsertText(index=6, text="B"),
         ApplyTextStyle(start_index=16, end_index=17, text_style=UNSET),
         ApplyTextStyle(start_index=6, end_index=7, text_style=UNSET),
@@ -351,6 +353,10 @@ def test_generate_edit_script_deletes_a_table_column() -> None:
 def test_generate_edit_script_merges_table_cells() -> None:
     source_table = TableUnit(
         table_key="table",
+        column_properties=[
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+        ],
         rows=[
             TableRowUnit(
                 row_key="row-1",
@@ -390,6 +396,10 @@ def test_generate_edit_script_merges_table_cells() -> None:
     )
     target_table = TableUnit(
         table_key="table",
+        column_properties=[
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+            TableColumn(width_type="EVENLY_DISTRIBUTED"),
+        ],
         rows=[
             TableRowUnit(
                 row_key="row-1",
@@ -405,7 +415,11 @@ def test_generate_edit_script_merges_table_cells() -> None:
                                 ParagraphBoundary(),
                             ]
                         ),
-                    )
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
                 ],
             ),
             TableRowUnit(
@@ -462,7 +476,11 @@ def test_generate_edit_script_unmerges_table_cells() -> None:
                                 ParagraphBoundary(),
                             ]
                         ),
-                    )
+                    ),
+                    TableCellUnit(
+                        cell_key="b",
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    ),
                 ],
             ),
             TableRowUnit(
@@ -502,6 +520,7 @@ def test_generate_edit_script_unmerges_table_cells() -> None:
                         ),
                     ),
                     TableCellUnit(
+                        cell_key="b",
                         content=ContentStream(items=[ParagraphBoundary()]),
                     ),
                 ],
@@ -685,7 +704,7 @@ def test_generate_edit_script_applies_changed_table_row_style() -> None:
                 row_key="row-2",
                 min_height=target_min_height,
                 prevent_overflow=True,
-                is_header=False,
+                is_header=UNSET,
                 cells=[
                     TableCellUnit(
                         cell_key="c",
@@ -711,12 +730,12 @@ def test_generate_edit_script_applies_changed_table_row_style() -> None:
             row_index=1,
             min_height=target_min_height,
             prevent_overflow=True,
-            is_header=False,
+            is_header=UNSET,
         )
     ]
 
 
-def test_generate_edit_script_applies_changed_table_cell_style() -> None:
+def test_generate_edit_script_updates_table_cell_content_and_style() -> None:
     target_cell_style = TableCellStyle(
         background_color=Color(red=0.25, green=0.5, blue=0.75),
         padding_left=Dimension(magnitude=12, unit="PT"),
@@ -747,7 +766,14 @@ def test_generate_edit_script_applies_changed_table_cell_style() -> None:
                     ),
                     TableCellUnit(
                         cell_key="d",
-                        content=ContentStream(items=[ParagraphBoundary()]),
+                        content=ContentStream(
+                            items=[
+                                TextUnit(content="A"),
+                                ParagraphBoundary(),
+                                TextUnit(content="B"),
+                                ParagraphBoundary(),
+                            ]
+                        ),
                     ),
                 ],
             ),
@@ -779,7 +805,9 @@ def test_generate_edit_script_applies_changed_table_cell_style() -> None:
                     TableCellUnit(
                         cell_key="d",
                         style=target_cell_style,
-                        content=ContentStream(items=[ParagraphBoundary()]),
+                        content=ContentStream(
+                            items=[TextUnit(content="A"), ParagraphBoundary()]
+                        ),
                     ),
                 ],
             ),
@@ -792,6 +820,13 @@ def test_generate_edit_script_applies_changed_table_cell_style() -> None:
     )
 
     assert script.edits == [
+        DeleteContent(start_index=11, end_index=13),
+        ApplyParagraphStyle(
+            start_index=10,
+            end_index=12,
+            paragraph_style=UNSET,
+            inside_table=True,
+        ),
         ApplyTableCellStyle(
             table_start_index=0,
             row_index=1,
@@ -799,5 +834,5 @@ def test_generate_edit_script_applies_changed_table_cell_style() -> None:
             row_span=1,
             column_span=1,
             cell_style=target_cell_style,
-        )
+        ),
     ]

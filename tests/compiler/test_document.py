@@ -630,10 +630,26 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                                                     row_span=2,
                                                     column_span=2,
                                                 ),
-                                            )
+                                            ),
+                                            TableCell(
+                                                cell_key="unmerge-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
                                         ],
                                     ),
-                                    TableRow(row_key="unmerge-row-b", cells=[]),
+                                    TableRow(
+                                        row_key="unmerge-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="unmerge-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="unmerge-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
                                 ],
                             ),
                         ]
@@ -924,10 +940,26 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                                                     row_span=2,
                                                     column_span=2,
                                                 ),
-                                            )
+                                            ),
+                                            TableCell(
+                                                cell_key="merge-a-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
                                         ],
                                     ),
-                                    TableRow(row_key="merge-row-b", cells=[]),
+                                    TableRow(
+                                        row_key="merge-row-b",
+                                        cells=[
+                                            TableCell(
+                                                cell_key="merge-b-a",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                            TableCell(
+                                                cell_key="merge-b-b",
+                                                content=[Paragraph(elements=[])],
+                                            ),
+                                        ],
+                                    ),
                                 ],
                             ),
                             Table(
@@ -1010,25 +1042,25 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "insertText": {
-                    "location": {"index": 50, "tabId": "tab-stress"},
+                    "location": {"index": 46, "tabId": "tab-stress"},
                     "text": "I",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 47, "tabId": "tab-stress"},
+                    "location": {"index": 44, "tabId": "tab-stress"},
                     "text": "H",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 44, "tabId": "tab-stress"},
+                    "location": {"index": 42, "tabId": "tab-stress"},
                     "text": "G",
                 }
             },
             {
                 "insertText": {
-                    "location": {"index": 40, "tabId": "tab-stress"},
+                    "location": {"index": 39, "tabId": "tab-stress"},
                     "text": "F",
                 }
             },
@@ -1036,71 +1068,6 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "insertText": {
                     "location": {"index": 30, "tabId": "tab-stress"},
                     "text": "C",
-                }
-            },
-            {
-                "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
-                    "columnIndices": [0],
-                    "tableColumnProperties": {
-                        "widthType": "FIXED_WIDTH",
-                        "width": {"magnitude": 10, "unit": "PT"},
-                    },
-                    "fields": "widthType,width",
-                }
-            },
-            {
-                "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
-                    "columnIndices": [1],
-                    "tableColumnProperties": {
-                        "widthType": "FIXED_WIDTH",
-                        "width": {"magnitude": 20, "unit": "PT"},
-                    },
-                    "fields": "widthType,width",
-                }
-            },
-            {
-                "updateTableColumnProperties": {
-                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
-                    "columnIndices": [2],
-                    "tableColumnProperties": {
-                        "widthType": "FIXED_WIDTH",
-                        "width": {"magnitude": 30, "unit": "PT"},
-                    },
-                    "fields": "widthType,width",
-                }
-            },
-            {
-                "updateTableRowStyle": {
-                    "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
-                    "rowIndices": [0],
-                    "tableRowStyle": {
-                        "minRowHeight": {"magnitude": 5, "unit": "PT"},
-                        "preventOverflow": True,
-                    },
-                    "fields": "minRowHeight,preventOverflow,tableHeader",
-                }
-            },
-            {
-                "updateTableCellStyle": {
-                    "tableRange": {
-                        "tableCellLocation": {
-                            "tableStartLocation": {"index": 21, "tabId": "tab-stress"},
-                            "rowIndex": 0,
-                            "columnIndex": 0,
-                        },
-                        "rowSpan": 1,
-                        "columnSpan": 1,
-                    },
-                    "tableCellStyle": {
-                        "backgroundColor": {
-                            "color": {
-                                "rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.3}
-                            }
-                        }
-                    },
-                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
                 }
             },
             {
@@ -1166,6 +1133,71 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 }
             },
             {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 33, "tabId": "tab-stress"},
+                    "columnIndices": [0],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 10, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 33, "tabId": "tab-stress"},
+                    "columnIndices": [1],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 20, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableColumnProperties": {
+                    "tableStartLocation": {"index": 33, "tabId": "tab-stress"},
+                    "columnIndices": [2],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": {"magnitude": 30, "unit": "PT"},
+                    },
+                    "fields": "widthType,width",
+                }
+            },
+            {
+                "updateTableRowStyle": {
+                    "tableStartLocation": {"index": 33, "tabId": "tab-stress"},
+                    "rowIndices": [0],
+                    "tableRowStyle": {
+                        "minRowHeight": {"magnitude": 5, "unit": "PT"},
+                        "preventOverflow": True,
+                    },
+                    "fields": "minRowHeight,preventOverflow",
+                }
+            },
+            {
+                "updateTableCellStyle": {
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": {"index": 33, "tabId": "tab-stress"},
+                            "rowIndex": 0,
+                            "columnIndex": 0,
+                        },
+                        "rowSpan": 1,
+                        "columnSpan": 1,
+                    },
+                    "tableCellStyle": {
+                        "backgroundColor": {
+                            "color": {
+                                "rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.3}
+                            }
+                        }
+                    },
+                    "fields": "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment",
+                }
+            },
+            {
                 "deleteParagraphBullets": {
                     "range": {"startIndex": 14, "endIndex": 16, "tabId": "tab-stress"}
                 }
@@ -1211,35 +1243,35 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 50, "endIndex": 51, "tabId": "tab-stress"},
+                    "range": {"startIndex": 62, "endIndex": 63, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 47, "endIndex": 48, "tabId": "tab-stress"},
+                    "range": {"startIndex": 59, "endIndex": 60, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 44, "endIndex": 45, "tabId": "tab-stress"},
+                    "range": {"startIndex": 56, "endIndex": 57, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 40, "endIndex": 41, "tabId": "tab-stress"},
+                    "range": {"startIndex": 52, "endIndex": 53, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },
             {
                 "updateTextStyle": {
-                    "range": {"startIndex": 30, "endIndex": 31, "tabId": "tab-stress"},
+                    "range": {"startIndex": 42, "endIndex": 43, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }

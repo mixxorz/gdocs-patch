@@ -132,7 +132,14 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
                             ),
                             TableCellUnit(
                                 content=ContentStream(
-                                    items=[TextUnit(content="H"), ParagraphBoundary()]
+                                    items=[
+                                        TextUnit(content="H"),
+                                        ParagraphBoundary(
+                                            paragraph_style=ParagraphStyle(
+                                                alignment="CENTER"
+                                            )
+                                        ),
+                                    ]
                                 ),
                             ),
                         ],
@@ -159,10 +166,16 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
         ),
         # Populate cells from right to left so earlier insertions cannot shift
         # the indices of cells that have not been populated yet.
-        InsertText(index=27, text="H"),
-        InsertText(index=24, text="G"),
-        InsertText(index=20, text="F"),
+        InsertText(index=24, text="H"),
+        InsertText(index=22, text="G"),
+        InsertText(index=19, text="F"),
         InsertText(index=17, text="E"),
+        ApplyParagraphStyle(
+            start_index=27,
+            end_index=29,
+            paragraph_style=ParagraphStyle(alignment="CENTER"),
+            inside_table=True,
+        ),
         ApplyTextStyle(start_index=27, end_index=28, text_style=UNSET),
         ApplyTextStyle(start_index=24, end_index=25, text_style=UNSET),
         ApplyTextStyle(start_index=20, end_index=21, text_style=UNSET),
@@ -243,7 +256,15 @@ def test_generate_edit_script_inserts_text_and_table_between_existing_tables() -
                     ),
                     TableCellUnit(
                         content=ContentStream(
-                            items=[TextUnit(content="H"), ParagraphBoundary()]
+                            items=[
+                                TextUnit(content="H"),
+                                ParagraphBoundary(
+                                    paragraph_style=ParagraphStyle(
+                                        named_style_type="NORMAL_TEXT",
+                                        alignment="CENTER",
+                                    )
+                                ),
+                            ]
                         ),
                     ),
                 ],
@@ -276,10 +297,19 @@ def test_generate_edit_script_inserts_text_and_table_between_existing_tables() -
     assert script.edits == [
         InsertText(index=18, text="X\n"),
         InsertTable(index=20, rows=2, columns=2),
-        InsertText(index=33, text="H"),
-        InsertText(index=30, text="G"),
-        InsertText(index=26, text="F"),
+        InsertText(index=30, text="H"),
+        InsertText(index=28, text="G"),
+        InsertText(index=25, text="F"),
         InsertText(index=23, text="E"),
+        ApplyParagraphStyle(
+            start_index=33,
+            end_index=35,
+            paragraph_style=ParagraphStyle(
+                named_style_type="NORMAL_TEXT",
+                alignment="CENTER",
+            ),
+            inside_table=True,
+        ),
         ApplyBulletRun(
             paragraphs=(
                 BulletParagraph(

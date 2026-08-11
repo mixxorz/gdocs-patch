@@ -1,6 +1,6 @@
 from collections import deque
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 
 from gdocs_patch.models import (
@@ -31,6 +31,15 @@ from .content_stream import (
 
 class UnsupportedTransformation(Exception):
     pass
+
+
+@dataclass(frozen=True, kw_only=True)
+class EditScriptContext:
+    allow_bullet_normalization: bool = False
+    inside_table: bool = False
+
+
+DEFAULT_EDIT_SCRIPT_CONTEXT = EditScriptContext()
 
 
 def writable_paragraph_style(
@@ -181,6 +190,7 @@ class ApplyParagraphStyle(Edit):
     start_index: int
     end_index: int
     paragraph_style: ParagraphStyle | UnsetType
+    inside_table: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -232,40 +242,70 @@ def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[O
 def compile_inserted_table(
     *,
     table: TableUnit,
-    index: int,
-    allow_bullet_normalization: bool,
+    source_table_start_index: int,
+    target_table_start_index: int,
+    context: EditScriptContext,
 ) -> list[Edit]:
+    table_context = replace(context, inside_table=True)
     edits: list[Edit] = [
         InsertTable(
-            index=index,
+            index=source_table_start_index,
             rows=len(table.rows),
             columns=table.column_count,
         )
     ]
+    # Google creates an inserted table as a blank grid, with one empty paragraph
+    # in every cell. Since the cell content requests run against that initial
+    # grid, use an equivalent blank table to calculate their insertion indices.
+    blank_table_unit = TableUnit(
+        rows=[
+            TableRowUnit(
+                cells=[
+                    TableCellUnit(
+                        content=ContentStream(items=[ParagraphBoundary()]),
+                    )
+                    for _column_index in range(table.column_count)
+                ]
+            )
+            for _row in table.rows
+        ]
+    )
     cells = [
         (row_index, cell_index, cell)
         for row_index, row in enumerate(table.rows)
         for cell_index, cell in enumerate(row.cells)
     ]
     for row_index, cell_index, cell in reversed(cells):
-        edits.extend(
-            generate_edit_script(
-                source=ContentStream(items=[ParagraphBoundary()]),
-                target=cell.content,
-                start_index=index
-                + table.cell_content_offset(
-                    row_index=row_index,
-                    cell_index=cell_index,
+        cell_script = generate_edit_script(
+            source=ContentStream(
+                items=[ParagraphBoundary()],
+                utf16_start_index=(
+                    source_table_start_index
+                    + blank_table_unit.cell_content_offset(
+                        row_index=row_index,
+                        cell_index=cell_index,
+                    )
                 ),
-                allow_bullet_normalization=allow_bullet_normalization,
-            ).edits
+            ),
+            target=ContentStream(
+                items=cell.content.items,
+                utf16_start_index=(
+                    target_table_start_index
+                    + table.cell_content_offset(
+                        row_index=row_index,
+                        cell_index=cell_index,
+                    )
+                ),
+            ),
+            context=table_context,
         )
+        edits.extend(cell_script.edits)
 
     if isinstance(table.column_properties, list):
         for column_index, column_properties in enumerate(table.column_properties):
             edits.append(
                 ApplyTableColumnProperties(
-                    table_start_index=index,
+                    table_start_index=target_table_start_index,
                     column_index=column_index,
                     column_properties=column_properties,
                 )
@@ -278,7 +318,7 @@ def compile_inserted_table(
         ):
             edits.append(
                 ApplyTableRowStyle(
-                    table_start_index=index,
+                    table_start_index=target_table_start_index,
                     row_index=row_index,
                     min_height=row.min_height,
                     prevent_overflow=row.prevent_overflow,
@@ -289,12 +329,9 @@ def compile_inserted_table(
             if cell.style is not UNSET:
                 edits.append(
                     ApplyTableCellStyle(
-                        table_start_index=index,
+                        table_start_index=target_table_start_index,
                         row_index=row_index,
-                        column_index=sum(
-                            previous_cell.column_span
-                            for previous_cell in row.cells[:cell_index]
-                        ),
+                        column_index=cell_index,
                         row_span=cell.row_span,
                         column_span=cell.column_span,
                         cell_style=cell.style,
@@ -307,8 +344,9 @@ def generate_table_edits(
     *,
     source: TableUnit,
     target: TableUnit,
-    table_start_index: int,
-    allow_bullet_normalization: bool,
+    source_table_start_index: int,
+    target_table_start_index: int,
+    context: EditScriptContext,
 ) -> list[Edit]:
     """Generate the edits needed to update one retained table.
 
@@ -316,6 +354,8 @@ def generate_table_edits(
     target. We first change the table's structure, then update cell content, and
     finally apply table formatting after the target shape is in place.
     """
+
+    table_context = replace(context, inside_table=True)
 
     # Match rows
     # ----------
@@ -361,7 +401,7 @@ def generate_table_edits(
         for row_index in new_row_indices:
             edits.append(
                 InsertTableRow(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=max(0, row_index - 1),
                     column_index=0,
                     insert_below=row_index > 0,
@@ -371,7 +411,7 @@ def generate_table_edits(
         for row_index, _row in reversed(available_source_rows):
             edits.append(
                 DeleteTableRow(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=row_index,
                     column_index=0,
                 )
@@ -431,7 +471,7 @@ def generate_table_edits(
         ]:
             edits.append(
                 InsertTableColumn(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=0,
                     column_index=max(0, column_index - 1),
                     insert_right=column_index > 0,
@@ -441,7 +481,7 @@ def generate_table_edits(
         for column_index in reversed(deleted_cell_indices.get(0, [])):
             edits.append(
                 DeleteTableColumn(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=0,
                     column_index=column_index,
                 )
@@ -461,21 +501,25 @@ def generate_table_edits(
         ):
             edits.append(
                 MergeTableCells(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=row_index,
                     column_index=cell_index,
                     row_span=target_cell.row_span,
                     column_span=target_cell.column_span,
                 )
             )
-            merged_target_cell_ids.add(id(target_cell))
+            for merged_row in target.rows[row_index : row_index + target_cell.row_span]:
+                for merged_cell in merged_row.cells[
+                    cell_index : cell_index + target_cell.column_span
+                ]:
+                    merged_target_cell_ids.add(id(merged_cell))
         elif (
             source_cell.row_span > target_cell.row_span
             or source_cell.column_span > target_cell.column_span
         ):
             edits.append(
                 UnmergeTableCells(
-                    table_start_index=table_start_index,
+                    table_start_index=source_table_start_index,
                     row_index=row_index,
                     column_index=cell_index,
                     row_span=source_cell.row_span,
@@ -483,46 +527,86 @@ def generate_table_edits(
                 )
             )
 
-    # Populate new cells
-    # ------------------
-    # Every new Google cell starts with one empty paragraph. Treat that paragraph
-    # as the source and run the normal content compiler so text, bullets, and
-    # styles are handled exactly as they are elsewhere. Work right to left
-    # because inserting content changes the indices of cells that follow it.
-    for row_index, cell_index, cell in reversed(new_cells):
-        edits.extend(
-            generate_edit_script(
-                source=ContentStream(items=[ParagraphBoundary()]),
-                target=cell.content,
-                start_index=table_start_index
+    # Locate cells after the structural edits
+    # ----------------------------------------
+    # Row, column, merge, and unmerge requests run before any cell content is
+    # changed. Build the table shape that those requests leave behind so the
+    # content edits use the indices that exist when they actually run. Retained
+    # cells still contain their source content, while newly created cells contain
+    # the one empty paragraph Google gives them.
+    source_cells_by_target = {
+        (row_index, cell_index): source_cell
+        for row_index, cell_index, source_cell, _target_cell in matched_cells
+    }
+    empty_cell_content = ContentStream(items=[ParagraphBoundary()])
+    table_before_content_edits = TableUnit(
+        rows=[
+            TableRowUnit(
+                cells=[
+                    TableCellUnit(
+                        content=(
+                            source_cells_by_target[(row_index, cell_index)].content
+                            if (row_index, cell_index) in source_cells_by_target
+                            else empty_cell_content
+                        ),
+                        row_span=target_cell.row_span,
+                        column_span=target_cell.column_span,
+                    )
+                    for cell_index, target_cell in enumerate(target_row.cells)
+                ]
+            )
+            for row_index, target_row in enumerate(target.rows)
+        ]
+    )
+
+    # Update cell content
+    # -------------------
+    # Every new Google cell starts with one empty paragraph, while retained cells
+    # still contain their source content. Run both kinds through the normal
+    # content compiler, working from right to left so an edit cannot move a cell
+    # that we have not processed yet.
+    cell_content_changes = [
+        (row_index, cell_index, empty_cell_content, target_cell.content)
+        for row_index, cell_index, target_cell in new_cells
+    ]
+    cell_content_changes.extend(
+        (row_index, cell_index, source_cell.content, target_cell.content)
+        for row_index, cell_index, source_cell, target_cell in matched_cells
+        if id(target_cell) not in merged_target_cell_ids
+    )
+    cell_content_changes.sort(
+        key=lambda change: (change[0], change[1]),
+        reverse=True,
+    )
+
+    for row_index, cell_index, source_content, target_content in cell_content_changes:
+        source_content = ContentStream(
+            items=source_content.items,
+            utf16_start_index=(
+                source_table_start_index
+                + table_before_content_edits.cell_content_offset(
+                    row_index=row_index,
+                    cell_index=cell_index,
+                )
+            ),
+        )
+        target_content = ContentStream(
+            items=target_content.items,
+            utf16_start_index=(
+                target_table_start_index
                 + target.cell_content_offset(
                     row_index=row_index,
                     cell_index=cell_index,
-                ),
-                allow_bullet_normalization=allow_bullet_normalization,
-            ).edits
+                )
+            ),
+        )
+        cell_script = generate_edit_script(
+            source=source_content,
+            target=target_content,
+            context=table_context,
         )
 
-    # Update retained cell content
-    # ----------------------------
-    # Retained cells already have real source content, so recursively generate a
-    # complete edit script for each one. These are also processed right to left
-    # to keep every cell's starting index stable while requests are generated.
-    for row_index, cell_index, source_cell, target_cell in reversed(matched_cells):
-        if id(target_cell) in merged_target_cell_ids:
-            continue
-        edits.extend(
-            generate_edit_script(
-                source=source_cell.content,
-                target=target_cell.content,
-                start_index=table_start_index
-                + target.cell_content_offset(
-                    row_index=row_index,
-                    cell_index=cell_index,
-                ),
-                allow_bullet_normalization=allow_bullet_normalization,
-            ).edits
-        )
+        edits.extend(cell_script.edits)
 
     # Column formatting
     # -----------------
@@ -553,7 +637,7 @@ def generate_table_edits(
             if columns_changed or source_properties != target_properties:
                 edits.append(
                     ApplyTableColumnProperties(
-                        table_start_index=table_start_index,
+                        table_start_index=target_table_start_index,
                         column_index=column_index,
                         column_properties=target_properties,
                     )
@@ -582,7 +666,7 @@ def generate_table_edits(
         if source_row_style != target_row_style:
             edits.append(
                 ApplyTableRowStyle(
-                    table_start_index=table_start_index,
+                    table_start_index=target_table_start_index,
                     row_index=target_row_index,
                     min_height=target_row.min_height,
                     prevent_overflow=target_row.prevent_overflow,
@@ -592,13 +676,9 @@ def generate_table_edits(
 
     # Cell formatting
     # ---------------
-    # Compare each target cell with the source cell matched earlier. A cell's
-    # list position is not always its visual column after merges, so add the
-    # spans of preceding cells to calculate the Google column index.
-    source_cells_by_target = {
-        (row_index, cell_index): source_cell
-        for row_index, cell_index, source_cell, _target_cell in matched_cells
-    }
+    # Compare each target cell with the source cell matched earlier. Google keeps
+    # placeholder cells after a merge, so the cell's list position is also its
+    # column index.
     for row_index, row in enumerate(target.rows):
         for cell_index, target_cell in enumerate(row.cells):
             source_cell = source_cells_by_target.get((row_index, cell_index))
@@ -608,12 +688,9 @@ def generate_table_edits(
             ):
                 edits.append(
                     ApplyTableCellStyle(
-                        table_start_index=table_start_index,
+                        table_start_index=target_table_start_index,
                         row_index=row_index,
-                        column_index=sum(
-                            previous_cell.column_span
-                            for previous_cell in row.cells[:cell_index]
-                        ),
+                        column_index=cell_index,
                         row_span=target_cell.row_span,
                         column_span=target_cell.column_span,
                         cell_style=target_cell.style,
@@ -635,8 +712,7 @@ def generate_edit_script(
     *,
     source: ContentStream,
     target: ContentStream,
-    start_index: int = 0,
-    allow_bullet_normalization: bool = False,
+    context: EditScriptContext = DEFAULT_EDIT_SCRIPT_CONTEXT,
 ) -> EditScript:
     """Describe how to change source content and formatting into the target.
 
@@ -656,8 +732,8 @@ def generate_edit_script(
     # target once and remember the range ending at each boundary. Later code can
     # move from a matched boundary to its paragraph's UTF-16 range.
     target_paragraph_utf16_range_by_target_pos: dict[int, tuple[int, int]] = {}
-    paragraph_start_utf16_index = start_index
-    target_utf16_index = start_index
+    paragraph_start_utf16_index = target.utf16_start_index
+    target_utf16_index = target.utf16_start_index
     for target_pos, target_unit in enumerate(target.items):
         target_utf16_index += target_unit.utf16_width
         if isinstance(target_unit, ParagraphBoundary):
@@ -764,11 +840,9 @@ def generate_edit_script(
                         generate_table_edits(
                             source=source_unit,
                             target=target_unit,
-                            table_start_index=source.utf16_index(
-                                source_pos,
-                                start_index=start_index,
-                            ),
-                            allow_bullet_normalization=allow_bullet_normalization,
+                            source_table_start_index=source.utf16_index(source_pos),
+                            target_table_start_index=target.utf16_index(target_pos),
+                            context=context,
                         )
                     )
             continue
@@ -778,18 +852,12 @@ def generate_edit_script(
         # Insert, delete, and replace opcodes do not align their source and
         # target units. Delete the complete source range once, then walk the
         # target range and create whatever units it contains.
-        insertion_utf16_index = source.utf16_index(
-            source_start_pos,
-            start_index=start_index,
-        )
+        insertion_utf16_index = source.utf16_index(source_start_pos)
         if tag in {"delete", "replace"}:
             edits.append(
                 DeleteContent(
                     start_index=insertion_utf16_index,
-                    end_index=source.utf16_index(
-                        source_end_pos,
-                        start_index=start_index,
-                    ),
+                    end_index=source.utf16_index(source_end_pos),
                 )
             )
 
@@ -838,8 +906,11 @@ def generate_edit_script(
                 edits.extend(
                     compile_inserted_table(
                         table=target_unit,
-                        index=insertion_utf16_index + table_utf16_offset,
-                        allow_bullet_normalization=allow_bullet_normalization,
+                        source_table_start_index=(
+                            insertion_utf16_index + table_utf16_offset
+                        ),
+                        target_table_start_index=target.utf16_index(target_pos),
+                        context=context,
                     )
                 )
                 target_pos += 1
@@ -1056,7 +1127,7 @@ def generate_edit_script(
                     )
                 preset = exact_preset(definition)
                 if preset is None:
-                    if not allow_bullet_normalization:
+                    if not context.allow_bullet_normalization:
                         raise UnsupportedTransformation(
                             "editing a customized bullet list requires "
                             "bullet normalization"
@@ -1110,14 +1181,8 @@ def generate_edit_script(
     for target_pos, target_unit in enumerate(target.items):
         source_unit = source_units_by_target_pos.get(target_pos)
 
-        unit_start_utf16_index = target.utf16_index(
-            target_pos,
-            start_index=start_index,
-        )
-        unit_end_utf16_index = target.utf16_index(
-            target_pos + 1,
-            start_index=start_index,
-        )
+        unit_start_utf16_index = target.utf16_index(target_pos)
+        unit_end_utf16_index = target.utf16_index(target_pos + 1)
 
         match target_unit:
             # Opaque and container units
@@ -1185,6 +1250,7 @@ def generate_edit_script(
                             start_index=paragraph_start_utf16_index,
                             end_index=paragraph_end_utf16_index,
                             paragraph_style=target_boundary_unit.paragraph_style,
+                            inside_table=context.inside_table,
                         )
                     )
 
@@ -1216,12 +1282,27 @@ def generate_edit_script(
         else:
             collapsed_edits.append(edit)
 
-    # Google may reset inline text formatting when a named paragraph style is
-    # applied. Keep text-style actions last so they restore the target's inline
-    # formatting after every paragraph-level request has finished.
+    # Content edits use source-stream indices, while formatting uses target-stream
+    # indices. Keep all formatting after the content has reached the target shape.
+    # Text styles remain last because applying a named paragraph style can reset
+    # inline formatting.
+    formatting_types = (
+        ApplyBulletRun,
+        DeleteParagraphBullets,
+        ApplyParagraphStyle,
+        ApplyTableColumnProperties,
+        ApplyTableRowStyle,
+        ApplyTableCellStyle,
+        ApplyTextStyle,
+    )
     ordered_edits = [
-        edit for edit in collapsed_edits if not isinstance(edit, ApplyTextStyle)
+        edit for edit in collapsed_edits if not isinstance(edit, formatting_types)
     ]
+    ordered_edits.extend(
+        edit
+        for edit in collapsed_edits
+        if isinstance(edit, formatting_types) and not isinstance(edit, ApplyTextStyle)
+    )
     ordered_edits.extend(
         edit for edit in collapsed_edits if isinstance(edit, ApplyTextStyle)
     )
