@@ -17,6 +17,20 @@ uv run gdocs-patch --help
 uv run gdocs-patch --version
 ```
 
+## Read a document
+
+The `read` command accepts one JSON object on standard input and writes canonical
+XHTML directly to standard output:
+
+```console
+printf '%s\n' '{"docId":"DOCUMENT_ID","offset":8,"limit":4}' \
+  | uv run gdocs-patch read
+```
+
+`offset` is an optional one-based line number, and `limit` is an optional line
+count. The output is raw, unnumbered XHTML, so it can be redirected to a file or
+passed directly to another tool without stripping line prefixes.
+
 ## Google authentication
 
 Enable the Google Docs API in a Google Cloud project, configure its OAuth

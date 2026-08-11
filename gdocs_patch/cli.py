@@ -1,12 +1,36 @@
 """Command-line interface for gdocs-patch."""
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
+from typing import cast
 
-from gdocs_patch.client import AuthenticationError, login
+from googleapiclient.errors import HttpError  # pyright: ignore[reportMissingTypeStubs]
+
+from gdocs_patch.client import (
+    AuthenticationError,
+    GoogleDocsClient,
+    load_credentials,
+    login,
+)
+from gdocs_patch.commands import read_document
+
+
+class InputError(Exception):
+    """Raised when command input is invalid."""
+
+
+def _read_json_object() -> dict[str, object]:
+    try:
+        value = json.load(sys.stdin)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise InputError("Input must contain one valid JSON object.") from None
+    if not isinstance(value, dict):
+        raise InputError("Input must be a JSON object.")
+    return cast(dict[str, object], value)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands = parser.add_subparsers(dest="command")
+    commands.add_parser("read", help="Read a Google document as canonical XHTML.")
     auth_parser = commands.add_parser("auth", help="Manage Google authentication.")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
     login_parser = auth_commands.add_parser(
@@ -51,6 +76,39 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         print(f"Credentials saved to {credentials_path}")
+        return 0
+
+    if args.command == "read":
+        try:
+            input_object = _read_json_object()
+            unknown_fields = input_object.keys() - {"docId", "offset", "limit"}
+            if unknown_fields:
+                field = sorted(unknown_fields)[0]
+                raise InputError(f"Read command input has unknown field: {field}.")
+
+            doc_id = input_object.get("docId")
+            if not isinstance(doc_id, str):
+                raise InputError("Read command input requires string field: docId.")
+
+            offset = input_object.get("offset", 1)
+            if type(offset) is not int or offset < 1:
+                raise InputError("Read command input offset must be an integer >= 1.")
+
+            limit = input_object.get("limit")
+            if "limit" in input_object and (type(limit) is not int or limit <= 0):
+                raise InputError("Read command input limit must be an integer > 0.")
+
+            client = GoogleDocsClient(credentials=load_credentials())
+            output = read_document(
+                client=client,
+                doc_id=doc_id,
+                offset=offset,
+                limit=cast(int | None, limit),
+            )
+        except (InputError, AuthenticationError, HttpError) as error:
+            print(f"gdocs-patch: error: {error}", file=sys.stderr)
+            return 1
+        sys.stdout.write(output)
         return 0
 
     parser.print_help()
