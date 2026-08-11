@@ -9,6 +9,8 @@ from gdocs_patch.models import (
     Link,
     ParagraphBorder,
     ParagraphStyle,
+    SectionColumn,
+    SectionStyle,
     TableCellBorder,
     TableCellStyle,
     TableColumn,
@@ -21,15 +23,18 @@ from gdocs_patch.models import (
 from .edit_script import (
     ApplyBulletRun,
     ApplyParagraphStyle,
+    ApplySectionStyle,
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
     ApplyTextStyle,
     DeleteContent,
     DeleteParagraphBullets,
+    DeleteSectionBreak,
     DeleteTableColumn,
     DeleteTableRow,
     EditScript,
+    InsertSectionBreak,
     InsertTable,
     InsertTableColumn,
     InsertTableRow,
@@ -206,6 +211,51 @@ def serialize_paragraph_style(
             )
         }
     return result
+
+
+def serialize_section_column(value: SectionColumn) -> dict[str, object]:
+    return {
+        "width": serialize_dimension(value.width),
+        "paddingEnd": serialize_dimension(value.padding_end),
+    }
+
+
+def serialize_section_style(value: SectionStyle) -> tuple[dict[str, object], str]:
+    result: dict[str, object] = {}
+    fields: list[str] = []
+    if value.columns is not UNSET:
+        result["columnProperties"] = [
+            serialize_section_column(column)
+            for column in cast(list[SectionColumn], value.columns)
+        ]
+        fields.append("columnProperties")
+    if value.column_separator_style is not UNSET:
+        result["columnSeparatorStyle"] = value.column_separator_style
+        fields.append("columnSeparatorStyle")
+    if value.content_direction is not UNSET:
+        result["contentDirection"] = value.content_direction
+        fields.append("contentDirection")
+    if value.use_first_page_header_footer is not UNSET:
+        result["useFirstPageHeaderFooter"] = value.use_first_page_header_footer
+        fields.append("useFirstPageHeaderFooter")
+    if value.flip_page_orientation is not UNSET:
+        result["flipPageOrientation"] = value.flip_page_orientation
+        fields.append("flipPageOrientation")
+    if value.page_number_start is not UNSET:
+        result["pageNumberStart"] = value.page_number_start
+        fields.append("pageNumberStart")
+    for attribute, field in (
+        (value.margin_top, "marginTop"),
+        (value.margin_bottom, "marginBottom"),
+        (value.margin_left, "marginLeft"),
+        (value.margin_right, "marginRight"),
+        (value.margin_header, "marginHeader"),
+        (value.margin_footer, "marginFooter"),
+    ):
+        if attribute is not UNSET:
+            result[field] = serialize_dimension(cast(Dimension, attribute))
+            fields.append(field)
+    return result, ",".join(fields)
 
 
 def serialize_table_column(value: TableColumn | UnsetType) -> dict[str, object]:
@@ -401,6 +451,79 @@ def lower_edit_script(
                         }
                     }
                 )
+            case InsertSectionBreak():
+                requests.append(
+                    {
+                        "insertSectionBreak": {
+                            "location": {"index": edit.index - 1, **context},
+                            "sectionType": edit.section_type,
+                        }
+                    }
+                )
+                if edit.preceding_boundary == "RETAINED":
+                    requests.append(
+                        {
+                            "deleteContentRange": {
+                                "range": {
+                                    "startIndex": edit.index + 1,
+                                    "endIndex": edit.index + 2,
+                                    **context,
+                                }
+                            }
+                        }
+                    )
+            case DeleteSectionBreak():
+                # Temporary paragraphs inherit the formatting on each side of the
+                # break, preventing Docs from collapsing neighboring list/style state.
+                requests.extend(
+                    [
+                        {
+                            "insertText": {
+                                "location": {"index": edit.index - 1, **context},
+                                "text": "\n",
+                            }
+                        },
+                        {
+                            "insertText": {
+                                "location": {"index": edit.index + 2, **context},
+                                "text": "\n",
+                            }
+                        },
+                        {
+                            "deleteContentRange": {
+                                "range": {
+                                    "startIndex": edit.index,
+                                    "endIndex": edit.index + 2,
+                                    **context,
+                                }
+                            }
+                        },
+                        {
+                            "deleteContentRange": {
+                                "range": {
+                                    "startIndex": edit.index,
+                                    "endIndex": edit.index + 1,
+                                    **context,
+                                }
+                            }
+                        },
+                    ]
+                )
+            case ApplySectionStyle():
+                section_style, fields = serialize_section_style(edit.section_style)
+                requests.append(
+                    {
+                        "updateSectionStyle": {
+                            "range": {
+                                "startIndex": edit.start_index,
+                                "endIndex": edit.end_index,
+                                **context,
+                            },
+                            "sectionStyle": section_style,
+                            "fields": fields,
+                        }
+                    }
+                )
             case InsertTable():
                 # Docs inserts a newline before a new table, so its request
                 # location is one code unit before the table's final index.
@@ -413,6 +536,22 @@ def lower_edit_script(
                         }
                     }
                 )
+                if edit.preceding_boundary == "RETAINED":
+                    # Google creates the table as a blank grid before later cell
+                    # content requests run, leaving its extra boundary after the grid.
+                    blank_table_utf16_width = 2 + edit.rows * (1 + 2 * edit.columns)
+                    extra_boundary_start_index = edit.index + blank_table_utf16_width
+                    requests.append(
+                        {
+                            "deleteContentRange": {
+                                "range": {
+                                    "startIndex": extra_boundary_start_index,
+                                    "endIndex": extra_boundary_start_index + 1,
+                                    **context,
+                                }
+                            }
+                        }
+                    )
             case InsertTableRow():
                 requests.append(
                     {

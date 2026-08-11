@@ -1,6 +1,7 @@
 from gdocs_patch.compiler.edit_script import (
     ApplyBulletRun,
     ApplyParagraphStyle,
+    ApplySectionStyle,
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
@@ -8,9 +9,11 @@ from gdocs_patch.compiler.edit_script import (
     BulletParagraph,
     DeleteContent,
     DeleteParagraphBullets,
+    DeleteSectionBreak,
     DeleteTableColumn,
     DeleteTableRow,
     EditScript,
+    InsertSectionBreak,
     InsertTable,
     InsertTableColumn,
     InsertTableRow,
@@ -26,6 +29,8 @@ from gdocs_patch.models import (
     Dimension,
     ParagraphBorder,
     ParagraphStyle,
+    SectionColumn,
+    SectionStyle,
     TableCellBorder,
     TableCellStyle,
     TableColumn,
@@ -355,6 +360,16 @@ def test_lowers_all_table_edits() -> None:
             }
         },
         {
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": 26,
+                    "endIndex": 27,
+                    "tabId": "tab-table",
+                    "segmentId": "footer-1",
+                }
+            }
+        },
+        {
             "insertTableRow": {
                 "tableCellLocation": {
                     "tableStartLocation": {
@@ -540,6 +555,128 @@ def test_lowers_all_table_edits() -> None:
                 "fields": (
                     "backgroundColor,borderLeft,borderRight,borderTop,borderBottom,"
                     "paddingLeft,paddingRight,paddingTop,paddingBottom,contentAlignment"
+                ),
+            }
+        },
+    ]
+
+
+def test_lowers_section_break_edits() -> None:
+    edit_script = EditScript(
+        edits=[
+            InsertSectionBreak(
+                index=10,
+                section_type="NEXT_PAGE",
+                preceding_boundary="INSERTED",
+            ),
+            InsertSectionBreak(
+                index=20,
+                section_type="CONTINUOUS",
+                preceding_boundary="RETAINED",
+            ),
+            DeleteSectionBreak(index=30),
+            ApplySectionStyle(
+                start_index=40,
+                end_index=41,
+                section_style=SectionStyle(
+                    columns=[
+                        SectionColumn(
+                            width=Dimension(magnitude=240, unit="PT"),
+                            padding_end=Dimension(magnitude=18, unit="PT"),
+                        )
+                    ],
+                    column_separator_style="BETWEEN_EACH_COLUMN",
+                    content_direction="RIGHT_TO_LEFT",
+                    section_type="CONTINUOUS",
+                    default_header_id="ignored-header",
+                    use_first_page_header_footer=True,
+                    flip_page_orientation=True,
+                    page_number_start=3,
+                    margin_left=Dimension(magnitude=72, unit="PT"),
+                    margin_right=Dimension(magnitude=72, unit="PT"),
+                ),
+            ),
+        ]
+    )
+
+    assert lower_edit_script(edit_script=edit_script, tab_id="tab-section") == [
+        {
+            "insertSectionBreak": {
+                "location": {"index": 9, "tabId": "tab-section"},
+                "sectionType": "NEXT_PAGE",
+            }
+        },
+        {
+            "insertSectionBreak": {
+                "location": {"index": 19, "tabId": "tab-section"},
+                "sectionType": "CONTINUOUS",
+            }
+        },
+        {
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": 21,
+                    "endIndex": 22,
+                    "tabId": "tab-section",
+                }
+            }
+        },
+        {
+            "insertText": {
+                "location": {"index": 29, "tabId": "tab-section"},
+                "text": "\n",
+            }
+        },
+        {
+            "insertText": {
+                "location": {"index": 32, "tabId": "tab-section"},
+                "text": "\n",
+            }
+        },
+        {
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": 30,
+                    "endIndex": 32,
+                    "tabId": "tab-section",
+                }
+            }
+        },
+        {
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": 30,
+                    "endIndex": 31,
+                    "tabId": "tab-section",
+                }
+            }
+        },
+        {
+            "updateSectionStyle": {
+                "range": {
+                    "startIndex": 40,
+                    "endIndex": 41,
+                    "tabId": "tab-section",
+                },
+                "sectionStyle": {
+                    "columnProperties": [
+                        {
+                            "width": {"magnitude": 240, "unit": "PT"},
+                            "paddingEnd": {"magnitude": 18, "unit": "PT"},
+                        }
+                    ],
+                    "columnSeparatorStyle": "BETWEEN_EACH_COLUMN",
+                    "contentDirection": "RIGHT_TO_LEFT",
+                    "useFirstPageHeaderFooter": True,
+                    "flipPageOrientation": True,
+                    "pageNumberStart": 3,
+                    "marginLeft": {"magnitude": 72, "unit": "PT"},
+                    "marginRight": {"magnitude": 72, "unit": "PT"},
+                },
+                "fields": (
+                    "columnProperties,columnSeparatorStyle,contentDirection,"
+                    "useFirstPageHeaderFooter,flipPageOrientation,pageNumberStart,"
+                    "marginLeft,marginRight"
                 ),
             }
         },
