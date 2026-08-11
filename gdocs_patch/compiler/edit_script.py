@@ -22,6 +22,7 @@ from .content_stream import (
     ContentUnit,
     EquationUnit,
     ParagraphBoundary,
+    SectionBreakUnit,
     TableCellUnit,
     TableRowUnit,
     TableUnit,
@@ -736,7 +737,9 @@ def generate_edit_script(
     target_utf16_index = target.utf16_start_index
     for target_pos, target_unit in enumerate(target.items):
         target_utf16_index += target_unit.utf16_width
-        if isinstance(target_unit, ParagraphBoundary):
+        if isinstance(target_unit, SectionBreakUnit):
+            paragraph_start_utf16_index = target_utf16_index
+        elif isinstance(target_unit, ParagraphBoundary):
             target_paragraph_utf16_range_by_target_pos[target_pos] = (
                 paragraph_start_utf16_index,
                 target_utf16_index,
@@ -1187,7 +1190,7 @@ def generate_edit_script(
         match target_unit:
             # Opaque and container units
             # --------------------------
-            case EquationUnit() | TableUnit():
+            case EquationUnit() | SectionBreakUnit() | TableUnit():
                 pass
 
             # Text styles

@@ -7,6 +7,7 @@ from gdocs_patch.models import (
     Dimension,
     ListDefinition,
     ParagraphStyle,
+    SectionStyle,
     TableCellStyle,
     TableColumn,
     TextStyle,
@@ -32,6 +33,15 @@ class TextUnit(ContentUnit):
 
 @dataclass(frozen=True, kw_only=True)
 class EquationUnit(ContentUnit):
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+@dataclass(frozen=True, kw_only=True)
+class SectionBreakUnit(ContentUnit):
+    style: SectionStyle
+
     @property
     def utf16_width(self) -> int:
         return 1
@@ -71,6 +81,8 @@ class ContentStream:
                 values.append(("text", item.content))
             elif isinstance(item, EquationUnit):
                 values.append(("equation", ""))
+            elif isinstance(item, SectionBreakUnit):
+                values.append(("section_break", ""))
             elif isinstance(item, ParagraphBoundary):
                 boundary_type = (
                     "terminal_paragraph_boundary"

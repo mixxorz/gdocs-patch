@@ -10,6 +10,7 @@ from gdocs_patch.models import (
     Equation,
     ListDefinition,
     Paragraph,
+    SectionBreak,
     Tab,
     Table,
     TableCellStyle,
@@ -24,6 +25,7 @@ from .content_stream import (
     ContentUnit,
     EquationUnit,
     ParagraphBoundary,
+    SectionBreakUnit,
     TableCellUnit,
     TableRowUnit,
     TableUnit,
@@ -65,6 +67,9 @@ def normalize_tree(
 
     if isinstance(tree, Equation):
         return ContentStream(items=[EquationUnit()])
+
+    if isinstance(tree, SectionBreak):
+        return ContentStream(items=[SectionBreakUnit(style=tree.style)])
 
     if isinstance(tree, Paragraph):
         items: list[ContentUnit] = []
@@ -158,13 +163,6 @@ def normalize_document(document: Document) -> DocumentContent:
         content = tab.content
         list_definitions = content.lists if isinstance(content.lists, dict) else {}
         normalized_body = normalize_tree(body, list_definitions=list_definitions)
-        # Use utf16_start_index=1 while ContentStream has no SectionBreak unit.
-        # Once it does, the leading SectionBreak's width of 1 will provide the
-        # body stream's origin directly.
-        normalized_body = ContentStream(
-            items=normalized_body.items,
-            utf16_start_index=1,
-        )
         tabs[tab.tab_id] = TabContent(
             body=normalized_body,
             headers=(

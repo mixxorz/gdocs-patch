@@ -5,6 +5,7 @@ from gdocs_patch.compiler import (
     DocumentContent,
     EquationUnit,
     ParagraphBoundary,
+    SectionBreakUnit,
     TabContent,
     TableCellUnit,
     TableRowUnit,
@@ -243,6 +244,14 @@ def test_normalize_tree_normalizes_opaque_equations_in_paragraphs() -> None:
 
 
 def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None:
+    initial_section_style = SectionStyle(
+        content_direction="LEFT_TO_RIGHT",
+        section_type="CONTINUOUS",
+    )
+    later_section_style = SectionStyle(
+        content_direction="RIGHT_TO_LEFT",
+        section_type="NEXT_PAGE",
+    )
     bullet = Bullet(list_id="list-kitchen")
     table = Table(
         table_key="table-kitchen",
@@ -260,10 +269,12 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
     )
     body = Body(
         content=[
+            SectionBreak(style=initial_section_style),
             Paragraph(
                 elements=[TextRun(content="Go\n")],
                 bullet=bullet,
             ),
+            SectionBreak(style=later_section_style),
             table,
             Paragraph(
                 elements=[TextRun(content="X"), Equation(), TextRun(content="\n")]
@@ -275,9 +286,11 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
 
     assert stream == ContentStream(
         items=[
+            SectionBreakUnit(style=initial_section_style),
             TextUnit(content="G"),
             TextUnit(content="o"),
             ParagraphBoundary(bullet=bullet),
+            SectionBreakUnit(style=later_section_style),
             TableUnit(
                 table_key="table-kitchen",
                 rows=[
@@ -305,6 +318,8 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
 
 
 def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
+    root_section_style = SectionStyle(section_type="CONTINUOUS")
+    child_section_style = SectionStyle(section_type="NEXT_PAGE")
     document = Document(
         document_id="document-1",
         title="Document",
@@ -315,7 +330,10 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
                 index=0,
                 content=DocumentTab(
                     body=Body(
-                        content=[Paragraph(elements=[TextRun(content="Root\n")])]
+                        content=[
+                            SectionBreak(style=root_section_style),
+                            Paragraph(elements=[TextRun(content="Root\n")]),
+                        ]
                     ),
                     headers={
                         "header-1": Segment(
@@ -352,7 +370,8 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
                         content=DocumentTab(
                             body=Body(
                                 content=[
-                                    Paragraph(elements=[TextRun(content="Child\n")])
+                                    SectionBreak(style=child_section_style),
+                                    Paragraph(elements=[TextRun(content="Child\n")]),
                                 ]
                             )
                         ),
@@ -376,6 +395,7 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             "root": TabContent(
                 body=ContentStream(
                     items=[
+                        SectionBreakUnit(style=root_section_style),
                         TextUnit(content="R"),
                         TextUnit(content="o"),
                         TextUnit(content="o"),
@@ -406,6 +426,7 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             "child": TabContent(
                 body=ContentStream(
                     items=[
+                        SectionBreakUnit(style=child_section_style),
                         TextUnit(content="C"),
                         TextUnit(content="h"),
                         TextUnit(content="i"),
@@ -420,6 +441,8 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             ),
         }
     )
+    assert content.tabs["root"].body.utf16_index(0) == 0
+    assert content.tabs["root"].body.utf16_index(1) == 1
 
 
 def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
