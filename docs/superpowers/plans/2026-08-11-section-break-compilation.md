@@ -243,17 +243,11 @@ Add two concise error assertions: retained `CONTINUOUS -> NEXT_PAGE` raises `Uns
 Replace `test_generate_edit_script_inserts_text_and_table_between_existing_tables` rather than adding a table regression test. Rename it `test_generate_edit_script_inserts_table_between_existing_paragraphs` and use these hardcoded streams:
 
 ```python
-initial_section = SectionBreakUnit(
-    style=SectionStyle(section_type="CONTINUOUS")
-)
+initial_section = SectionBreakUnit(style=SectionStyle(section_type="CONTINUOUS"))
 empty_table = TableUnit(
     rows=[
         TableRowUnit(
-            cells=[
-                TableCellUnit(
-                    content=ContentStream(items=[ParagraphBoundary()])
-                )
-            ]
+            cells=[TableCellUnit(content=ContentStream(items=[ParagraphBoundary()]))]
         )
     ]
 )
@@ -429,38 +423,44 @@ Immediately after the expected `insertTable`, hardcode the cleanup request. A bl
 Construct one `EditScript` containing:
 
 ```python
-InsertSectionBreak(
-    index=10,
-    section_type="NEXT_PAGE",
-    preceding_boundary="INSERTED",
-),
-InsertSectionBreak(
-    index=20,
-    section_type="CONTINUOUS",
-    preceding_boundary="RETAINED",
-),
-DeleteSectionBreak(index=30),
-ApplySectionStyle(
-    start_index=40,
-    end_index=41,
-    section_style=SectionStyle(
-        columns=[
-            SectionColumn(
-                width=Dimension(magnitude=240, unit="PT"),
-                padding_end=Dimension(magnitude=18, unit="PT"),
-            )
-        ],
-        column_separator_style="BETWEEN_EACH_COLUMN",
-        content_direction="RIGHT_TO_LEFT",
-        section_type="CONTINUOUS",
-        default_header_id="ignored-header",
-        use_first_page_header_footer=True,
-        flip_page_orientation=True,
-        page_number_start=3,
-        margin_left=Dimension(magnitude=72, unit="PT"),
-        margin_right=Dimension(magnitude=72, unit="PT"),
+(
+    InsertSectionBreak(
+        index=10,
+        section_type="NEXT_PAGE",
+        preceding_boundary="INSERTED",
     ),
-),
+)
+(
+    InsertSectionBreak(
+        index=20,
+        section_type="CONTINUOUS",
+        preceding_boundary="RETAINED",
+    ),
+)
+(DeleteSectionBreak(index=30),)
+(
+    ApplySectionStyle(
+        start_index=40,
+        end_index=41,
+        section_style=SectionStyle(
+            columns=[
+                SectionColumn(
+                    width=Dimension(magnitude=240, unit="PT"),
+                    padding_end=Dimension(magnitude=18, unit="PT"),
+                )
+            ],
+            column_separator_style="BETWEEN_EACH_COLUMN",
+            content_direction="RIGHT_TO_LEFT",
+            section_type="CONTINUOUS",
+            default_header_id="ignored-header",
+            use_first_page_header_footer=True,
+            flip_page_orientation=True,
+            page_number_start=3,
+            margin_left=Dimension(magnitude=72, unit="PT"),
+            margin_right=Dimension(magnitude=72, unit="PT"),
+        ),
+    ),
+)
 ```
 
 Hardcode these request facts:
