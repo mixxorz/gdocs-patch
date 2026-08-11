@@ -46,6 +46,27 @@ jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \
 The command fetches the current document, compiles the target against that
 source revision, and applies the resulting Google Docs batch update.
 
+## Edit a document
+
+The `edit` command applies exact-text replacements to the canonical, unnumbered
+XHTML returned by `read`. Each match is located in that original XHTML rather
+than in the result of an earlier replacement:
+
+```console
+cat <<'JSON' | uv run gdocs-patch edit
+{
+  "docId": "DOCUMENT_ID",
+  "edits": [
+    {"oldText": "First old block", "newText": "First new block"},
+    {"oldText": "Second old block", "newText": "Second new block"}
+  ]
+}
+JSON
+```
+
+The command fetches the document once, performs the replacements, compiles the
+edited XHTML against the fetched source revision, and applies the batch update.
+
 ## Google authentication
 
 Enable the Google Docs API in a Google Cloud project, configure its OAuth

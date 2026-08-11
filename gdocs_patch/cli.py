@@ -16,7 +16,7 @@ from gdocs_patch.client import (
     load_credentials,
     login,
 )
-from gdocs_patch.commands import read_document, write_document
+from gdocs_patch.commands import XhtmlEdit, edit_document, read_document, write_document
 from gdocs_patch.compiler import UnsupportedTransformation
 from gdocs_patch.xhtml import XHTMLParseError
 
@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("read", help="Read a Google document as canonical XHTML.")
     commands.add_parser("write", help="Write canonical XHTML to a Google document.")
+    commands.add_parser("edit", help="Edit exact text in canonical XHTML.")
     auth_parser = commands.add_parser("auth", help="Manage Google authentication.")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
     login_parser = auth_commands.add_parser(
@@ -142,6 +143,55 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         print(f"Successfully wrote to {doc_id}.")
+        return 0
+
+    if args.command == "edit":
+        try:
+            input_object = _read_json_object()
+            unknown_fields = input_object.keys() - {"docId", "edits"}
+            if unknown_fields:
+                field = sorted(unknown_fields)[0]
+                raise InputError(f"Edit command input has unknown field: {field}.")
+
+            doc_id = input_object.get("docId")
+            if not isinstance(doc_id, str):
+                raise InputError("Edit command input requires string field: docId.")
+
+            input_edits = input_object.get("edits")
+            if not isinstance(input_edits, list):
+                raise InputError("Edit command input requires array field: edits.")
+
+            edits: list[XhtmlEdit] = []
+            for input_edit_value in cast(list[object], input_edits):
+                if not isinstance(input_edit_value, dict):
+                    raise InputError("Edit command edits must contain objects.")
+                input_edit = cast(dict[str, object], input_edit_value)
+                edit_fields = input_edit.keys()
+                if edit_fields != {"oldText", "newText"}:
+                    raise InputError(
+                        "Edit command edits require exactly oldText and newText."
+                    )
+                old_text = input_edit["oldText"]
+                new_text = input_edit["newText"]
+                if not isinstance(old_text, str) or not isinstance(new_text, str):
+                    raise InputError(
+                        "Edit command oldText and newText must be strings."
+                    )
+                edits.append(XhtmlEdit(old_text=old_text, new_text=new_text))
+
+            client = GoogleDocsClient(credentials=load_credentials())
+            count = edit_document(client=client, doc_id=doc_id, edits=edits)
+        except (
+            InputError,
+            XHTMLParseError,
+            UnsupportedTransformation,
+            AuthenticationError,
+            HttpError,
+        ) as error:
+            print(f"gdocs-patch: error: {error}", file=sys.stderr)
+            return 1
+        noun = "block" if count == 1 else "blocks"
+        print(f"Successfully replaced {count} {noun} in {doc_id}.")
         return 0
 
     parser.print_help()
