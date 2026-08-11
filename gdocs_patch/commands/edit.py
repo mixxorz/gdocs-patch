@@ -1,10 +1,15 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 
 from gdocs_patch.client import GoogleDocsClient
 from gdocs_patch.compiler import compile_document
 from gdocs_patch.parsers import document_parser
 from gdocs_patch.xhtml import deserialize_document, serialize_document
+
+
+class XhtmlEditError(Exception):
+    """Raised when exact XHTML replacements cannot be applied safely."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -17,14 +22,56 @@ def apply_xhtml_edits(
     *, xhtml: str, edits: Sequence[XhtmlEdit], document_id: str
 ) -> str:
     """Apply exact-text replacements located in the original canonical XHTML."""
+    if not edits:
+        raise XhtmlEditError(
+            "Edit command input is invalid. edits must contain at least one replacement."
+        )
+
     locations: list[tuple[int, int, int]] = []
     for edit_index, edit in enumerate(edits):
-        start = xhtml.find(edit.old_text)
-        if start >= 0:
-            locations.append((start, start + len(edit.old_text), edit_index))
+        if not edit.old_text:
+            raise XhtmlEditError(
+                f"edits[{edit_index}].oldText must not be empty in {document_id}."
+            )
+
+        starts: list[int] = []
+        start = -1
+        while (start := xhtml.find(edit.old_text, start + 1)) >= 0:
+            starts.append(start)
+
+        if not starts:
+            raise XhtmlEditError(
+                f"Could not find the exact text for edits[{edit_index}] in "
+                f"{document_id}. The old text must match exactly including all "
+                "whitespace and newlines."
+            )
+        if len(starts) > 1:
+            raise XhtmlEditError(
+                f"Found {len(starts)} occurrences of the text for edits[{edit_index}] "
+                f"in {document_id}. The text must be unique. Please provide more "
+                "context to make it unique."
+            )
+
+        locations.append((starts[0], starts[0] + len(edit.old_text), edit_index))
+
+    locations.sort()
+    for left, right in pairwise(locations):
+        _, left_end, left_index = left
+        right_start, _, right_index = right
+        if right_start < left_end:
+            raise XhtmlEditError(
+                f"edits[{left_index}] and edits[{right_index}] overlap in "
+                f"{document_id}. Merge them into one edit or target disjoint regions."
+            )
+
     result = xhtml
-    for start, end, edit_index in sorted(locations, reverse=True):
+    for start, end, edit_index in reversed(locations):
         result = result[:start] + edits[edit_index].new_text + result[end:]
+    if result == xhtml:
+        raise XhtmlEditError(
+            f"No changes made to {document_id}. The replacements produced identical "
+            "content."
+        )
     return result
 
 

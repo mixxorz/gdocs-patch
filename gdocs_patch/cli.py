@@ -16,7 +16,13 @@ from gdocs_patch.client import (
     load_credentials,
     login,
 )
-from gdocs_patch.commands import XhtmlEdit, edit_document, read_document, write_document
+from gdocs_patch.commands import (
+    XhtmlEdit,
+    XhtmlEditError,
+    edit_document,
+    read_document,
+    write_document,
+)
 from gdocs_patch.compiler import UnsupportedTransformation
 from gdocs_patch.xhtml import XHTMLParseError
 
@@ -183,6 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             count = edit_document(client=client, doc_id=doc_id, edits=edits)
         except (
             InputError,
+            XhtmlEditError,
             XHTMLParseError,
             UnsupportedTransformation,
             AuthenticationError,
