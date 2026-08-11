@@ -4,6 +4,10 @@
 
 DONE_WITH_CONCERNS: Step 1 is implemented and its focused checks and full test suite pass. The repository-wide `ruff format --check .` command reports a pre-existing formatting issue in the already-committed implementation plan; all changed Python files pass Ruff format, and pre-commit passes.
 
+## Commit
+
+- `66e00de feat: add CLI read command`
+
 ## Implementation
 
 - Added `read_document`, which fetches a document, parses the Google response, serializes canonical XHTML, and slices it by one-based line offset and optional line count.
