@@ -603,113 +603,189 @@ def generate_edit_script(
     start_index: int = 0,
     allow_bullet_normalization: bool = False,
 ) -> EditScript:
-    """Describe how to change source content and styles into the target."""
+    """Describe how to change source content and formatting into the target.
 
-    # A paragraph ends at its boundary. Save its complete target range so a
-    # boundary style change can style the paragraph rather than only its newline.
-    target_paragraph_ranges: dict[int, tuple[int, int]] = {}
-    paragraph_start = start_index
-    target_index = start_index
-    for position, item in enumerate(target.items):
-        target_index += item.utf16_width
-        if isinstance(item, ParagraphBoundary):
-            target_paragraph_ranges[position] = (paragraph_start, target_index)
-            paragraph_start = target_index
+    SequenceMatcher aligns the source and target as flat content units. This
+    function first turns that alignment into content edits that use source
+    UTF-16 indices. Once those edits have produced the target shape, it emits
+    bullets and styles using target UTF-16 indices. The separation is important
+    because an insertion or deletion invalidates the other document's coordinates.
+
+    In this function, a unit is one ContentStream entry. A stream position
+    locates a unit, a stream range spans units, and a UTF-16 index locates
+    content in Google Docs.
+    """
+
+    # ParagraphBoundary represents the final newline of a paragraph, but most
+    # paragraph operations need the complete paragraph's UTF-16 range. Walk the
+    # target once and remember the range ending at each boundary. Later code can
+    # move from a matched boundary to its paragraph's UTF-16 range.
+    target_paragraph_utf16_ranges: dict[int, tuple[int, int]] = {}
+    paragraph_start_utf16_index = start_index
+    target_utf16_index = start_index
+    for target_pos, target_unit in enumerate(target.items):
+        target_utf16_index += target_unit.utf16_width
+        if isinstance(target_unit, ParagraphBoundary):
+            target_paragraph_utf16_ranges[target_pos] = (
+                paragraph_start_utf16_index,
+                target_utf16_index,
+            )
+            paragraph_start_utf16_index = target_utf16_index
 
     edits: list[Edit] = []
+    # Each opcode identifies a source stream range and the target stream range
+    # that should replace it. Styles are absent from the compared values, so
+    # equal content remains aligned even when only its formatting changed.
     opcodes = match_content(source=source, target=target)
 
-    for tag, _source_start, _source_end, target_start, target_end in opcodes:
+    # Equations can be retained or deleted, but the batchUpdate API has no
+    # request that creates one. Reject the transformation before emitting a
+    # partial script if an inserted target stream range contains an equation.
+    for (
+        tag,
+        _source_start_pos,
+        _source_end_pos,
+        target_start_pos,
+        target_end_pos,
+    ) in opcodes:
         if tag in {"insert", "replace"} and any(
-            isinstance(item, EquationUnit)
-            for item in target.items[target_start:target_end]
+            isinstance(target_unit, EquationUnit)
+            for target_unit in target.items[target_start_pos:target_end_pos]
         ):
             raise UnsupportedTransformation(
                 "Google Docs cannot insert Equation elements"
             )
 
-    # Deleting a paragraph boundary can change the merged paragraph's style.
-    # Find the target boundary ending that paragraph so its style is reapplied.
-    forced_paragraph_style_positions: set[int] = set()
-    for tag, source_start, source_end, target_start, _target_end in opcodes:
-        if tag not in {"delete", "replace"} or not any(
-            isinstance(item, ParagraphBoundary)
-            for item in source.items[source_start:source_end]
-        ):
-            continue
-        for target_position in range(target_start, len(target.items)):
-            if isinstance(target.items[target_position], ParagraphBoundary):
-                forced_paragraph_style_positions.add(target_position)
-                break
+    # Deleting a paragraph boundary joins the surrounding text into one
+    # paragraph. Google keeps one side's paragraph style during that merge, and
+    # it may not be the target style. Remember the surviving target paragraph so
+    # its style is reapplied even if SequenceMatcher considered it unchanged.
 
-    # Apply content changes from right to left. Changes at later indices cannot
-    # shift the source indices used by earlier changes.
+    # These are stream positions of target ParagraphBoundary units whose
+    # paragraph styles must be reapplied after a source boundary is deleted.
+    forced_paragraph_style_positions: set[int] = set()
+    for (
+        tag,
+        source_start_pos,
+        source_end_pos,
+        target_start_pos,
+        _target_end_pos,
+    ) in opcodes:
+        if tag in {"delete", "replace"} and any(
+            isinstance(source_unit, ParagraphBoundary)
+            for source_unit in source.items[source_start_pos:source_end_pos]
+        ):
+            for target_pos in range(target_start_pos, len(target.items)):
+                if isinstance(target.items[target_pos], ParagraphBoundary):
+                    forced_paragraph_style_positions.add(target_pos)
+                    break
+
+    # How the index calculations work
+    # -------------------------------
+    # SequenceMatcher tells us where units appear in a ContentStream, but Google
+    # expects every request to use UTF-16 indices. Whenever we need one of those
+    # indices, ContentStream.utf16_index calculates it by adding up the widths of
+    # the units that come before it. This lets us calculate each index directly
+    # from the source or target stream instead of trying to keep a running cursor
+    # in sync as we build the edit script.
+    #
+    # Content edits need to point into the document as it exists before any
+    # requests run, so we calculate their indices from the source stream. We also
+    # emit them from right to left, which prevents a later edit from shifting the
+    # index needed by an earlier one. Once those edits have run, the document has
+    # the same shape as the target, so bullet and style edits can use indices
+    # calculated from the target stream.
+    #
+    # Inserting a new table uses both coordinate systems. The opcode tells us
+    # where its target stream range should be inserted in the source. We start at
+    # that source insertion index, then add the table's UTF-16 offset from the
+    # beginning of the target stream range. That gives us the table's final
+    # insertion index in the document.
+    #
+    # Tables are outer stream units with their own nested compiler, so the code
+    # below handles them separately from text.
     handled_table_target_positions: set[int] = set()
     for opcode in reversed(opcodes):
-        tag, source_start, source_end, target_start, target_end = opcode
+        tag, source_start_pos, source_end_pos, target_start_pos, target_end_pos = opcode
 
+        # Existing tables
+        # ---------------
+        # Equal table units have the same retained table key. Their outer
+        # structure remains in place, but rows, columns, cells, and cell content
+        # may still differ, so recurse into each matched table.
         if tag == "equal":
-            for target_position in range(target_start, target_end):
-                target_item = target.items[target_position]
-                source_item = source.items[
-                    source_start + target_position - target_start
-                ]
-                if isinstance(source_item, TableUnit) and isinstance(
-                    target_item, TableUnit
+            source_units = source.items[source_start_pos:source_end_pos]
+            target_units = target.items[target_start_pos:target_end_pos]
+            for range_offset, (source_unit, target_unit) in enumerate(
+                zip(source_units, target_units)
+            ):
+                source_pos = source_start_pos + range_offset
+                target_pos = target_start_pos + range_offset
+                if isinstance(source_unit, TableUnit) and isinstance(
+                    target_unit, TableUnit
                 ):
                     edits.extend(
                         compile_table(
-                            source=source_item,
-                            target=target_item,
+                            source=source_unit,
+                            target=target_unit,
                             table_start_index=source.utf16_index(
-                                source_start + target_position - target_start,
+                                source_pos,
                                 start_index=start_index,
                             ),
                             allow_bullet_normalization=allow_bullet_normalization,
                         )
                     )
-                    handled_table_target_positions.add(target_position)
+                    handled_table_target_positions.add(target_pos)
             continue
 
+        # New tables
+        # ----------
+        # A table in an inserted or replaced target stream range is new; existing
+        # tables were handled above. InsertText cannot create it, so remove the
+        # replaced source stream range and compile each new table separately.
         inserted_tables = [
-            (target_position, item)
-            for target_position, item in enumerate(
-                target.items[target_start:target_end],
-                start=target_start,
+            (target_pos, target_unit)
+            for target_pos, target_unit in enumerate(
+                target.items[target_start_pos:target_end_pos],
+                start=target_start_pos,
             )
-            if isinstance(item, TableUnit)
+            if isinstance(target_unit, TableUnit)
         ]
         if inserted_tables:
             if tag == "replace":
                 edits.append(
                     DeleteContent(
                         start_index=source.utf16_index(
-                            source_start,
+                            source_start_pos,
                             start_index=start_index,
                         ),
                         end_index=source.utf16_index(
-                            source_end,
+                            source_end_pos,
                             start_index=start_index,
                         ),
                     )
                 )
-            insertion_index = source.utf16_index(
-                source_start,
+            insertion_utf16_index = source.utf16_index(
+                source_start_pos,
                 start_index=start_index,
             )
-            target_slice_index = target.utf16_index(target_start)
-            for target_position, table in inserted_tables:
+            target_range_start_utf16_index = target.utf16_index(target_start_pos)
+            for target_pos, table in inserted_tables:
+                table_utf16_offset = (
+                    target.utf16_index(target_pos) - target_range_start_utf16_index
+                )
+                table_insertion_utf16_index = insertion_utf16_index + table_utf16_offset
                 edits.extend(
                     compile_inserted_table(
                         table=table,
-                        index=insertion_index
-                        + target.utf16_index(target_position)
-                        - target_slice_index,
+                        index=table_insertion_utf16_index,
                     )
                 )
-                handled_table_target_positions.add(target_position)
+                handled_table_target_positions.add(target_pos)
             continue
 
+        # Text content
+        # ------------
         edits.extend(
             generate_text_edits(
                 source=source,
@@ -719,40 +795,56 @@ def generate_edit_script(
             )
         )
 
-    # Content edits leave the document with the target shape, so style edits can
-    # now use target indices. Equal opcodes provide a source style to compare;
-    # inserted and replaced target items have no dependable inherited style.
+    # At this point the content requests, when executed, leave the document with
+    # the same widths and structure as the target stream. Formatting requests
+    # can therefore use target UTF-16 indices. For equal opcode stream ranges,
+    # compare the matched source formatting. Inserted and replaced units have no
+    # source formatting that can be trusted, so their target formatting is reapplied.
     bullet_edits: list[Edit] = []
     style_edits: list[Edit] = []
+    # SequenceMatcher sees each paragraph boundary independently, whereas the
+    # Docs API often has to recreate an entire list to change one unit's level.
+    # Keep the ordered boundary stream positions so any changed unit can recover
+    # its surrounding run. Once a run is emitted, mark all of its positions to
+    # avoid emitting the same reconstruction again at the next paragraph.
     handled_bullet_target_positions: set[int] = set()
-    target_boundary_positions = list(target_paragraph_ranges)
-    for tag, source_start, _source_end, target_start, target_end in opcodes:
-        for target_position in range(target_start, target_end):
-            if target_position in handled_table_target_positions:
+    target_boundary_positions = list(target_paragraph_utf16_ranges)
+    for (
+        tag,
+        source_start_pos,
+        _source_end_pos,
+        target_start_pos,
+        target_end_pos,
+    ) in opcodes:
+        for target_pos in range(target_start_pos, target_end_pos):
+            if target_pos in handled_table_target_positions:
                 continue
-            target_item = target.items[target_position]
-            source_item = None
+            target_unit = target.items[target_pos]
+            # Equal stream ranges provide a corresponding source unit whose
+            # formatting can be compared. Inserted and replaced target units have
+            # no source unit and will receive their target formatting.
+            source_unit = None
             if tag == "equal":
-                source_item = source.items[
-                    source_start + target_position - target_start
+                source_unit = source.items[
+                    source_start_pos + target_pos - target_start_pos
                 ]
 
-            item_start_index = target.utf16_index(
-                target_position,
+            unit_start_utf16_index = target.utf16_index(
+                target_pos,
                 start_index=start_index,
             )
-            item_end_index = target.utf16_index(
-                target_position + 1,
+            unit_end_utf16_index = target.utf16_index(
+                target_pos + 1,
                 start_index=start_index,
             )
 
-            match target_item:
+            match target_unit:
                 case EquationUnit() | TableUnit():
                     pass
 
                 case TextUnit() as target_text:
                     source_text = (
-                        source_item if isinstance(source_item, TextUnit) else None
+                        source_unit if isinstance(source_unit, TextUnit) else None
                     )
                     if (
                         source_text is None
@@ -760,40 +852,53 @@ def generate_edit_script(
                     ):
                         style_edits.append(
                             ApplyTextStyle(
-                                start_index=item_start_index,
-                                end_index=item_end_index,
+                                start_index=unit_start_utf16_index,
+                                end_index=unit_end_utf16_index,
                                 text_style=target_text.text_style,
                             )
                         )
 
                 case ParagraphBoundary() as target_boundary:
-                    # A boundary carries its list membership and the styles of
-                    # both its newline and the paragraph ending there.
-                    paragraph_start, paragraph_end = target_paragraph_ranges[
-                        target_position
-                    ]
+                    # The boundary is the stream representation of a paragraph's
+                    # final newline. It carries newline text style, paragraph
+                    # style, and list membership. The remembered paragraph UTF-16
+                    # range locates the complete paragraph that ends here.
+                    (
+                        paragraph_start_utf16_index,
+                        paragraph_end_utf16_index,
+                    ) = target_paragraph_utf16_ranges[target_pos]
                     source_boundary = (
-                        source_item
-                        if isinstance(source_item, ParagraphBoundary)
+                        source_unit
+                        if isinstance(source_unit, ParagraphBoundary)
                         else None
                     )
                     source_bullet = (
                         source_boundary.bullet if source_boundary is not None else UNSET
                     )
 
+                    # BulletPreset means the target is asking Google to create a
+                    # list rather than preserve one returned by documents.get.
+                    # If this paragraph currently belongs to a list, remove that
+                    # membership before applying the requested preset.
                     if isinstance(target_boundary.bullet, BulletPreset):
                         if source_bullet is not UNSET:
                             bullet_edits.append(
                                 DeleteParagraphBullets(
-                                    start_index=paragraph_start,
-                                    end_index=paragraph_end,
+                                    start_index=paragraph_start_utf16_index,
+                                    end_index=paragraph_end_utf16_index,
                                 )
                             )
                         bullet_paragraph = BulletParagraph(
-                            start_index=paragraph_start,
-                            end_index=paragraph_end,
+                            start_index=paragraph_start_utf16_index,
+                            end_index=paragraph_end_utf16_index,
                             nesting_level=target_boundary.bullet.nesting_level,
                         )
+                        # Lowering creates nesting by temporarily inserting tabs
+                        # before each paragraph and then sending one
+                        # createParagraphBullets request. Adjacent paragraphs with
+                        # the same preset must therefore be accumulated into one
+                        # ApplyBulletRun; separate requests do not reliably retain
+                        # their mixed nesting levels.
                         previous_bullet_edit = (
                             bullet_edits[-1] if bullet_edits else None
                         )
@@ -802,7 +907,7 @@ def generate_edit_script(
                             and previous_bullet_edit.preset
                             == target_boundary.bullet.preset
                             and previous_bullet_edit.paragraphs[-1].end_index
-                            == paragraph_start
+                            == paragraph_start_utf16_index
                         ):
                             bullet_edits[-1] = ApplyBulletRun(
                                 paragraphs=(
@@ -818,9 +923,15 @@ def generate_edit_script(
                                     preset=target_boundary.bullet.preset,
                                 )
                             )
+                    # Bullet contains a Google-assigned list ID, which means the
+                    # target intends to preserve an existing list. No request is
+                    # needed while both the ID and nesting level are unchanged.
+                    # Moving a paragraph to another existing list cannot be
+                    # expressed by the API, and changing a nesting level requires
+                    # deleting and recreating the complete contiguous list run.
                     elif isinstance(target_boundary.bullet, Bullet):
                         if (
-                            target_position not in handled_bullet_target_positions
+                            target_pos not in handled_bullet_target_positions
                             and isinstance(source_bullet, Bullet)
                             and (
                                 target_boundary.bullet.list_id != source_bullet.list_id
@@ -832,6 +943,12 @@ def generate_edit_script(
                                 raise UnsupportedTransformation(
                                     "moving paragraphs between existing lists is not supported"
                                 )
+                            # createParagraphBullets accepts one of Google's
+                            # fixed presets; it cannot accept the ListDefinition
+                            # returned by documents.get. If that definition is an
+                            # exact preset, rebuilding preserves its appearance.
+                            # Otherwise rebuilding normalizes a customized list,
+                            # which is only allowed when the caller opts into it.
                             definition = (
                                 target_boundary.list_definition
                                 if isinstance(
@@ -857,76 +974,86 @@ def generate_edit_script(
                                     )
                                 preset = closest_preset(definition)
 
-                            run_boundary_index = target_boundary_positions.index(
-                                target_position
+                            # The current boundary may be in the middle of its
+                            # list. Walk paragraph boundaries in both directions
+                            # to recover the whole contiguous run with this list
+                            # ID. A table between two boundaries breaks the run:
+                            # paragraphs on opposite sides cannot be recreated by
+                            # one paragraph-range request.
+                            run_boundary_list_pos = target_boundary_positions.index(
+                                target_pos
                             )
-                            first_boundary_index = run_boundary_index
-                            while first_boundary_index > 0:
-                                candidate_position = target_boundary_positions[
-                                    first_boundary_index - 1
+                            first_boundary_list_pos = run_boundary_list_pos
+                            while first_boundary_list_pos > 0:
+                                candidate_pos = target_boundary_positions[
+                                    first_boundary_list_pos - 1
                                 ]
-                                candidate = target.items[candidate_position]
+                                candidate = target.items[candidate_pos]
                                 if (
                                     not isinstance(candidate, ParagraphBoundary)
                                     or not isinstance(candidate.bullet, Bullet)
                                     or candidate.bullet.list_id
                                     != target_boundary.bullet.list_id
                                     or any(
-                                        isinstance(item, TableUnit)
-                                        for item in target.items[
-                                            candidate_position
+                                        isinstance(intervening_unit, TableUnit)
+                                        for intervening_unit in target.items[
+                                            candidate_pos
                                             + 1 : target_boundary_positions[
-                                                first_boundary_index
+                                                first_boundary_list_pos
                                             ]
                                         ]
                                     )
                                 ):
                                     break
-                                first_boundary_index -= 1
+                                first_boundary_list_pos -= 1
 
-                            last_boundary_index = run_boundary_index
-                            while last_boundary_index + 1 < len(
+                            last_boundary_list_pos = run_boundary_list_pos
+                            while last_boundary_list_pos + 1 < len(
                                 target_boundary_positions
                             ):
-                                candidate_position = target_boundary_positions[
-                                    last_boundary_index + 1
+                                candidate_pos = target_boundary_positions[
+                                    last_boundary_list_pos + 1
                                 ]
-                                candidate = target.items[candidate_position]
+                                candidate = target.items[candidate_pos]
                                 if (
                                     not isinstance(candidate, ParagraphBoundary)
                                     or not isinstance(candidate.bullet, Bullet)
                                     or candidate.bullet.list_id
                                     != target_boundary.bullet.list_id
                                     or any(
-                                        isinstance(item, TableUnit)
-                                        for item in target.items[
+                                        isinstance(intervening_unit, TableUnit)
+                                        for intervening_unit in target.items[
                                             target_boundary_positions[
-                                                last_boundary_index
+                                                last_boundary_list_pos
                                             ]
-                                            + 1 : candidate_position
+                                            + 1 : candidate_pos
                                         ]
                                     )
                                 ):
                                     break
-                                last_boundary_index += 1
+                                last_boundary_list_pos += 1
 
+                            # The scan above found stream positions. Convert each
+                            # one into the paragraph UTF-16 range and desired nesting
+                            # level that lowering needs to delete and recreate the
+                            # run after all content edits have completed.
                             run_positions = target_boundary_positions[
-                                first_boundary_index : last_boundary_index + 1
+                                first_boundary_list_pos : last_boundary_list_pos + 1
                             ]
                             run_paragraph_list: list[BulletParagraph] = []
-                            for position in run_positions:
-                                run_boundary = target.items[position]
+                            for run_pos in run_positions:
+                                run_boundary = target.items[run_pos]
                                 if isinstance(
                                     run_boundary, ParagraphBoundary
                                 ) and isinstance(run_boundary.bullet, Bullet):
                                     run_paragraph_list.append(
                                         BulletParagraph(
-                                            start_index=target_paragraph_ranges[
-                                                position
+                                            start_index=target_paragraph_utf16_ranges[
+                                                run_pos
                                             ][0],
-                                            end_index=target_paragraph_ranges[position][
-                                                1
-                                            ],
+                                            end_index=target_paragraph_utf16_ranges[
+                                                run_pos
+                                            ][1],
                                             nesting_level=run_boundary.bullet.nesting_level,
                                         )
                                     )
@@ -943,48 +1070,58 @@ def generate_edit_script(
                                     preset=preset,
                                 )
                             )
+                            # The outer loop will eventually visit every boundary
+                            # in this run. Record them all now so those later visits
+                            # do not emit duplicate delete-and-recreate actions.
                             handled_bullet_target_positions.update(run_positions)
+                    # When the target paragraph is no longer bulleted, remove
+                    # only its bullet formatting. The text is left in place so
+                    # comments and other text-bound metadata survive.
                     elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
                         bullet_edits.append(
                             DeleteParagraphBullets(
-                                start_index=paragraph_start,
-                                end_index=paragraph_end,
+                                start_index=paragraph_start_utf16_index,
+                                end_index=paragraph_end_utf16_index,
                             )
                         )
 
+                    # Bullet operations do not restore either the newline's text
+                    # style or the paragraph's own style. Compare and emit those
+                    # independently after deciding the list operation.
                     if (
                         source_boundary is None
                         or source_boundary.text_style != target_boundary.text_style
                     ):
                         style_edits.append(
                             ApplyTextStyle(
-                                start_index=item_start_index,
-                                end_index=item_end_index,
+                                start_index=unit_start_utf16_index,
+                                end_index=unit_end_utf16_index,
                                 text_style=target_boundary.text_style,
                             )
                         )
                     if (
-                        target_position in forced_paragraph_style_positions
+                        target_pos in forced_paragraph_style_positions
                         or source_boundary is None
                         or writable_paragraph_style(source_boundary.paragraph_style)
                         != writable_paragraph_style(target_boundary.paragraph_style)
                     ):
                         style_edits.append(
                             ApplyParagraphStyle(
-                                start_index=paragraph_start,
-                                end_index=paragraph_end,
+                                start_index=paragraph_start_utf16_index,
+                                end_index=paragraph_end_utf16_index,
                                 paragraph_style=target_boundary.paragraph_style,
                             )
                         )
 
                 case _:
-                    raise NotImplementedError(type(target_item).__name__)
+                    raise NotImplementedError(type(target_unit).__name__)
 
     edits.extend(bullet_edits)
     edits.extend(style_edits)
 
-    # Matching works one stream unit at a time. Merge adjacent text-style edits
-    # so lowering can produce one Docs request for each continuous style range.
+    # Character-level matching can produce one identical ApplyTextStyle action
+    # per character. Merge adjacent actions with the same style so lowering emits
+    # one request for the complete continuous UTF-16 range instead of many tiny ones.
     collapsed_edits: list[Edit] = []
     for edit in edits:
         previous_edit = collapsed_edits[-1] if collapsed_edits else None
@@ -1002,8 +1139,9 @@ def generate_edit_script(
         else:
             collapsed_edits.append(edit)
 
-    # Applying a named paragraph style can reset inline formatting, so text
-    # styles must be the final requests after the document has its target shape.
+    # Google may reset inline text formatting when a named paragraph style is
+    # applied. Keep text-style actions last so they restore the target's inline
+    # formatting after every paragraph-level request has finished.
     ordered_edits = [
         edit for edit in collapsed_edits if not isinstance(edit, ApplyTextStyle)
     ]
