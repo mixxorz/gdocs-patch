@@ -1,3 +1,4 @@
+from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -22,6 +23,7 @@ from .content_stream import (
     EquationUnit,
     ParagraphBoundary,
     TableCellUnit,
+    TableRowUnit,
     TableUnit,
     TextUnit,
 )
@@ -301,32 +303,59 @@ def compile_inserted_table(
     return edits
 
 
-def compile_table(
+def generate_table_edits(
     *,
     source: TableUnit,
     target: TableUnit,
     table_start_index: int,
     allow_bullet_normalization: bool,
 ) -> list[Edit]:
-    available_source_rows = list(enumerate(source.rows))
-    matched_rows: list[tuple[int, int]] = []
+    """Generate the edits needed to update one retained table.
+
+    Row and cell keys tell us which parts of the source table survived in the
+    target. We first change the table's structure, then update cell content, and
+    finally apply table formatting after the target shape is in place.
+    """
+
+    # Match rows
+    # ----------
+    # Group source rows by key before walking the target. Each key owns a queue
+    # because duplicate keys are allowed. Taking rows from the front preserves
+    # source order and ensures that one source row cannot be matched twice.
+    available_source_rows_by_key: dict[
+        str | None,
+        deque[tuple[int, TableRowUnit]],
+    ] = {}
+    for source_row_index, source_row_unit in enumerate(source.rows):
+        available_source_rows_by_key.setdefault(
+            source_row_unit.row_key,
+            deque(),
+        ).append((source_row_index, source_row_unit))
+
+    source_rows_by_target: dict[int, TableRowUnit] = {}
     new_row_indices: list[int] = []
-
-    for target_row_index, target_row in enumerate(target.rows):
-        source_row = next(
-            (
-                item
-                for item in available_source_rows
-                if item[1].row_key == target_row.row_key
-            ),
-            None,
-        )
-        if source_row is None:
-            new_row_indices.append(target_row_index)
+    for target_row_index, target_row_unit in enumerate(target.rows):
+        matching_source_rows = available_source_rows_by_key.get(target_row_unit.row_key)
+        if matching_source_rows:
+            _source_row_index, source_row_unit = matching_source_rows.popleft()
+            source_rows_by_target[target_row_index] = source_row_unit
         else:
-            available_source_rows.remove(source_row)
-            matched_rows.append((source_row[0], target_row_index))
+            new_row_indices.append(target_row_index)
 
+    available_source_rows = sorted(
+        (
+            source_row
+            for source_rows in available_source_rows_by_key.values()
+            for source_row in source_rows
+        ),
+        key=lambda source_row: source_row[0],
+    )
+
+    # Change the row count
+    # --------------------
+    # Rows left unmatched in the target are new. Rows left in the source pool
+    # disappeared. Google addresses these operations through a cell in the row,
+    # so column zero is used as a stable reference point.
     edits: list[Edit] = []
     if len(target.rows) > len(source.rows):
         for row_index in new_row_indices:
@@ -348,14 +377,13 @@ def compile_table(
                 )
             )
 
+    # Match cells
+    # -----------
+    # Once rows are aligned, repeat the same key-based matching within each
+    # retained row. Every cell in a new row is new by definition.
     matched_cells: list[tuple[int, int, TableCellUnit, TableCellUnit]] = []
     new_cells: list[tuple[int, int, TableCellUnit]] = []
     deleted_cell_indices: dict[int, list[int]] = {}
-    source_rows_by_target = {
-        target_row_index: source.rows[source_row_index]
-        for source_row_index, target_row_index in matched_rows
-    }
-
     for target_row_index, target_row in enumerate(target.rows):
         source_row = source_rows_by_target.get(target_row_index)
         if source_row is None:
@@ -391,6 +419,11 @@ def compile_table(
             cell_index for cell_index, _cell in available_source_cells
         ]
 
+    # Change the column count
+    # -----------------------
+    # A column operation changes the whole table, even though Google locates it
+    # through one row and cell. The first row therefore tells us which target
+    # columns were added or which source columns disappeared.
     column_delta = target.column_count - source.column_count
     if column_delta > 0:
         for column_index in [
@@ -414,6 +447,12 @@ def compile_table(
                 )
             )
 
+    # Merge and unmerge cells
+    # -----------------------
+    # A larger target span means neighboring cells must be merged. A smaller
+    # target span means the source cell must be split back into individual cells.
+    # Remember newly merged cells because their content is governed by the merge
+    # operation and should not also be edited using the old cell layout.
     merged_target_cell_ids: set[int] = set()
     for row_index, cell_index, source_cell, target_cell in matched_cells:
         if (
@@ -444,6 +483,12 @@ def compile_table(
                 )
             )
 
+    # Populate new cells
+    # ------------------
+    # Every new Google cell starts with one empty paragraph. Treat that paragraph
+    # as the source and run the normal content compiler so text, bullets, and
+    # styles are handled exactly as they are elsewhere. Work right to left
+    # because inserting content changes the indices of cells that follow it.
     for row_index, cell_index, cell in reversed(new_cells):
         edits.extend(
             generate_edit_script(
@@ -458,6 +503,11 @@ def compile_table(
             ).edits
         )
 
+    # Update retained cell content
+    # ----------------------------
+    # Retained cells already have real source content, so recursively generate a
+    # complete edit script for each one. These are also processed right to left
+    # to keep every cell's starting index stable while requests are generated.
     for row_index, cell_index, source_cell, target_cell in reversed(matched_cells):
         if id(target_cell) in merged_target_cell_ids:
             continue
@@ -474,6 +524,11 @@ def compile_table(
             ).edits
         )
 
+    # Column formatting
+    # -----------------
+    # If the number of columns changed, reapply every target column's properties
+    # because source and target positions may no longer line up. Otherwise only
+    # columns whose writable properties changed need an edit.
     source_column_properties = (
         source.column_properties if isinstance(source.column_properties, list) else None
     )
@@ -504,6 +559,10 @@ def compile_table(
                     )
                 )
 
+    # Row formatting
+    # --------------
+    # New rows have no source formatting to compare. For retained rows, emit an
+    # edit only when one of the writable row-style values changed.
     for target_row_index, target_row in enumerate(target.rows):
         source_row = source_rows_by_target.get(target_row_index)
         source_row_style = (
@@ -531,6 +590,11 @@ def compile_table(
                 )
             )
 
+    # Cell formatting
+    # ---------------
+    # Compare each target cell with the source cell matched earlier. A cell's
+    # list position is not always its visual column after merges, so add the
+    # spans of preceding cells to calculate the Google column index.
     source_cells_by_target = {
         (row_index, cell_index): source_cell
         for row_index, cell_index, source_cell, _target_cell in matched_cells
@@ -565,20 +629,6 @@ def is_insert_text_unit(unit: ContentUnit) -> bool:
 
 def is_inline_paragraph_unit(unit: ContentUnit) -> bool:
     return isinstance(unit, (TextUnit, EquationUnit))
-
-
-def generate_insert_text(
-    *,
-    target: ContentStream,
-    target_start_pos: int,
-    target_end_pos: int,
-    insertion_utf16_index: int,
-) -> InsertText:
-    text = "".join(
-        target_unit.content if isinstance(target_unit, TextUnit) else "\n"
-        for target_unit in target.items[target_start_pos:target_end_pos]
-    )
-    return InsertText(index=insertion_utf16_index, text=text)
 
 
 def generate_edit_script(
@@ -711,7 +761,7 @@ def generate_edit_script(
                     target_unit, TableUnit
                 ):
                     edits.extend(
-                        compile_table(
+                        generate_table_edits(
                             source=source_unit,
                             target=target_unit,
                             table_start_index=source.utf16_index(
@@ -769,14 +819,14 @@ def generate_edit_script(
                 text_utf16_offset = (
                     target.utf16_index(text_start_pos) - target_range_start_utf16_index
                 )
+                text = "".join(
+                    text_unit.content if isinstance(text_unit, TextUnit) else "\n"
+                    for text_unit in target.items[text_start_pos:target_pos]
+                )
                 edits.append(
-                    generate_insert_text(
-                        target=target,
-                        target_start_pos=text_start_pos,
-                        target_end_pos=target_pos,
-                        insertion_utf16_index=(
-                            insertion_utf16_index + text_utf16_offset
-                        ),
+                    InsertText(
+                        index=insertion_utf16_index + text_utf16_offset,
+                        text=text,
                     )
                 )
                 continue
