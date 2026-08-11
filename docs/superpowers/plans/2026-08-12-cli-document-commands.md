@@ -321,14 +321,17 @@ The hardcoded source response used by command tests represents one tab with an i
   **RED:** Add one hardcoded success test proving two disjoint replacements are both resolved against the original string regardless of edit order:
 
   ```python
-  assert apply_xhtml_edits(
-      xhtml="alpha beta gamma",
-      edits=[
-          XhtmlEdit(old_text="gamma", new_text="G"),
-          XhtmlEdit(old_text="alpha", new_text="A"),
-      ],
-      document_id="doc-1",
-  ) == "A beta G"
+  assert (
+      apply_xhtml_edits(
+          xhtml="alpha beta gamma",
+          edits=[
+              XhtmlEdit(old_text="gamma", new_text="G"),
+              XhtmlEdit(old_text="alpha", new_text="A"),
+          ],
+          document_id="doc-1",
+      )
+      == "A beta G"
+  )
   ```
 
   Add one parameterized public-behavior test with these hardcoded cases and messages:
