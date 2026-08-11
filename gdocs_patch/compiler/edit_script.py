@@ -933,6 +933,10 @@ def generate_edit_script(
         while target_pos < target_end_pos:
             target_unit = target.items[target_pos]
             preceding_boundary: Literal["INSERTED", "RETAINED"] = "RETAINED"
+            # Table and SectionBreak insertions create their own preceding
+            # newline. When that boundary is part of this target range, consume
+            # it with the structure instead of emitting a second newline through
+            # InsertText. Its position is still recorded for the formatting pass.
             if (
                 isinstance(target_unit, ParagraphBoundary)
                 and target_pos + 1 < target_end_pos
@@ -1049,6 +1053,10 @@ def generate_edit_script(
                     source.items[source_start_pos + range_offset]
                 )
 
+    # The content loop consumed these boundaries together with their structures,
+    # so they have no equal source unit even though Google will create them.
+    # Add a plain boundary placeholder so the formatting pass treats them as
+    # present instead of emitting unnecessary resets for missing content.
     for target_pos in inserted_structural_boundary_positions:
         source_units_by_target_pos[target_pos] = ParagraphBoundary()
 
