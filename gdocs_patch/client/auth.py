@@ -215,7 +215,13 @@ def load_credentials() -> GoogleCredentials:
             str(DEFAULT_CREDENTIALS_PATH),
             scopes=[DOCS_SCOPE],
         )
-    except (OSError, ValueError, GoogleAuthError) as error:
+    except (
+        OSError,
+        ValueError,
+        AttributeError,
+        TypeError,
+        GoogleAuthError,
+    ) as error:
         raise AuthenticationError("Could not load saved Google credentials.") from error
     if credentials.expired:
         refresh = cast(Callable[[Request], None], cast(Any, credentials).refresh)
