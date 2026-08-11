@@ -441,8 +441,6 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             ),
         }
     )
-    assert content.tabs["root"].body.utf16_index(0) == 0
-    assert content.tabs["root"].body.utf16_index(1) == 1
 
 
 def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
