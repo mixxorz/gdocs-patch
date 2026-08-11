@@ -1211,6 +1211,41 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             },
             {
                 "updateTextStyle": {
+                    "range": {"startIndex": 50, "endIndex": 51, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 47, "endIndex": 48, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 44, "endIndex": 45, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 40, "endIndex": 41, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 30, "endIndex": 31, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
                     "range": {"startIndex": 2, "endIndex": 3, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",

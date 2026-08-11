@@ -163,10 +163,14 @@ def test_generate_edit_script_inserts_two_table_rows() -> None:
         InsertText(index=24, text="G"),
         InsertText(index=20, text="F"),
         InsertText(index=17, text="E"),
+        ApplyTextStyle(start_index=27, end_index=28, text_style=UNSET),
+        ApplyTextStyle(start_index=24, end_index=25, text_style=UNSET),
+        ApplyTextStyle(start_index=20, end_index=21, text_style=UNSET),
+        ApplyTextStyle(start_index=17, end_index=18, text_style=UNSET),
     ]
 
 
-def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
+def test_generate_edit_script_inserts_text_and_table_between_existing_tables() -> None:
     first_table = TableUnit(
         table_key="table-1",
         rows=[
@@ -212,7 +216,15 @@ def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
                 cells=[
                     TableCellUnit(
                         content=ContentStream(
-                            items=[TextUnit(content="E"), ParagraphBoundary()]
+                            items=[
+                                TextUnit(content="E"),
+                                ParagraphBoundary(
+                                    bullet=BulletPreset(
+                                        preset="BULLET_DISC_CIRCLE_SQUARE",
+                                        nesting_level=0,
+                                    )
+                                ),
+                            ]
                         ),
                     ),
                     TableCellUnit(
@@ -239,17 +251,75 @@ def test_generate_edit_script_inserts_table_between_existing_tables() -> None:
         ],
     )
     last_table = TableUnit(table_key="table-3", rows=first_table.rows)
-    source = ContentStream(items=[first_table, last_table])
-    target = ContentStream(items=[first_table, second_table, last_table])
+    source = ContentStream(
+        items=[
+            first_table,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            last_table,
+        ]
+    )
+    target = ContentStream(
+        items=[
+            first_table,
+            TextUnit(content="A"),
+            ParagraphBoundary(),
+            TextUnit(content="X"),
+            ParagraphBoundary(),
+            second_table,
+            last_table,
+        ]
+    )
 
     script = generate_edit_script(source=source, target=target)
 
     assert script.edits == [
-        InsertTable(index=16, rows=2, columns=2),
-        InsertText(index=29, text="H"),
-        InsertText(index=26, text="G"),
-        InsertText(index=22, text="F"),
-        InsertText(index=19, text="E"),
+        InsertText(index=18, text="X\n"),
+        InsertTable(index=20, rows=2, columns=2),
+        InsertText(index=33, text="H"),
+        InsertText(index=30, text="G"),
+        InsertText(index=26, text="F"),
+        InsertText(index=23, text="E"),
+        ApplyBulletRun(
+            paragraphs=(
+                BulletParagraph(
+                    start_index=23,
+                    end_index=25,
+                    nesting_level=0,
+                ),
+            ),
+            preset="BULLET_DISC_CIRCLE_SQUARE",
+        ),
+        ApplyParagraphStyle(
+            start_index=18,
+            end_index=20,
+            paragraph_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=33,
+            end_index=34,
+            text_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=30,
+            end_index=31,
+            text_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=26,
+            end_index=27,
+            text_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=23,
+            end_index=24,
+            text_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=18,
+            end_index=20,
+            text_style=UNSET,
+        ),
     ]
 
 

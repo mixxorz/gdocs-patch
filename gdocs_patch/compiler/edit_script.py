@@ -18,6 +18,7 @@ from .bullets import closest_preset, exact_preset
 from .content_stream import (
     BulletPreset,
     ContentStream,
+    ContentUnit,
     EquationUnit,
     ParagraphBoundary,
     TableCellUnit,
@@ -226,7 +227,12 @@ def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[O
     ).get_opcodes()
 
 
-def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
+def compile_inserted_table(
+    *,
+    table: TableUnit,
+    index: int,
+    allow_bullet_normalization: bool,
+) -> list[Edit]:
     edits: list[Edit] = [
         InsertTable(
             index=index,
@@ -241,7 +247,7 @@ def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
     ]
     for row_index, cell_index, cell in reversed(cells):
         edits.extend(
-            compile_content(
+            generate_edit_script(
                 source=ContentStream(items=[ParagraphBoundary()]),
                 target=cell.content,
                 start_index=index
@@ -249,7 +255,8 @@ def compile_inserted_table(*, table: TableUnit, index: int) -> list[Edit]:
                     row_index=row_index,
                     cell_index=cell_index,
                 ),
-            )
+                allow_bullet_normalization=allow_bullet_normalization,
+            ).edits
         )
 
     if isinstance(table.column_properties, list):
@@ -439,7 +446,7 @@ def compile_table(
 
     for row_index, cell_index, cell in reversed(new_cells):
         edits.extend(
-            compile_content(
+            generate_edit_script(
                 source=ContentStream(items=[ParagraphBoundary()]),
                 target=cell.content,
                 start_index=table_start_index
@@ -447,7 +454,8 @@ def compile_table(
                     row_index=row_index,
                     cell_index=cell_index,
                 ),
-            )
+                allow_bullet_normalization=allow_bullet_normalization,
+            ).edits
         )
 
     for row_index, cell_index, source_cell, target_cell in reversed(matched_cells):
@@ -551,49 +559,26 @@ def compile_table(
     return edits
 
 
-def generate_text_edits(
+def is_insert_text_unit(unit: ContentUnit) -> bool:
+    return isinstance(unit, (TextUnit, ParagraphBoundary))
+
+
+def is_inline_paragraph_unit(unit: ContentUnit) -> bool:
+    return isinstance(unit, (TextUnit, EquationUnit))
+
+
+def generate_insert_text(
     *,
-    source: ContentStream,
     target: ContentStream,
-    opcode: Opcode,
-    start_index: int,
-) -> list[Edit]:
-    tag, source_start, source_end, target_start, target_end = opcode
-    index = source.utf16_index(source_start, start_index=start_index)
-    edits: list[Edit] = []
-
-    # A replacement deletes first so its insertion can reuse the same index.
-    if tag in {"delete", "replace"}:
-        edits.append(
-            DeleteContent(
-                start_index=index,
-                end_index=source.utf16_index(source_end, start_index=start_index),
-            )
-        )
-    if tag in {"insert", "replace"}:
-        text = "".join(
-            item.content if isinstance(item, TextUnit) else "\n"
-            for item in target.items[target_start:target_end]
-        )
-        edits.append(InsertText(index=index, text=text))
-    return edits
-
-
-def compile_content(
-    *, source: ContentStream, target: ContentStream, start_index: int
-) -> list[Edit]:
-    opcodes = match_content(source=source, target=target)
-    edits: list[Edit] = []
-    for opcode in reversed(opcodes):
-        edits.extend(
-            generate_text_edits(
-                source=source,
-                target=target,
-                opcode=opcode,
-                start_index=start_index,
-            )
-        )
-    return edits
+    target_start_pos: int,
+    target_end_pos: int,
+    insertion_utf16_index: int,
+) -> InsertText:
+    text = "".join(
+        target_unit.content if isinstance(target_unit, TextUnit) else "\n"
+        for target_unit in target.items[target_start_pos:target_end_pos]
+    )
+    return InsertText(index=insertion_utf16_index, text=text)
 
 
 def generate_edit_script(
@@ -620,13 +605,13 @@ def generate_edit_script(
     # paragraph operations need the complete paragraph's UTF-16 range. Walk the
     # target once and remember the range ending at each boundary. Later code can
     # move from a matched boundary to its paragraph's UTF-16 range.
-    target_paragraph_utf16_ranges: dict[int, tuple[int, int]] = {}
+    target_paragraph_utf16_range_by_target_pos: dict[int, tuple[int, int]] = {}
     paragraph_start_utf16_index = start_index
     target_utf16_index = start_index
     for target_pos, target_unit in enumerate(target.items):
         target_utf16_index += target_unit.utf16_width
         if isinstance(target_unit, ParagraphBoundary):
-            target_paragraph_utf16_ranges[target_pos] = (
+            target_paragraph_utf16_range_by_target_pos[target_pos] = (
                 paragraph_start_utf16_index,
                 target_utf16_index,
             )
@@ -702,17 +687,18 @@ def generate_edit_script(
     # beginning of the target stream range. That gives us the table's final
     # insertion index in the document.
     #
-    # Tables are outer stream units with their own nested compiler, so the code
-    # below handles them separately from text.
-    handled_table_target_positions: set[int] = set()
+    # The loop below inspects the units covered by each opcode. Most equal units
+    # need no content edit. Tables are the exception because their outer unit can
+    # match while rows, cells, or cell content still need to change.
     for opcode in reversed(opcodes):
         tag, source_start_pos, source_end_pos, target_start_pos, target_end_pos = opcode
 
-        # Existing tables
-        # ---------------
-        # Equal table units have the same retained table key. Their outer
-        # structure remains in place, but rows, columns, cells, and cell content
-        # may still differ, so recurse into each matched table.
+        # Equal content
+        # -------------
+        # Equal text and paragraph boundaries are already correct, so there is
+        # nothing to emit for them during the content phase. An equal TableUnit
+        # only tells us that the same table was retained. Its rows, cells, and
+        # cell content may still differ, so inspect the table's contents.
         if tag == "equal":
             source_units = source.items[source_start_pos:source_end_pos]
             target_units = target.items[target_start_pos:target_end_pos]
@@ -735,66 +721,86 @@ def generate_edit_script(
                             allow_bullet_normalization=allow_bullet_normalization,
                         )
                     )
-                    handled_table_target_positions.add(target_pos)
             continue
 
-        # New tables
-        # ----------
-        # A table in an inserted or replaced target stream range is new; existing
-        # tables were handled above. InsertText cannot create it, so remove the
-        # replaced source stream range and compile each new table separately.
-        inserted_tables = [
-            (target_pos, target_unit)
-            for target_pos, target_unit in enumerate(
-                target.items[target_start_pos:target_end_pos],
-                start=target_start_pos,
+        # Changed content
+        # ---------------
+        # Insert, delete, and replace opcodes do not align their source and
+        # target units. Delete the complete source range once, then walk the
+        # target range and create whatever units it contains.
+        insertion_utf16_index = source.utf16_index(
+            source_start_pos,
+            start_index=start_index,
+        )
+        if tag in {"delete", "replace"}:
+            edits.append(
+                DeleteContent(
+                    start_index=insertion_utf16_index,
+                    end_index=source.utf16_index(
+                        source_end_pos,
+                        start_index=start_index,
+                    ),
+                )
             )
-            if isinstance(target_unit, TableUnit)
-        ]
-        if inserted_tables:
-            if tag == "replace":
+
+        # New content
+        # -----------
+        # After removing any replaced source content, build the target range
+        # from left to right. Each pass handles one kind of content: text follows
+        # the normal InsertText path, while a table goes to its own compiler.
+        # Other content can get its own branch here when we support inserting it.
+        target_range_start_utf16_index = target.utf16_index(target_start_pos)
+        target_pos = target_start_pos
+        while target_pos < target_end_pos:
+            target_unit = target.items[target_pos]
+            if is_insert_text_unit(target_unit):
+                text_start_pos = target_pos
+                target_pos += 1
+                # A TextUnit normally contains one character. Keep moving until
+                # we reach something that InsertText cannot represent, then
+                # insert the whole run at once instead of making one request for
+                # every character.
+                while target_pos < target_end_pos:
+                    if is_insert_text_unit(target.items[target_pos]):
+                        target_pos += 1
+                        continue
+                    break
+
+                text_utf16_offset = (
+                    target.utf16_index(text_start_pos) - target_range_start_utf16_index
+                )
                 edits.append(
-                    DeleteContent(
-                        start_index=source.utf16_index(
-                            source_start_pos,
-                            start_index=start_index,
-                        ),
-                        end_index=source.utf16_index(
-                            source_end_pos,
-                            start_index=start_index,
+                    generate_insert_text(
+                        target=target,
+                        target_start_pos=text_start_pos,
+                        target_end_pos=target_pos,
+                        insertion_utf16_index=(
+                            insertion_utf16_index + text_utf16_offset
                         ),
                     )
                 )
-            insertion_utf16_index = source.utf16_index(
-                source_start_pos,
-                start_index=start_index,
-            )
-            target_range_start_utf16_index = target.utf16_index(target_start_pos)
-            for target_pos, table in inserted_tables:
+                continue
+
+            if isinstance(target_unit, TableUnit):
                 table_utf16_offset = (
                     target.utf16_index(target_pos) - target_range_start_utf16_index
                 )
-                table_insertion_utf16_index = insertion_utf16_index + table_utf16_offset
                 edits.extend(
                     compile_inserted_table(
-                        table=table,
-                        index=table_insertion_utf16_index,
+                        table=target_unit,
+                        index=insertion_utf16_index + table_utf16_offset,
+                        allow_bullet_normalization=allow_bullet_normalization,
                     )
                 )
-                handled_table_target_positions.add(target_pos)
-            continue
+                target_pos += 1
+                continue
 
-        # Text content
-        # ------------
-        edits.extend(
-            generate_text_edits(
-                source=source,
-                target=target,
-                opcode=opcode,
-                start_index=start_index,
+            raise UnsupportedTransformation(
+                f"cannot insert {type(target_unit).__name__} content"
             )
-        )
 
+    # Formatting
+    # ----------
     # At this point the content requests, when executed, leave the document with
     # the same widths and structure as the target stream. Formatting requests
     # can therefore use target UTF-16 indices. For equal opcode stream ranges,
@@ -802,13 +808,11 @@ def generate_edit_script(
     # source formatting that can be trusted, so their target formatting is reapplied.
     bullet_edits: list[Edit] = []
     style_edits: list[Edit] = []
-    # SequenceMatcher sees each paragraph boundary independently, whereas the
-    # Docs API often has to recreate an entire list to change one unit's level.
-    # Keep the ordered boundary stream positions so any changed unit can recover
-    # its surrounding run. Once a run is emitted, mark all of its positions to
-    # avoid emitting the same reconstruction again at the next paragraph.
-    handled_bullet_target_positions: set[int] = set()
-    target_boundary_positions = list(target_paragraph_utf16_ranges)
+
+    # The bullet and style passes are easier to follow when they can walk the
+    # target directly. This map records the source unit aligned with each target
+    # position. Inserted and replaced target positions are absent from the map.
+    source_units_by_target_pos: dict[int, ContentUnit] = {}
     for (
         tag,
         source_start_pos,
@@ -816,306 +820,329 @@ def generate_edit_script(
         target_start_pos,
         target_end_pos,
     ) in opcodes:
-        for target_pos in range(target_start_pos, target_end_pos):
-            if target_pos in handled_table_target_positions:
-                continue
-            target_unit = target.items[target_pos]
-            # Equal stream ranges provide a corresponding source unit whose
-            # formatting can be compared. Inserted and replaced target units have
-            # no source unit and will receive their target formatting.
-            source_unit = None
-            if tag == "equal":
-                source_unit = source.items[
-                    source_start_pos + target_pos - target_start_pos
-                ]
+        if tag == "equal":
+            for range_offset in range(target_end_pos - target_start_pos):
+                source_units_by_target_pos[target_start_pos + range_offset] = (
+                    source.items[source_start_pos + range_offset]
+                )
 
-            unit_start_utf16_index = target.utf16_index(
-                target_pos,
-                start_index=start_index,
-            )
-            unit_end_utf16_index = target.utf16_index(
-                target_pos + 1,
-                start_index=start_index,
-            )
+    # Bullet formatting
+    # -----------------
+    # Walk the target units in their document order. Text and equations are
+    # inline paragraph content, so they do not interrupt a list. A paragraph
+    # boundary either continues the current list run or starts a different kind
+    # of paragraph. Any block-level unit ends the run naturally because it is
+    # neither inline content nor a paragraph boundary.
+    target_pos = 0
+    while target_pos < len(target.items):
+        target_unit = target.items[target_pos]
+        if is_inline_paragraph_unit(target_unit):
+            target_pos += 1
+            continue
+        if isinstance(target_unit, ParagraphBoundary):
+            target_boundary_unit = target_unit
+        else:
+            target_pos += 1
+            continue
+        source_unit = source_units_by_target_pos.get(target_pos)
+        source_boundary_unit = (
+            source_unit if isinstance(source_unit, ParagraphBoundary) else None
+        )
+        source_bullet = (
+            source_boundary_unit.bullet if source_boundary_unit is not None else UNSET
+        )
+        paragraph_start_utf16_index, paragraph_end_utf16_index = (
+            target_paragraph_utf16_range_by_target_pos[target_pos]
+        )
 
-            match target_unit:
-                case EquationUnit() | TableUnit():
-                    pass
+        # New bullet lists
+        # ----------------
+        # A BulletPreset asks Google to create a list. Keep walking through
+        # inline content and matching paragraph boundaries until something else
+        # ends the run, then create all of its paragraphs with one request.
+        if isinstance(target_boundary_unit.bullet, BulletPreset):
+            target_preset = target_boundary_unit.bullet
+            preset_run_boundaries = [(target_pos, target_preset)]
+            target_pos += 1
+            # The current paragraph is already part of the run. Move through the
+            # following paragraph's inline content until we reach its boundary.
+            # A boundary with the same preset extends the run. Anything else is
+            # left for the outer loop to handle on its next pass.
+            while target_pos < len(target.items):
+                candidate_unit = target.items[target_pos]
+                if is_inline_paragraph_unit(candidate_unit):
+                    target_pos += 1
+                    continue
+                if isinstance(candidate_unit, ParagraphBoundary):
+                    candidate_preset = candidate_unit.bullet
+                    if isinstance(candidate_preset, BulletPreset):
+                        if candidate_preset.preset == target_preset.preset:
+                            preset_run_boundaries.append((target_pos, candidate_preset))
+                            target_pos += 1
+                            continue
+                break
 
-                case TextUnit() as target_text:
-                    source_text = (
-                        source_unit if isinstance(source_unit, TextUnit) else None
-                    )
-                    if (
-                        source_text is None
-                        or source_text.text_style != target_text.text_style
-                    ):
-                        style_edits.append(
-                            ApplyTextStyle(
-                                start_index=unit_start_utf16_index,
-                                end_index=unit_end_utf16_index,
-                                text_style=target_text.text_style,
-                            )
+            # We now know every paragraph that belongs to this new list. Remove
+            # any old list membership paragraph by paragraph, while building the
+            # range and nesting information needed for the replacement run.
+            preset_run_paragraphs: list[BulletParagraph] = []
+            for run_pos, run_preset in preset_run_boundaries:
+                run_source_unit = source_units_by_target_pos.get(run_pos)
+                run_source_boundary_unit = (
+                    run_source_unit
+                    if isinstance(run_source_unit, ParagraphBoundary)
+                    else None
+                )
+                run_start_utf16_index, run_end_utf16_index = (
+                    target_paragraph_utf16_range_by_target_pos[run_pos]
+                )
+                if (
+                    run_source_boundary_unit is not None
+                    and run_source_boundary_unit.bullet is not UNSET
+                ):
+                    bullet_edits.append(
+                        DeleteParagraphBullets(
+                            start_index=run_start_utf16_index,
+                            end_index=run_end_utf16_index,
                         )
-
-                case ParagraphBoundary() as target_boundary:
-                    # The boundary is the stream representation of a paragraph's
-                    # final newline. It carries newline text style, paragraph
-                    # style, and list membership. The remembered paragraph UTF-16
-                    # range locates the complete paragraph that ends here.
-                    (
-                        paragraph_start_utf16_index,
-                        paragraph_end_utf16_index,
-                    ) = target_paragraph_utf16_ranges[target_pos]
-                    source_boundary = (
-                        source_unit
-                        if isinstance(source_unit, ParagraphBoundary)
-                        else None
                     )
-                    source_bullet = (
-                        source_boundary.bullet if source_boundary is not None else UNSET
+                preset_run_paragraphs.append(
+                    BulletParagraph(
+                        start_index=run_start_utf16_index,
+                        end_index=run_end_utf16_index,
+                        nesting_level=run_preset.nesting_level,
                     )
+                )
 
-                    # BulletPreset means the target is asking Google to create a
-                    # list rather than preserve one returned by documents.get.
-                    # If this paragraph currently belongs to a list, remove that
-                    # membership before applying the requested preset.
-                    if isinstance(target_boundary.bullet, BulletPreset):
-                        if source_bullet is not UNSET:
-                            bullet_edits.append(
-                                DeleteParagraphBullets(
-                                    start_index=paragraph_start_utf16_index,
-                                    end_index=paragraph_end_utf16_index,
-                                )
+            # Lowering needs the complete run in one edit so Google gives every
+            # paragraph the same list ID while preserving their nesting levels.
+            bullet_edits.append(
+                ApplyBulletRun(
+                    paragraphs=tuple(preset_run_paragraphs),
+                    preset=target_preset.preset,
+                )
+            )
+            continue
+
+        # Existing bullet lists
+        # ---------------------
+        # A Bullet with a list ID refers to a list already present in the source
+        # document. Consume the complete run so a nesting change can rebuild all
+        # of its paragraphs together.
+        if isinstance(target_boundary_unit.bullet, Bullet):
+            target_bullet = target_boundary_unit.bullet
+            existing_run_boundaries = [
+                (target_pos, target_boundary_unit, target_bullet)
+            ]
+            target_pos += 1
+            # As with a new list, walk through inline content to each following
+            # paragraph boundary. The run continues only while those boundaries
+            # carry the same Google-assigned list ID. We stop before consuming
+            # the first different paragraph or block-level unit.
+            while target_pos < len(target.items):
+                candidate_unit = target.items[target_pos]
+                if is_inline_paragraph_unit(candidate_unit):
+                    target_pos += 1
+                    continue
+                if isinstance(candidate_unit, ParagraphBoundary):
+                    candidate_bullet = candidate_unit.bullet
+                    if isinstance(candidate_bullet, Bullet):
+                        if candidate_bullet.list_id == target_bullet.list_id:
+                            existing_run_boundaries.append(
+                                (target_pos, candidate_unit, candidate_bullet)
                             )
-                        bullet_paragraph = BulletParagraph(
+                            target_pos += 1
+                            continue
+                break
+
+            # Compare the complete target run with its aligned source
+            # paragraphs. Google does not let us move a paragraph directly from
+            # one existing list ID to another. A nesting change is possible, but
+            # it means deleting and recreating this entire run. Remember one
+            # changed pair so we can recover the list definition below.
+            changed_boundary_units: (
+                tuple[
+                    ParagraphBoundary,
+                    ParagraphBoundary,
+                ]
+                | None
+            ) = None
+            for run_pos, run_boundary_unit, run_bullet in existing_run_boundaries:
+                run_source_unit = source_units_by_target_pos.get(run_pos)
+                if isinstance(run_source_unit, ParagraphBoundary) and isinstance(
+                    run_source_unit.bullet,
+                    Bullet,
+                ):
+                    if run_bullet.list_id != run_source_unit.bullet.list_id:
+                        raise UnsupportedTransformation(
+                            "moving paragraphs between existing lists is not supported"
+                        )
+                    if (
+                        changed_boundary_units is None
+                        and run_bullet.nesting_level
+                        != run_source_unit.bullet.nesting_level
+                    ):
+                        changed_boundary_units = (run_boundary_unit, run_source_unit)
+
+            if changed_boundary_units is not None:
+                changed_target_boundary_unit, changed_source_boundary_unit = (
+                    changed_boundary_units
+                )
+                # createParagraphBullets accepts a preset rather than the source
+                # list definition. Use the exact matching preset when possible;
+                # otherwise the caller must explicitly allow us to normalize a
+                # customized list to the closest preset.
+                definition = (
+                    changed_target_boundary_unit.list_definition
+                    if isinstance(
+                        changed_target_boundary_unit.list_definition,
+                        ListDefinition,
+                    )
+                    else changed_source_boundary_unit.list_definition
+                )
+                if not isinstance(definition, ListDefinition):
+                    raise UnsupportedTransformation(
+                        "the existing bullet list definition is not loaded"
+                    )
+                preset = exact_preset(definition)
+                if preset is None:
+                    if not allow_bullet_normalization:
+                        raise UnsupportedTransformation(
+                            "editing a customized bullet list requires "
+                            "bullet normalization"
+                        )
+                    preset = closest_preset(definition)
+
+                # Rebuilding uses two edits: first remove list membership from
+                # the complete run, then apply one preset with the target nesting
+                # level recorded for every paragraph.
+                existing_run_paragraphs = tuple(
+                    BulletParagraph(
+                        start_index=(
+                            target_paragraph_utf16_range_by_target_pos[run_pos][0]
+                        ),
+                        end_index=(
+                            target_paragraph_utf16_range_by_target_pos[run_pos][1]
+                        ),
+                        nesting_level=run_bullet.nesting_level,
+                    )
+                    for run_pos, _run_boundary, run_bullet in existing_run_boundaries
+                )
+                bullet_edits.append(
+                    DeleteParagraphBullets(
+                        start_index=existing_run_paragraphs[0].start_index,
+                        end_index=existing_run_paragraphs[-1].end_index,
+                    )
+                )
+                bullet_edits.append(
+                    ApplyBulletRun(
+                        paragraphs=existing_run_paragraphs,
+                        preset=preset,
+                    )
+                )
+            continue
+
+        # If the target paragraph no longer belongs to a list, remove its source
+        # bullet formatting without touching the text that may carry comments.
+        if target_boundary_unit.bullet is UNSET and source_bullet is not UNSET:
+            bullet_edits.append(
+                DeleteParagraphBullets(
+                    start_index=paragraph_start_utf16_index,
+                    end_index=paragraph_end_utf16_index,
+                )
+            )
+        target_pos += 1
+
+    # Text and paragraph styles
+    # -------------------------
+    # Styles operate on individual units, so walk the target once and compare
+    # each unit with its aligned source unit when one exists.
+    for target_pos, target_unit in enumerate(target.items):
+        source_unit = source_units_by_target_pos.get(target_pos)
+
+        unit_start_utf16_index = target.utf16_index(
+            target_pos,
+            start_index=start_index,
+        )
+        unit_end_utf16_index = target.utf16_index(
+            target_pos + 1,
+            start_index=start_index,
+        )
+
+        match target_unit:
+            # Opaque and container units
+            # --------------------------
+            case EquationUnit() | TableUnit():
+                pass
+
+            # Text styles
+            # -----------
+            case TextUnit() as target_text_unit:
+                source_text_unit = (
+                    source_unit if isinstance(source_unit, TextUnit) else None
+                )
+                if (
+                    source_text_unit is None
+                    or source_text_unit.text_style != target_text_unit.text_style
+                ):
+                    style_edits.append(
+                        ApplyTextStyle(
+                            start_index=unit_start_utf16_index,
+                            end_index=unit_end_utf16_index,
+                            text_style=target_text_unit.text_style,
+                        )
+                    )
+
+            # Paragraph formatting
+            # --------------------
+            case ParagraphBoundary() as target_boundary_unit:
+                # The boundary is the stream representation of a paragraph's
+                # final newline. It carries newline text style, paragraph
+                # style, and list membership. The remembered paragraph UTF-16
+                # range locates the complete paragraph that ends here.
+                (
+                    paragraph_start_utf16_index,
+                    paragraph_end_utf16_index,
+                ) = target_paragraph_utf16_range_by_target_pos[target_pos]
+                source_boundary_unit = (
+                    source_unit if isinstance(source_unit, ParagraphBoundary) else None
+                )
+                # Paragraph and newline styles
+                # ----------------------------
+                # Bullet operations do not restore either the newline's text
+                # style or the paragraph's own style. Compare and emit those
+                # independently after deciding the list operation.
+                if (
+                    source_boundary_unit is None
+                    or source_boundary_unit.text_style
+                    != target_boundary_unit.text_style
+                ):
+                    style_edits.append(
+                        ApplyTextStyle(
+                            start_index=unit_start_utf16_index,
+                            end_index=unit_end_utf16_index,
+                            text_style=target_boundary_unit.text_style,
+                        )
+                    )
+                if (
+                    target_pos in forced_paragraph_style_positions
+                    or source_boundary_unit is None
+                    or writable_paragraph_style(source_boundary_unit.paragraph_style)
+                    != writable_paragraph_style(target_boundary_unit.paragraph_style)
+                ):
+                    style_edits.append(
+                        ApplyParagraphStyle(
                             start_index=paragraph_start_utf16_index,
                             end_index=paragraph_end_utf16_index,
-                            nesting_level=target_boundary.bullet.nesting_level,
+                            paragraph_style=target_boundary_unit.paragraph_style,
                         )
-                        # Lowering creates nesting by temporarily inserting tabs
-                        # before each paragraph and then sending one
-                        # createParagraphBullets request. Adjacent paragraphs with
-                        # the same preset must therefore be accumulated into one
-                        # ApplyBulletRun; separate requests do not reliably retain
-                        # their mixed nesting levels.
-                        previous_bullet_edit = (
-                            bullet_edits[-1] if bullet_edits else None
-                        )
-                        if (
-                            isinstance(previous_bullet_edit, ApplyBulletRun)
-                            and previous_bullet_edit.preset
-                            == target_boundary.bullet.preset
-                            and previous_bullet_edit.paragraphs[-1].end_index
-                            == paragraph_start_utf16_index
-                        ):
-                            bullet_edits[-1] = ApplyBulletRun(
-                                paragraphs=(
-                                    *previous_bullet_edit.paragraphs,
-                                    bullet_paragraph,
-                                ),
-                                preset=target_boundary.bullet.preset,
-                            )
-                        else:
-                            bullet_edits.append(
-                                ApplyBulletRun(
-                                    paragraphs=(bullet_paragraph,),
-                                    preset=target_boundary.bullet.preset,
-                                )
-                            )
-                    # Bullet contains a Google-assigned list ID, which means the
-                    # target intends to preserve an existing list. No request is
-                    # needed while both the ID and nesting level are unchanged.
-                    # Moving a paragraph to another existing list cannot be
-                    # expressed by the API, and changing a nesting level requires
-                    # deleting and recreating the complete contiguous list run.
-                    elif isinstance(target_boundary.bullet, Bullet):
-                        if (
-                            target_pos not in handled_bullet_target_positions
-                            and isinstance(source_bullet, Bullet)
-                            and (
-                                target_boundary.bullet.list_id != source_bullet.list_id
-                                or target_boundary.bullet.nesting_level
-                                != source_bullet.nesting_level
-                            )
-                        ):
-                            if target_boundary.bullet.list_id != source_bullet.list_id:
-                                raise UnsupportedTransformation(
-                                    "moving paragraphs between existing lists is not supported"
-                                )
-                            # createParagraphBullets accepts one of Google's
-                            # fixed presets; it cannot accept the ListDefinition
-                            # returned by documents.get. If that definition is an
-                            # exact preset, rebuilding preserves its appearance.
-                            # Otherwise rebuilding normalizes a customized list,
-                            # which is only allowed when the caller opts into it.
-                            definition = (
-                                target_boundary.list_definition
-                                if isinstance(
-                                    target_boundary.list_definition,
-                                    ListDefinition,
-                                )
-                                else (
-                                    source_boundary.list_definition
-                                    if source_boundary is not None
-                                    else UNSET
-                                )
-                            )
-                            if not isinstance(definition, ListDefinition):
-                                raise UnsupportedTransformation(
-                                    "the existing bullet list definition is not loaded"
-                                )
-                            preset = exact_preset(definition)
-                            if preset is None:
-                                if not allow_bullet_normalization:
-                                    raise UnsupportedTransformation(
-                                        "editing a customized bullet list requires "
-                                        "bullet normalization"
-                                    )
-                                preset = closest_preset(definition)
+                    )
 
-                            # The current boundary may be in the middle of its
-                            # list. Walk paragraph boundaries in both directions
-                            # to recover the whole contiguous run with this list
-                            # ID. A table between two boundaries breaks the run:
-                            # paragraphs on opposite sides cannot be recreated by
-                            # one paragraph-range request.
-                            run_boundary_list_pos = target_boundary_positions.index(
-                                target_pos
-                            )
-                            first_boundary_list_pos = run_boundary_list_pos
-                            while first_boundary_list_pos > 0:
-                                candidate_pos = target_boundary_positions[
-                                    first_boundary_list_pos - 1
-                                ]
-                                candidate = target.items[candidate_pos]
-                                if (
-                                    not isinstance(candidate, ParagraphBoundary)
-                                    or not isinstance(candidate.bullet, Bullet)
-                                    or candidate.bullet.list_id
-                                    != target_boundary.bullet.list_id
-                                    or any(
-                                        isinstance(intervening_unit, TableUnit)
-                                        for intervening_unit in target.items[
-                                            candidate_pos
-                                            + 1 : target_boundary_positions[
-                                                first_boundary_list_pos
-                                            ]
-                                        ]
-                                    )
-                                ):
-                                    break
-                                first_boundary_list_pos -= 1
+            case _:
+                raise NotImplementedError(type(target_unit).__name__)
 
-                            last_boundary_list_pos = run_boundary_list_pos
-                            while last_boundary_list_pos + 1 < len(
-                                target_boundary_positions
-                            ):
-                                candidate_pos = target_boundary_positions[
-                                    last_boundary_list_pos + 1
-                                ]
-                                candidate = target.items[candidate_pos]
-                                if (
-                                    not isinstance(candidate, ParagraphBoundary)
-                                    or not isinstance(candidate.bullet, Bullet)
-                                    or candidate.bullet.list_id
-                                    != target_boundary.bullet.list_id
-                                    or any(
-                                        isinstance(intervening_unit, TableUnit)
-                                        for intervening_unit in target.items[
-                                            target_boundary_positions[
-                                                last_boundary_list_pos
-                                            ]
-                                            + 1 : candidate_pos
-                                        ]
-                                    )
-                                ):
-                                    break
-                                last_boundary_list_pos += 1
-
-                            # The scan above found stream positions. Convert each
-                            # one into the paragraph UTF-16 range and desired nesting
-                            # level that lowering needs to delete and recreate the
-                            # run after all content edits have completed.
-                            run_positions = target_boundary_positions[
-                                first_boundary_list_pos : last_boundary_list_pos + 1
-                            ]
-                            run_paragraph_list: list[BulletParagraph] = []
-                            for run_pos in run_positions:
-                                run_boundary = target.items[run_pos]
-                                if isinstance(
-                                    run_boundary, ParagraphBoundary
-                                ) and isinstance(run_boundary.bullet, Bullet):
-                                    run_paragraph_list.append(
-                                        BulletParagraph(
-                                            start_index=target_paragraph_utf16_ranges[
-                                                run_pos
-                                            ][0],
-                                            end_index=target_paragraph_utf16_ranges[
-                                                run_pos
-                                            ][1],
-                                            nesting_level=run_boundary.bullet.nesting_level,
-                                        )
-                                    )
-                            run_paragraphs = tuple(run_paragraph_list)
-                            bullet_edits.append(
-                                DeleteParagraphBullets(
-                                    start_index=run_paragraphs[0].start_index,
-                                    end_index=run_paragraphs[-1].end_index,
-                                )
-                            )
-                            bullet_edits.append(
-                                ApplyBulletRun(
-                                    paragraphs=run_paragraphs,
-                                    preset=preset,
-                                )
-                            )
-                            # The outer loop will eventually visit every boundary
-                            # in this run. Record them all now so those later visits
-                            # do not emit duplicate delete-and-recreate actions.
-                            handled_bullet_target_positions.update(run_positions)
-                    # When the target paragraph is no longer bulleted, remove
-                    # only its bullet formatting. The text is left in place so
-                    # comments and other text-bound metadata survive.
-                    elif target_boundary.bullet is UNSET and source_bullet is not UNSET:
-                        bullet_edits.append(
-                            DeleteParagraphBullets(
-                                start_index=paragraph_start_utf16_index,
-                                end_index=paragraph_end_utf16_index,
-                            )
-                        )
-
-                    # Bullet operations do not restore either the newline's text
-                    # style or the paragraph's own style. Compare and emit those
-                    # independently after deciding the list operation.
-                    if (
-                        source_boundary is None
-                        or source_boundary.text_style != target_boundary.text_style
-                    ):
-                        style_edits.append(
-                            ApplyTextStyle(
-                                start_index=unit_start_utf16_index,
-                                end_index=unit_end_utf16_index,
-                                text_style=target_boundary.text_style,
-                            )
-                        )
-                    if (
-                        target_pos in forced_paragraph_style_positions
-                        or source_boundary is None
-                        or writable_paragraph_style(source_boundary.paragraph_style)
-                        != writable_paragraph_style(target_boundary.paragraph_style)
-                    ):
-                        style_edits.append(
-                            ApplyParagraphStyle(
-                                start_index=paragraph_start_utf16_index,
-                                end_index=paragraph_end_utf16_index,
-                                paragraph_style=target_boundary.paragraph_style,
-                            )
-                        )
-
-                case _:
-                    raise NotImplementedError(type(target_unit).__name__)
-
+    # Finalize the edit script
+    # ------------------------
     edits.extend(bullet_edits)
     edits.extend(style_edits)
 

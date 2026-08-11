@@ -2,6 +2,7 @@ from gdocs_patch.compiler import (
     ApplyTableCellStyle,
     ApplyTableColumnProperties,
     ApplyTableRowStyle,
+    ApplyTextStyle,
     ContentStream,
     DeleteTableColumn,
     DeleteTableRow,
@@ -16,7 +17,7 @@ from gdocs_patch.compiler import (
     UnmergeTableCells,
     generate_edit_script,
 )
-from gdocs_patch.models import Color, Dimension, TableCellStyle, TableColumn
+from gdocs_patch.models import UNSET, Color, Dimension, TableCellStyle, TableColumn
 
 
 def test_generate_edit_script_inserts_a_table_column() -> None:
@@ -128,6 +129,8 @@ def test_generate_edit_script_inserts_a_table_column() -> None:
         ),
         InsertText(index=16, text="E"),
         InsertText(index=6, text="B"),
+        ApplyTextStyle(start_index=16, end_index=17, text_style=UNSET),
+        ApplyTextStyle(start_index=6, end_index=7, text_style=UNSET),
     ]
 
 
