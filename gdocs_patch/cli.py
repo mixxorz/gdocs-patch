@@ -16,7 +16,9 @@ from gdocs_patch.client import (
     load_credentials,
     login,
 )
-from gdocs_patch.commands import read_document
+from gdocs_patch.commands import read_document, write_document
+from gdocs_patch.compiler import UnsupportedTransformation
+from gdocs_patch.xhtml import XHTMLParseError
 
 
 class InputError(Exception):
@@ -47,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("read", help="Read a Google document as canonical XHTML.")
+    commands.add_parser("write", help="Write canonical XHTML to a Google document.")
     auth_parser = commands.add_parser("auth", help="Manage Google authentication.")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
     login_parser = auth_commands.add_parser(
@@ -109,6 +112,36 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         sys.stdout.write(output)
+        return 0
+
+    if args.command == "write":
+        try:
+            input_object = _read_json_object()
+            unknown_fields = input_object.keys() - {"docId", "content"}
+            if unknown_fields:
+                field = sorted(unknown_fields)[0]
+                raise InputError(f"Write command input has unknown field: {field}.")
+
+            doc_id = input_object.get("docId")
+            if not isinstance(doc_id, str):
+                raise InputError("Write command input requires string field: docId.")
+
+            content = input_object.get("content")
+            if not isinstance(content, str):
+                raise InputError("Write command input requires string field: content.")
+
+            client = GoogleDocsClient(credentials=load_credentials())
+            write_document(client=client, doc_id=doc_id, content=content)
+        except (
+            InputError,
+            XHTMLParseError,
+            UnsupportedTransformation,
+            AuthenticationError,
+            HttpError,
+        ) as error:
+            print(f"gdocs-patch: error: {error}", file=sys.stderr)
+            return 1
+        print(f"Successfully wrote to {doc_id}.")
         return 0
 
     parser.print_help()

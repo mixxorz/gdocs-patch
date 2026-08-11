@@ -23,10 +23,7 @@ SOURCE_RESPONSE: dict[str, Any] = {
                                     {
                                         "startIndex": 1,
                                         "endIndex": 13,
-                                        "textRun": {
-                                            "content": "Hello world\n",
-                                            "textStyle": {},
-                                        },
+                                        "textRun": {"content": "Hello world\n"},
                                     }
                                 ],
                                 "paragraphStyle": {},
@@ -43,6 +40,7 @@ SOURCE_RESPONSE: dict[str, Any] = {
 class FakeGoogleDocsClient:
     def __init__(self) -> None:
         self.get_document_ids: list[str] = []
+        self.batch_document_ids: list[str] = []
         self.batch_bodies: list[dict[str, object]] = []
 
     def get_document(self, *, document_id: str) -> dict[str, Any]:
@@ -52,5 +50,6 @@ class FakeGoogleDocsClient:
     def batch_update(
         self, *, document_id: str, body: dict[str, object]
     ) -> dict[str, Any]:
+        self.batch_document_ids.append(document_id)
         self.batch_bodies.append(body)
         return {}

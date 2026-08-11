@@ -31,6 +31,21 @@ printf '%s\n' '{"docId":"DOCUMENT_ID","offset":8,"limit":4}' \
 count. The output is raw, unnumbered XHTML, so it can be redirected to a file or
 passed directly to another tool without stripping line prefixes.
 
+## Write a document
+
+The `write` command accepts a document ID and complete target XHTML as one JSON
+object on standard input. Use `jq --rawfile` to preserve multiline XHTML without
+shell escaping or command-line argument limits:
+
+```console
+jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \
+  '{docId: $docId, content: $content}' \
+  | uv run gdocs-patch write
+```
+
+The command fetches the current document, compiles the target against that
+source revision, and applies the resulting Google Docs batch update.
+
 ## Google authentication
 
 Enable the Google Docs API in a Google Cloud project, configure its OAuth
