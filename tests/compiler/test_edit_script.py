@@ -16,6 +16,7 @@ from gdocs_patch.compiler import (
     InsertTable,
     InsertTableRow,
     InsertText,
+    OpaqueUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -497,8 +498,10 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
     source = ContentStream(
         items=[
             TextUnit(content="A"),
+            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
             TextUnit(content="B"),
+            OpaqueUnit(key="opaque-deleted", width=3, is_inline=False),
             EquationUnit(),
             TextUnit(content="C"),
             ParagraphBoundary(),
@@ -507,6 +510,7 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
     target = ContentStream(
         items=[
             TextUnit(content="A"),
+            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
             TextUnit(content="B"),
             TextUnit(content="C"),
@@ -516,7 +520,7 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
 
     script = generate_edit_script(source=source, target=target)
 
-    assert script.edits == [DeleteContent(start_index=3, end_index=4)]
+    assert script.edits == [DeleteContent(start_index=5, end_index=9)]
 
 
 def test_generate_edit_script_rejects_equation_insertion() -> None:
@@ -538,6 +542,25 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
 
     with pytest.raises(UnsupportedTransformation, match="Equation"):
         generate_edit_script(source=source, target=target)
+
+    with pytest.raises(UnsupportedTransformation, match="OpaqueUnit"):
+        generate_edit_script(
+            source=ContentStream(
+                items=[
+                    TextUnit(content="A"),
+                    TextUnit(content="B"),
+                    ParagraphBoundary(),
+                ]
+            ),
+            target=ContentStream(
+                items=[
+                    TextUnit(content="A"),
+                    OpaqueUnit(key="opaque-new", width=1, is_inline=True),
+                    TextUnit(content="B"),
+                    ParagraphBoundary(),
+                ]
+            ),
+        )
 
 
 def test_generate_edit_script_inserts_section_break_with_inserted_boundary() -> None:

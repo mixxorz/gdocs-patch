@@ -23,6 +23,7 @@ from .content_stream import (
     ContentStream,
     ContentUnit,
     EquationUnit,
+    OpaqueUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -751,7 +752,9 @@ def is_insert_text_unit(unit: ContentUnit) -> bool:
 
 
 def is_inline_paragraph_unit(unit: ContentUnit) -> bool:
-    return isinstance(unit, (TextUnit, EquationUnit))
+    return isinstance(unit, (TextUnit, EquationUnit)) or (
+        isinstance(unit, OpaqueUnit) and unit.is_inline
+    )
 
 
 def generate_edit_script(
@@ -782,7 +785,9 @@ def generate_edit_script(
     target_utf16_index = target.utf16_start_index
     for target_pos, target_unit in enumerate(target.items):
         target_utf16_index += target_unit.utf16_width
-        if isinstance(target_unit, (TableUnit, SectionBreakUnit)):
+        if isinstance(target_unit, (TableUnit, SectionBreakUnit)) or (
+            isinstance(target_unit, OpaqueUnit) and not target_unit.is_inline
+        ):
             paragraph_start_utf16_index = target_utf16_index
         elif isinstance(target_unit, ParagraphBoundary):
             target_paragraph_utf16_range_by_target_pos[target_pos] = (
@@ -807,13 +812,16 @@ def generate_edit_script(
         target_start_pos,
         target_end_pos,
     ) in opcodes:
-        if tag in {"insert", "replace"} and any(
-            isinstance(target_unit, EquationUnit)
-            for target_unit in target.items[target_start_pos:target_end_pos]
-        ):
-            raise UnsupportedTransformation(
-                "Google Docs cannot insert Equation elements"
-            )
+        if tag in {"insert", "replace"}:
+            target_range = target.items[target_start_pos:target_end_pos]
+            if any(
+                isinstance(target_unit, EquationUnit) for target_unit in target_range
+            ):
+                raise UnsupportedTransformation(
+                    "Google Docs cannot insert Equation elements"
+                )
+            if any(isinstance(target_unit, OpaqueUnit) for target_unit in target_range):
+                raise UnsupportedTransformation("cannot insert OpaqueUnit content")
 
     # Deleting a paragraph boundary joins the surrounding text into one
     # paragraph. Google keeps one side's paragraph style during that merge, and
@@ -1345,7 +1353,7 @@ def generate_edit_script(
 
             # Opaque and container units
             # --------------------------
-            case EquationUnit() | TableUnit():
+            case EquationUnit() | OpaqueUnit() | TableUnit():
                 pass
 
             # Text styles

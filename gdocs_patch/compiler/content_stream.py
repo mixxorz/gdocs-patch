@@ -32,6 +32,17 @@ class TextUnit(ContentUnit):
 
 
 @dataclass(frozen=True, kw_only=True)
+class OpaqueUnit(ContentUnit):
+    key: str
+    width: int
+    is_inline: bool
+
+    @property
+    def utf16_width(self) -> int:
+        return self.width
+
+
+@dataclass(frozen=True, kw_only=True)
 class EquationUnit(ContentUnit):
     @property
     def utf16_width(self) -> int:
@@ -81,6 +92,8 @@ class ContentStream:
                 values.append(("text", item.content))
             elif isinstance(item, EquationUnit):
                 values.append(("equation", ""))
+            elif isinstance(item, OpaqueUnit):
+                values.append(("opaque", item.key))
             elif isinstance(item, SectionBreakUnit):
                 values.append(("section_break", ""))
             elif isinstance(item, ParagraphBoundary):

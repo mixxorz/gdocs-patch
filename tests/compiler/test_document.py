@@ -4,6 +4,7 @@ from gdocs_patch.compiler import (
     ContentStream,
     DocumentContent,
     EquationUnit,
+    OpaqueUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TabContent,
@@ -22,6 +23,7 @@ from gdocs_patch.models import (
     Bullet,
     BulletPreset,
     Color,
+    ColumnBreak,
     Dimension,
     Document,
     DocumentTab,
@@ -38,6 +40,7 @@ from gdocs_patch.models import (
     TableCell,
     TableCellStyle,
     TableColumn,
+    TableOfContents,
     TableRow,
     TabStop,
     TextRun,
@@ -276,8 +279,16 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
             ),
             SectionBreak(style=later_section_style),
             table,
+            TableOfContents(
+                content=[Paragraph(elements=[TextRun(content="Hidden\n")])]
+            ),
             Paragraph(
-                elements=[TextRun(content="X"), Equation(), TextRun(content="\n")]
+                elements=[
+                    TextRun(content="X"),
+                    ColumnBreak(),
+                    Equation(),
+                    TextRun(content="\n"),
+                ]
             ),
         ]
     )
@@ -310,7 +321,13 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
                     )
                 ],
             ),
+            OpaqueUnit(
+                key="opaque-982bf560",  # gitleaks:allow
+                width=8,
+                is_inline=False,
+            ),
             TextUnit(content="X"),
+            OpaqueUnit(key="opaque-a20f6ae2", width=1, is_inline=True),
             EquationUnit(),
             ParagraphBoundary(),
         ]

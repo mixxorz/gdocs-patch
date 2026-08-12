@@ -1,5 +1,7 @@
+import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import cast
 
 from gdocs_patch.models import (
     UNSET,
@@ -8,11 +10,15 @@ from gdocs_patch.models import (
     Document,
     DocumentTab,
     Equation,
+    IndexedNode,
     ListDefinition,
     Paragraph,
+    ParagraphElement,
     SectionBreak,
+    Segment,
     Tab,
     Table,
+    TableCell,
     TableCellStyle,
     TextRun,
     TextStyle,
@@ -24,6 +30,7 @@ from .content_stream import (
     ContentStream,
     ContentUnit,
     EquationUnit,
+    OpaqueUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -139,10 +146,24 @@ def normalize_tree(
             ]
         )
 
-    items: list[ContentUnit] = []
-    for child in tree.children:
-        items.extend(normalize_tree(child, list_definitions=list_definitions).items)
-    return ContentStream(items=items)
+    if isinstance(tree, (Body, Segment, TableCell)):
+        items: list[ContentUnit] = []
+        for child in tree.children:
+            items.extend(normalize_tree(child, list_definitions=list_definitions).items)
+        return ContentStream(items=items)
+
+    semantic_value = f"{type(tree).__name__}:{tree!r}"
+    return ContentStream(
+        items=[
+            OpaqueUnit(
+                key=(
+                    f"opaque-{hashlib.sha256(semantic_value.encode()).hexdigest()[:8]}"
+                ),
+                width=cast("IndexedNode", tree).utf16_width,
+                is_inline=isinstance(tree, ParagraphElement),
+            )
+        ]
+    )
 
 
 def walk_tabs(tabs: list[Tab]) -> Iterator[Tab]:
