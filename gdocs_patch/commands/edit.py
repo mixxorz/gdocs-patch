@@ -83,7 +83,6 @@ def edit_document(
     *, client: GoogleDocsClient, doc_id: str, edits: Sequence[XhtmlEdit]
 ) -> int:
     """Edit canonical XHTML and apply the compiled changes to a Google document."""
-    _validate_edits(edits=edits, document_id=doc_id)
     response = client.get_document(document_id=doc_id)
     source = document_parser.parse(response)
     xhtml = serialize_document(source)
