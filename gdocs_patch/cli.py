@@ -105,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("paragraphs", "lists", "tables", "equations", "sections"),
         help="Show syntax for one supported content type.",
     )
+    syntax_parser.add_argument(
+        "syntax_detail",
+        nargs="?",
+        choices=("reference",),
+        help="Show the detailed reference for a content type.",
+    )
     commands.add_parser(
         "edit",
         help="Edit exact text in canonical XHTML.",
@@ -157,7 +163,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "syntax":
-        sys.stdout.write(describe_syntax(args.syntax_topic))
+        sys.stdout.write(
+            describe_syntax(
+                args.syntax_topic,
+                reference=args.syntax_detail == "reference",
+            )
+        )
         return 0
 
     if args.command == "read":
