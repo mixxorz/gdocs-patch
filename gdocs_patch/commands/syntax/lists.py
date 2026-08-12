@@ -52,8 +52,9 @@ defaults to 0.
 
 Exactly one list identity attribute is required:
 
-  g:list-id         identifies an existing Google list
-  g:bullet-preset   creates or normalizes a list using a Google preset
+  g:list-id         identifies and preserves an existing Google list
+  g:bullet-preset   creates a new list or explicitly replaces an existing list
+                    with the chosen Google preset
 
 Available presets
 -----------------
@@ -103,12 +104,28 @@ ZERO_DECIMAL, UPPER_ALPHA, ALPHA, UPPER_ROMAN, and ROMAN. Alignment is
 BULLET_ALIGNMENT_UNSPECIFIED, START, CENTER, or END. Indents are point values;
 `g:start-number` is an integer. Levels also accept text-style attributes.
 
+Changing an existing list to a preset
+-------------------------------------
+To explicitly replace an existing list's formatting, change its target XHTML
+from `g:list-id` to the preset you want:
+
+  <g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">
+    <li><p><span>Existing item, rebuilt with this preset</span></p></li>
+  </g:list>
+
+The compiler removes the old list membership and recreates the paragraphs with
+the chosen preset. This explicit change does not require
+`allowBulletNormalization` because the target already says which preset to use.
+
 Compiler limits
 ---------------
-Keep `g:list-id` when editing an existing list. Use `g:bullet-preset` for a new
-list. Google Docs cannot reproduce arbitrary custom list glyphs through the
-batch-update API. By default, an edit that requires normalization fails rather
-than changing the list's appearance. Set `allowBulletNormalization` to `true`
-in the `write` or `edit` JSON input to let the compiler choose the closest
-supported preset based on the list's glyphs.
+Keep `g:list-id` when you want to preserve an existing list. Google Docs cannot
+reproduce arbitrary custom list glyphs through the batch-update API. Some edits
+to a customized list, such as changing its nesting, require the compiler to
+rebuild it even though the target still uses `g:list-id`.
+
+By default, that implicit normalization fails rather than changing the list's
+appearance. Set `allowBulletNormalization` to `true` in the `write` or `edit`
+JSON input to let the compiler choose the closest supported preset from the
+existing list's glyphs.
 """
