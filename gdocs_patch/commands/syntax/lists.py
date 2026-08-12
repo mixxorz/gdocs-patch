@@ -58,7 +58,6 @@ Exactly one list identity attribute is required:
 
 Available presets
 -----------------
-  BULLET_GLYPH_PRESET_UNSPECIFIED
   BULLET_DISC_CIRCLE_SQUARE
   BULLET_DIAMONDX_ARROW3D_SQUARE
   BULLET_CHECKBOX
@@ -89,26 +88,19 @@ definitions are read-only metadata: keep them unchanged in target XHTML. The
 compiler uses them to understand existing list glyphs and choose presets when
 normalization is necessary, but it does not write list-definition changes.
 
-They look like this:
+At a high level, the wrapper contains one definition for each list ID, and each
+definition contains the appearance of its nesting levels:
 
   <g:list-definitions>
     <g:list-definition g:list-id="LIST_ID">
-      <g:list-level g:glyph-format="%0."
-                    g:glyph-type="DECIMAL"
-                    g:alignment="START"
-                    g:indent-first-line="18"
-                    g:indent-start="36"
-                    g:start-number="1" />
+      <g:list-level ... />
+      <g:list-level ... />
     </g:list-definition>
   </g:list-definitions>
 
-Each level requires `g:glyph-format` and exactly one of `g:glyph-type` or
-`g:glyph-symbol`. Glyph types are GLYPH_TYPE_UNSPECIFIED, NONE, DECIMAL,
-ZERO_DECIMAL, UPPER_ALPHA, ALPHA, UPPER_ROMAN, and ROMAN. Alignment is
-BULLET_ALIGNMENT_UNSPECIFIED, START, CENTER, or END. Indents are point values;
-`g:start-number` is an integer. Levels also accept text-style attributes. These
-fields describe the existing Google list; they are reference information, not a
-way to customize lists through `write` or `edit`.
+Treat this whole block as reference information. Do not add, remove, or modify
+its definitions or levels through `write` or `edit`. To change list formatting,
+use `g:bullet-preset` on the list itself instead.
 
 Changing an existing list to a preset
 -------------------------------------

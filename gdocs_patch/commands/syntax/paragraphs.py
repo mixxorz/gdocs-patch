@@ -49,8 +49,6 @@ Paragraph elements
 ------------------
 Choose the element that matches the paragraph's named style:
 
-  <g:paragraph>                 no named style
-  <g:named-style-unspecified>  NAMED_STYLE_TYPE_UNSPECIFIED
   <p>                           NORMAL_TEXT
   <g:title>                     TITLE
   <g:subtitle>                  SUBTITLE
@@ -70,8 +68,7 @@ Every text run is one `<span>`. These optional attributes are writable:
   g:underline            true | false
   g:strikethrough        true | false
   g:small-caps           true | false
-  g:baseline-offset      BASELINE_OFFSET_UNSPECIFIED | NONE |
-                         SUPERSCRIPT | SUBSCRIPT
+  g:baseline-offset      NONE | SUPERSCRIPT | SUBSCRIPT
   g:font-size            point value, for example 12
   g:font-family          string, for example Arial
   g:font-weight          integer
@@ -94,13 +91,10 @@ Paragraph style
 ---------------
 Put these optional attributes on `<g:paragraph-style>`:
 
-  g:alignment            ALIGNMENT_UNSPECIFIED | START | CENTER | END |
-                         JUSTIFIED
-  g:direction            CONTENT_DIRECTION_UNSPECIFIED | LEFT_TO_RIGHT |
-                         RIGHT_TO_LEFT
+  g:alignment            START | CENTER | END | JUSTIFIED
+  g:direction            LEFT_TO_RIGHT | RIGHT_TO_LEFT
   g:line-spacing         number
-  g:spacing-mode         SPACING_MODE_UNSPECIFIED | NEVER_COLLAPSE |
-                         COLLAPSE_LISTS
+  g:spacing-mode         NEVER_COLLAPSE | COLLAPSE_LISTS
   g:space-above          point value
   g:space-below          point value
   g:indent-first-line    point value
@@ -120,7 +114,7 @@ requires `g:dash-style`, `g:width`, `g:padding`, and one `<g:color>`:
     <g:color g:red="0" g:green="0" g:blue="0" />
   </g:border-bottom>
 
-Dash styles are DASH_STYLE_UNSPECIFIED, SOLID, DOT, and DASH. A color requires
+Dash styles are SOLID, DOT, and DASH. A color requires
 all three RGB components from 0 to 1, or `g:transparent="true"`.
 
 Shading is a `<g:shading-color>` child with the same RGB or transparent color

@@ -36,8 +36,8 @@ values, and columns use nested metadata:
 
 Sections exist only in a document body, not inside headers, footers, footnotes,
 or table cells. A retained section break cannot change its section type, and a
-concrete section setting cannot currently be cleared back to an unspecified
-value. Other supported section-style changes are compiled normally.
+concrete section setting cannot currently be cleared by removing its attribute.
+Other supported section-style changes are compiled normally.
 
 For the complete list of section-style fields and limitations, run:
   gdocs-patch syntax sections reference
@@ -56,12 +56,10 @@ Section attributes
 ------------------
 `<g:section-style>` accepts:
 
-  g:section-type         SECTION_TYPE_UNSPECIFIED | CONTINUOUS | NEXT_PAGE
+  g:section-type         CONTINUOUS | NEXT_PAGE
   g:column-separator-style
-                         COLUMN_SEPARATOR_STYLE_UNSPECIFIED | NONE |
-                         BETWEEN_EACH_COLUMN
-  g:content-direction    CONTENT_DIRECTION_UNSPECIFIED | LEFT_TO_RIGHT |
-                         RIGHT_TO_LEFT
+                         NONE | BETWEEN_EACH_COLUMN
+  g:content-direction    LEFT_TO_RIGHT | RIGHT_TO_LEFT
   g:use-first-page-header-footer
                          true | false
   g:flip-page-orientation
