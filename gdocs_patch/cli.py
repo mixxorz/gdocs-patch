@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
+            Start by running `gdocs-patch read` to get the document's current XHTML.
+            Use that output as the basis for your new content so you preserve the
+            document's structure and metadata.
+
             Input (JSON on stdin):
               {"docId":"DOCUMENT_ID","content":"<XHTML>",
                "allowBulletNormalization":false}
@@ -120,6 +124,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
+            Start by running `gdocs-patch read` to get the document's current XHTML.
+            Choose oldText from that output so your edit matches the current structure
+            and preserves surrounding content and metadata.
+
             Input (JSON on stdin):
               {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}],
                "allowBulletNormalization":false}
