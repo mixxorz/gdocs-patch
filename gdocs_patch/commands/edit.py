@@ -66,7 +66,11 @@ def apply_xhtml_edits(
 
 
 def edit_document(
-    *, client: GoogleDocsClient, doc_id: str, edits: Sequence[XhtmlEdit]
+    *,
+    client: GoogleDocsClient,
+    doc_id: str,
+    edits: Sequence[XhtmlEdit],
+    allow_bullet_normalization: bool = False,
 ) -> int:
     """Edit canonical XHTML and apply the compiled changes to a Google document."""
     response = client.get_document(document_id=doc_id)
@@ -95,7 +99,11 @@ def edit_document(
             f"Cannot change read-only root metadata in {doc_id}: {fields}."
         )
 
-    batch = compile_document(source=source, target=target)
+    batch = compile_document(
+        source=source,
+        target=target,
+        allow_bullet_normalization=allow_bullet_normalization,
+    )
     if not batch["requests"]:
         raise XhtmlEditError(
             f"Edits to {doc_id} produced no writable Google Docs changes."

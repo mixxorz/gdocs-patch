@@ -26,8 +26,15 @@ Use `g:nesting-level` when an item is nested. Level 0 is the default:
 
 Use `g:bullet-preset` for a new list and `g:list-id` for an existing one, never
 both. Google Docs cannot recreate arbitrary custom bullet glyphs through its
-batch-update API, so new lists must use a supported preset. The CLI currently
-does not opt into normalizing a customized existing list to a preset.
+batch-update API, so new lists must use a supported preset.
+
+If an edit needs to change a customized existing list, the compiler normally
+fails rather than changing its appearance. Set `allowBulletNormalization` to
+`true` in the `write` or `edit` JSON input to allow the closest supported preset:
+
+  {"docId":"DOCUMENT_ID",
+   "edits":[{"oldText":"old","newText":"new"}],
+   "allowBulletNormalization":true}
 
 For the complete list of presets and list-definition attributes, run:
   gdocs-patch syntax lists reference
@@ -99,6 +106,8 @@ Compiler limits
 ---------------
 Keep `g:list-id` when editing an existing list. Use `g:bullet-preset` for a new
 list. Google Docs cannot reproduce arbitrary custom list glyphs through the
-batch-update API. The CLI does not currently enable custom-list normalization,
-so an edit that requires it fails rather than changing the list's appearance.
+batch-update API. By default, an edit that requires normalization fails rather
+than changing the list's appearance. Set `allowBulletNormalization` to `true`
+in the `write` or `edit` JSON input to let the compiler choose the closest
+supported preset based on the list's glyphs.
 """

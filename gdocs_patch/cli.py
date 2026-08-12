@@ -83,9 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
             Input (JSON on stdin):
-              {"docId":"DOCUMENT_ID","content":"<XHTML>"}
+              {"docId":"DOCUMENT_ID","content":"<XHTML>",
+               "allowBulletNormalization":false}
 
-            docId and content are required. content is the complete target XHTML.
+            docId and content are required. allowBulletNormalization is optional.
+            content is the complete target XHTML.
 
             Example:
               jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \\
@@ -118,9 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
             Input (JSON on stdin):
-              {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}]}
+              {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}],
+               "allowBulletNormalization":false}
 
-            docId and edits are required. oldText must match exactly once.
+            docId and edits are required. allowBulletNormalization is optional.
+            oldText must match exactly once.
 
             Example:
               printf '%s\\n' \\
@@ -207,7 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "write":
         try:
             input_object = _read_json_object()
-            unknown_fields = input_object.keys() - {"docId", "content"}
+            unknown_fields = input_object.keys() - {
+                "docId",
+                "content",
+                "allowBulletNormalization",
+            }
             if unknown_fields:
                 field = sorted(unknown_fields)[0]
                 raise InputError(f"Write command input has unknown field: {field}.")
@@ -220,8 +228,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             if not isinstance(content, str):
                 raise InputError("Write command input requires string field: content.")
 
+            allow_bullet_normalization = input_object.get(
+                "allowBulletNormalization", False
+            )
+            if not isinstance(allow_bullet_normalization, bool):
+                raise InputError(
+                    "Write command input allowBulletNormalization must be a boolean."
+                )
+
             client = GoogleDocsClient(credentials=load_credentials())
-            write_document(client=client, doc_id=doc_id, content=content)
+            write_document(
+                client=client,
+                doc_id=doc_id,
+                content=content,
+                allow_bullet_normalization=allow_bullet_normalization,
+            )
         except (
             InputError,
             XHTMLParseError,
@@ -238,7 +259,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "edit":
         try:
             input_object = _read_json_object()
-            unknown_fields = input_object.keys() - {"docId", "edits"}
+            unknown_fields = input_object.keys() - {
+                "docId",
+                "edits",
+                "allowBulletNormalization",
+            }
             if unknown_fields:
                 field = sorted(unknown_fields)[0]
                 raise InputError(f"Edit command input has unknown field: {field}.")
@@ -275,6 +300,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 edits.append(XhtmlEdit(old_text=old_text, new_text=new_text))
 
+            allow_bullet_normalization = input_object.get(
+                "allowBulletNormalization", False
+            )
+            if not isinstance(allow_bullet_normalization, bool):
+                raise InputError(
+                    "Edit command input allowBulletNormalization must be a boolean."
+                )
+
             if not edits:
                 raise InputError(
                     "Edit command input is invalid. edits must contain at least one "
@@ -287,7 +320,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
             client = GoogleDocsClient(credentials=load_credentials())
-            count = edit_document(client=client, doc_id=doc_id, edits=edits)
+            count = edit_document(
+                client=client,
+                doc_id=doc_id,
+                edits=edits,
+                allow_bullet_normalization=allow_bullet_normalization,
+            )
         except (
             InputError,
             XhtmlEditError,
