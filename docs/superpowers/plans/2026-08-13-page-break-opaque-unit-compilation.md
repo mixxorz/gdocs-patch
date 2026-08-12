@@ -44,7 +44,7 @@ In `tests/compiler/test_document.py`, import `OpaqueUnit`, `ColumnBreak`, and `T
 
 ```python
 OpaqueUnit(key="opaque-a20f6ae2", width=1, is_inline=True)
-OpaqueUnit(key="opaque-" "982bf560", width=8, is_inline=False)
+OpaqueUnit(key="opaque-982bf560", width=8, is_inline=False)  # gitleaks:allow
 ```
 
 The key values are SHA-256 prefixes of `f"{type(node).__name__}:{node!r}"`; the table-of-contents width is its one-unit container overhead plus the seven UTF-16 units in `Hidden\n`.
