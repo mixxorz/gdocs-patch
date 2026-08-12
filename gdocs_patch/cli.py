@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import textwrap
 from collections.abc import Sequence
 from importlib.metadata import version
 from pathlib import Path
@@ -56,9 +57,63 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("read", help="Read a Google document as canonical XHTML.")
-    commands.add_parser("write", help="Write canonical XHTML to a Google document.")
-    commands.add_parser("edit", help="Edit exact text in canonical XHTML.")
+    commands.add_parser(
+        "read",
+        help="Read a Google document as canonical XHTML.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+            Input (JSON on stdin):
+              {"docId":"DOCUMENT_ID","offset":1,"limit":200}
+
+            docId is required. offset and limit are optional line-based pagination.
+
+            Example:
+              printf '%s\\n' '{"docId":"DOCUMENT_ID"}' | gdocs-patch read
+
+            Output: canonical XHTML on stdout.
+            """
+        ),
+    )
+    commands.add_parser(
+        "write",
+        help="Write canonical XHTML to a Google document.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+            Input (JSON on stdin):
+              {"docId":"DOCUMENT_ID","content":"<XHTML>"}
+
+            docId and content are required. content is the complete target XHTML.
+
+            Example:
+              jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \\
+                '{docId: $docId, content: $content}' | gdocs-patch write
+
+            Output: a plain-text success message.
+            """
+        ),
+    )
+    commands.add_parser(
+        "edit",
+        help="Edit exact text in canonical XHTML.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+            Input (JSON on stdin):
+              {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}]}
+
+            docId and edits are required. oldText must match exactly once.
+
+            Example:
+              printf '%s\\n' \\
+                '{"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}]}' \\
+                | gdocs-patch edit
+
+            Output: a plain-text success message.
+            """
+        ),
+    )
     auth_parser = commands.add_parser("auth", help="Manage Google authentication.")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
     login_parser = auth_commands.add_parser(
