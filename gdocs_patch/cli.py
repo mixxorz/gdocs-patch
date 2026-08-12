@@ -21,6 +21,7 @@ from gdocs_patch.client import (
 from gdocs_patch.commands import (
     XhtmlEdit,
     XhtmlEditError,
+    describe_syntax,
     edit_document,
     read_document,
     write_document,
@@ -95,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     commands.add_parser(
+        "syntax",
+        help="Explore the XHTML document syntax.",
+    )
+    commands.add_parser(
         "edit",
         help="Edit exact text in canonical XHTML.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -143,6 +148,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         print(f"Credentials saved to {credentials_path}")
+        return 0
+
+    if args.command == "syntax":
+        sys.stdout.write(describe_syntax())
         return 0
 
     if args.command == "read":
