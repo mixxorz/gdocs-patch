@@ -5,6 +5,7 @@ from gdocs_patch.compiler import (
     DocumentContent,
     EquationUnit,
     OpaqueUnit,
+    PageBreakUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TabContent,
@@ -30,6 +31,7 @@ from gdocs_patch.models import (
     Equation,
     ListDefinition,
     ListLevel,
+    PageBreak,
     Paragraph,
     ParagraphStyle,
     SectionBreak,
@@ -287,6 +289,7 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
                     TextRun(content="X"),
                     ColumnBreak(),
                     Equation(),
+                    PageBreak(text_style=TextStyle(bold=True)),
                     TextRun(content="\n"),
                 ]
             ),
@@ -329,6 +332,7 @@ def test_normalize_tree_normalizes_kitchen_sink_body_in_document_order() -> None
             TextUnit(content="X"),
             OpaqueUnit(key="opaque-a20f6ae2", width=1, is_inline=True),
             EquationUnit(),
+            PageBreakUnit(text_style=TextStyle(bold=True)),
             ParagraphBoundary(),
         ]
     )
@@ -1046,7 +1050,11 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                                     ),
                                 ],
                             ),
-                            Paragraph(elements=[]),
+                            Paragraph(
+                                elements=[
+                                    PageBreak(text_style=TextStyle(underline=True))
+                                ]
+                            ),
                         ]
                     ),
                     headers={
@@ -1074,6 +1082,7 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
 
     assert compile_document(source=source, target=target) == {
         "requests": [
+            {"insertPageBreak": {"location": {"index": 85, "tabId": "tab-stress"}}},
             {
                 "insertTableRow": {
                     "tableCellLocation": {
@@ -1400,6 +1409,17 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "updateTextStyle": {
                     "range": {"startIndex": 8, "endIndex": 10, "tabId": "tab-stress"},
                     "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {
+                        "startIndex": 102,
+                        "endIndex": 103,
+                        "tabId": "tab-stress",
+                    },
+                    "textStyle": {"underline": True},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }
             },

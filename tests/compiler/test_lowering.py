@@ -13,6 +13,7 @@ from gdocs_patch.compiler.edit_script import (
     DeleteTableColumn,
     DeleteTableRow,
     EditScript,
+    InsertPageBreak,
     InsertSectionBreak,
     InsertTable,
     InsertTableColumn,
@@ -43,6 +44,7 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
     edit_script = EditScript(
         edits=[
             InsertText(index=4, text="new"),
+            InsertPageBreak(index=6),
             DeleteContent(start_index=8, end_index=11),
             ApplyTextStyle(
                 start_index=1,
@@ -115,6 +117,14 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
             "insertText": {
                 "location": {"index": 4, "tabId": "tab-1"},
                 "text": "new",
+            }
+        },
+        {
+            "insertPageBreak": {
+                "location": {
+                    "index": 6,
+                    "tabId": "tab-1",
+                }
             }
         },
         {

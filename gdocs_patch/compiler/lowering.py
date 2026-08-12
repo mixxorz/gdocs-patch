@@ -34,6 +34,7 @@ from .edit_script import (
     DeleteTableColumn,
     DeleteTableRow,
     EditScript,
+    InsertPageBreak,
     InsertSectionBreak,
     InsertTable,
     InsertTableColumn,
@@ -339,6 +340,14 @@ def lower_edit_script(
                         "insertText": {
                             "location": {"index": edit.index, **context},
                             "text": edit.text,
+                        }
+                    }
+                )
+            case InsertPageBreak():
+                requests.append(
+                    {
+                        "insertPageBreak": {
+                            "location": {"index": edit.index, **context},
                         }
                     }
                 )

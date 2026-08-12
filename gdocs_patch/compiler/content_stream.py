@@ -43,6 +43,15 @@ class OpaqueUnit(ContentUnit):
 
 
 @dataclass(frozen=True, kw_only=True)
+class PageBreakUnit(ContentUnit):
+    text_style: TextStyle | UnsetType = UNSET
+
+    @property
+    def utf16_width(self) -> int:
+        return 1
+
+
+@dataclass(frozen=True, kw_only=True)
 class EquationUnit(ContentUnit):
     @property
     def utf16_width(self) -> int:
@@ -90,6 +99,8 @@ class ContentStream:
         for position, item in enumerate(self.items):
             if isinstance(item, TextUnit):
                 values.append(("text", item.content))
+            elif isinstance(item, PageBreakUnit):
+                values.append(("page_break", ""))
             elif isinstance(item, EquationUnit):
                 values.append(("equation", ""))
             elif isinstance(item, OpaqueUnit):

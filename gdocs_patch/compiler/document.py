@@ -12,6 +12,7 @@ from gdocs_patch.models import (
     Equation,
     IndexedNode,
     ListDefinition,
+    PageBreak,
     Paragraph,
     ParagraphElement,
     SectionBreak,
@@ -31,6 +32,7 @@ from .content_stream import (
     ContentUnit,
     EquationUnit,
     OpaqueUnit,
+    PageBreakUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -74,6 +76,9 @@ def normalize_tree(
 
     if isinstance(tree, Equation):
         return ContentStream(items=[EquationUnit()])
+
+    if isinstance(tree, PageBreak):
+        return ContentStream(items=[PageBreakUnit(text_style=tree.text_style)])
 
     if isinstance(tree, SectionBreak):
         return ContentStream(items=[SectionBreakUnit(style=tree.style)])

@@ -12,11 +12,13 @@ from gdocs_patch.compiler import (
     DeleteParagraphBullets,
     DeleteSectionBreak,
     EquationUnit,
+    InsertPageBreak,
     InsertSectionBreak,
     InsertTable,
     InsertTableRow,
     InsertText,
     OpaqueUnit,
+    PageBreakUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -500,8 +502,10 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
             TextUnit(content="A"),
             OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
+            PageBreakUnit(),
             TextUnit(content="B"),
             OpaqueUnit(key="opaque-deleted", width=3, is_inline=False),
+            PageBreakUnit(),
             EquationUnit(),
             TextUnit(content="C"),
             ParagraphBoundary(),
@@ -512,6 +516,7 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
             TextUnit(content="A"),
             OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
+            PageBreakUnit(),
             TextUnit(content="B"),
             TextUnit(content="C"),
             ParagraphBoundary(),
@@ -520,7 +525,7 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
 
     script = generate_edit_script(source=source, target=target)
 
-    assert script.edits == [DeleteContent(start_index=5, end_index=9)]
+    assert script.edits == [DeleteContent(start_index=6, end_index=11)]
 
 
 def test_generate_edit_script_rejects_equation_insertion() -> None:
@@ -542,6 +547,31 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
 
     with pytest.raises(UnsupportedTransformation, match="Equation"):
         generate_edit_script(source=source, target=target)
+
+    assert generate_edit_script(
+        source=ContentStream(
+            items=[
+                TextUnit(content="A"),
+                TextUnit(content="B"),
+                ParagraphBoundary(),
+            ]
+        ),
+        target=ContentStream(
+            items=[
+                TextUnit(content="A"),
+                PageBreakUnit(text_style=TextStyle(bold=True)),
+                TextUnit(content="B"),
+                ParagraphBoundary(),
+            ]
+        ),
+    ).edits == [
+        InsertPageBreak(index=1),
+        ApplyTextStyle(
+            start_index=1,
+            end_index=2,
+            text_style=TextStyle(bold=True),
+        ),
+    ]
 
     with pytest.raises(UnsupportedTransformation, match="OpaqueUnit"):
         generate_edit_script(

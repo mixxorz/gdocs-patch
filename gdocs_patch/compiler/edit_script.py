@@ -24,6 +24,7 @@ from .content_stream import (
     ContentUnit,
     EquationUnit,
     OpaqueUnit,
+    PageBreakUnit,
     ParagraphBoundary,
     SectionBreakUnit,
     TableCellUnit,
@@ -117,6 +118,11 @@ class Edit:
 class InsertText(Edit):
     index: int
     text: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class InsertPageBreak(Edit):
+    index: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -752,7 +758,7 @@ def is_insert_text_unit(unit: ContentUnit) -> bool:
 
 
 def is_inline_paragraph_unit(unit: ContentUnit) -> bool:
-    return isinstance(unit, (TextUnit, EquationUnit)) or (
+    return isinstance(unit, (TextUnit, PageBreakUnit, EquationUnit)) or (
         isinstance(unit, OpaqueUnit) and unit.is_inline
     )
 
@@ -984,6 +990,18 @@ def generate_edit_script(
                         text=text,
                     )
                 )
+                continue
+
+            if isinstance(target_unit, PageBreakUnit):
+                page_break_utf16_offset = (
+                    target.utf16_index(target_pos) - target_range_start_utf16_index
+                )
+                edits.append(
+                    InsertPageBreak(
+                        index=insertion_utf16_index + page_break_utf16_offset
+                    )
+                )
+                target_pos += 1
                 continue
 
             if isinstance(target_unit, TableUnit):
@@ -1355,6 +1373,23 @@ def generate_edit_script(
             # --------------------------
             case EquationUnit() | OpaqueUnit() | TableUnit():
                 pass
+
+            case PageBreakUnit() as target_page_break_unit:
+                source_page_break_unit = (
+                    source_unit if isinstance(source_unit, PageBreakUnit) else None
+                )
+                if (
+                    source_page_break_unit is None
+                    or source_page_break_unit.text_style
+                    != target_page_break_unit.text_style
+                ):
+                    style_edits.append(
+                        ApplyTextStyle(
+                            start_index=unit_start_utf16_index,
+                            end_index=unit_end_utf16_index,
+                            text_style=target_page_break_unit.text_style,
+                        )
+                    )
 
             # Text styles
             # -----------
