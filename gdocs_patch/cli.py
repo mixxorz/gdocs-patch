@@ -36,6 +36,7 @@ def _read_json_object() -> dict[str, object]:
     try:
         value = json.load(sys.stdin)
     except (ValueError, UnicodeDecodeError, RecursionError):
+        # Hide the decoder's low-level exception if this helper is called directly.
         raise InputError("Input must contain one valid JSON object.") from None
     if not isinstance(value, dict):
         raise InputError("Input must be a JSON object.")
