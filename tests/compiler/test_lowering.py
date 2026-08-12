@@ -130,6 +130,15 @@ def test_lowers_content_paragraph_and_bullet_edits() -> None:
         {
             "deleteContentRange": {
                 "range": {
+                    "startIndex": 7,
+                    "endIndex": 8,
+                    "tabId": "tab-1",
+                }
+            }
+        },
+        {
+            "deleteContentRange": {
+                "range": {
                     "startIndex": 8,
                     "endIndex": 11,
                     "tabId": "tab-1",

@@ -344,12 +344,27 @@ def lower_edit_script(
                     }
                 )
             case InsertPageBreak():
-                requests.append(
-                    {
-                        "insertPageBreak": {
-                            "location": {"index": edit.index, **context},
-                        }
-                    }
+                page_break_context = {"tabId": tab_id}
+                requests.extend(
+                    [
+                        {
+                            "insertPageBreak": {
+                                "location": {
+                                    "index": edit.index,
+                                    **page_break_context,
+                                },
+                            }
+                        },
+                        {
+                            "deleteContentRange": {
+                                "range": {
+                                    "startIndex": edit.index + 1,
+                                    "endIndex": edit.index + 2,
+                                    **page_break_context,
+                                }
+                            }
+                        },
+                    ]
                 )
             case DeleteContent():
                 requests.append(

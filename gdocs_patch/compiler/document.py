@@ -1,6 +1,6 @@
 import hashlib
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 from gdocs_patch.models import (
@@ -277,7 +277,7 @@ def compile_document(
                 segment_script = generate_edit_script(
                     source=source_segments[segment_id],
                     target=target_segment,
-                    context=context,
+                    context=replace(context, inside_non_body_segment=True),
                 )
                 requests.extend(
                     lower_edit_script(

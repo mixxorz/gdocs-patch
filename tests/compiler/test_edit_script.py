@@ -11,6 +11,7 @@ from gdocs_patch.compiler import (
     DeleteContent,
     DeleteParagraphBullets,
     DeleteSectionBreak,
+    EditScriptContext,
     EquationUnit,
     InsertPageBreak,
     InsertSectionBreak,
@@ -547,6 +548,40 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
 
     with pytest.raises(UnsupportedTransformation, match="Equation"):
         generate_edit_script(source=source, target=target)
+
+    page_break_source = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            PageBreakUnit(text_style=TextStyle(bold=False)),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    page_break_target = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            PageBreakUnit(text_style=TextStyle(bold=True)),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
+    assert generate_edit_script(
+        source=page_break_source,
+        target=page_break_target,
+    ).edits == [
+        ApplyTextStyle(
+            start_index=1,
+            end_index=2,
+            text_style=TextStyle(bold=True),
+        )
+    ]
+
+    with pytest.raises(UnsupportedTransformation, match="table cell"):
+        generate_edit_script(
+            source=source,
+            target=page_break_target,
+            context=EditScriptContext(inside_table=True),
+        )
 
     assert generate_edit_script(
         source=ContentStream(

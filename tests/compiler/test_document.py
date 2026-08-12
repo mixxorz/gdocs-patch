@@ -1084,6 +1084,15 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
         "requests": [
             {"insertPageBreak": {"location": {"index": 85, "tabId": "tab-stress"}}},
             {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": 86,
+                        "endIndex": 87,
+                        "tabId": "tab-stress",
+                    }
+                }
+            },
+            {
                 "insertTableRow": {
                     "tableCellLocation": {
                         "tableStartLocation": {"index": 22, "tabId": "tab-stress"},
@@ -1480,6 +1489,15 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
         ],
         "writeControl": {"requiredRevisionId": "revision-stress"},
     }
+
+    target_tab = target.tabs[0].content
+    assert isinstance(target_tab, DocumentTab)
+    assert isinstance(target_tab.headers, dict)
+    target_header = target_tab.headers["header-stress"]
+    assert isinstance(target_header.content, list)
+    target_header.content[0].elements.insert(1, PageBreak())
+    with pytest.raises(UnsupportedTransformation, match="non-body segment"):
+        compile_document(source=source, target=target)
 
 
 def test_compile_document_normalizes_custom_bullets_only_when_enabled() -> None:

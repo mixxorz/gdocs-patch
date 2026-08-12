@@ -42,6 +42,7 @@ class UnsupportedTransformation(Exception):
 class EditScriptContext:
     allow_bullet_normalization: bool = False
     inside_table: bool = False
+    inside_non_body_segment: bool = False
 
 
 DEFAULT_EDIT_SCRIPT_CONTEXT = EditScriptContext()
@@ -828,6 +829,17 @@ def generate_edit_script(
                 )
             if any(isinstance(target_unit, OpaqueUnit) for target_unit in target_range):
                 raise UnsupportedTransformation("cannot insert OpaqueUnit content")
+            if any(
+                isinstance(target_unit, PageBreakUnit) for target_unit in target_range
+            ):
+                if context.inside_table:
+                    raise UnsupportedTransformation(
+                        "Google Docs cannot insert a page break in a table cell"
+                    )
+                if context.inside_non_body_segment:
+                    raise UnsupportedTransformation(
+                        "Google Docs cannot insert a page break in a non-body segment"
+                    )
 
     # Deleting a paragraph boundary joins the surrounding text into one
     # paragraph. Google keeps one side's paragraph style during that merge, and
@@ -1063,8 +1075,9 @@ def generate_edit_script(
     style_edits: list[Edit] = []
 
     # The bullet and style passes are easier to follow when they can walk the
-    # target directly. This map records the source unit aligned with each target
-    # position. Inserted and replaced target positions are absent from the map.
+    # target directly, including page breaks and inline opaque units between
+    # paragraph text and boundaries. This map records the source unit aligned
+    # with each target position. Inserted and replaced target positions are absent.
     source_units_by_target_pos: dict[int, ContentUnit] = {}
     for (
         tag,
