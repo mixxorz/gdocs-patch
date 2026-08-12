@@ -18,24 +18,10 @@ class XhtmlEdit:
     new_text: str
 
 
-def _validate_edits(*, edits: Sequence[XhtmlEdit], document_id: str) -> None:
-    if not edits:
-        raise XhtmlEditError(
-            "Edit command input is invalid. edits must contain at least one replacement."
-        )
-    for edit_index, edit in enumerate(edits):
-        if not edit.old_text:
-            raise XhtmlEditError(
-                f"edits[{edit_index}].oldText must not be empty in {document_id}."
-            )
-
-
 def apply_xhtml_edits(
     *, xhtml: str, edits: Sequence[XhtmlEdit], document_id: str
 ) -> str:
     """Apply exact-text replacements located in the original canonical XHTML."""
-    _validate_edits(edits=edits, document_id=document_id)
-
     locations: list[tuple[int, int, int]] = []
     for edit_index, edit in enumerate(edits):
         starts: list[int] = []

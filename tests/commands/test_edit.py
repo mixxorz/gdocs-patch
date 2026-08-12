@@ -72,16 +72,6 @@ def test_applies_disjoint_edits_against_original_xhtml() -> None:
     [
         (
             "Hello world",
-            [],
-            "Edit command input is invalid. edits must contain at least one replacement.",
-        ),
-        (
-            "Hello world",
-            [XhtmlEdit(old_text="", new_text="replacement")],
-            "edits[0].oldText must not be empty in doc-1.",
-        ),
-        (
-            "Hello world",
             [XhtmlEdit(old_text="missing", new_text="replacement")],
             "Could not find the exact text for edits[0] in doc-1. The old text "
             "must match exactly including all whitespace and newlines.",
