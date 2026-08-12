@@ -95,9 +95,15 @@ def build_parser() -> argparse.ArgumentParser:
             """
         ),
     )
-    commands.add_parser(
+    syntax_parser = commands.add_parser(
         "syntax",
         help="Explore the XHTML document syntax.",
+    )
+    syntax_parser.add_argument(
+        "syntax_topic",
+        nargs="?",
+        choices=("paragraphs", "lists", "tables", "equations", "sections"),
+        help="Show syntax for one supported content type.",
     )
     commands.add_parser(
         "edit",
@@ -151,7 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "syntax":
-        sys.stdout.write(describe_syntax())
+        sys.stdout.write(describe_syntax(args.syntax_topic))
         return 0
 
     if args.command == "read":
