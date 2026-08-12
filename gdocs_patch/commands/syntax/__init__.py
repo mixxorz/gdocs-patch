@@ -17,10 +17,11 @@ headings, links, lists, tables, and sections. Elements and attributes in the
 `g` namespace preserve Google Docs-specific structure and metadata, including
 tabs, styles, document IDs, and section settings.
 
-Use `gdocs-patch read` to get this representation. Edit the returned XHTML
-without removing its surrounding document structure, then use `write` to apply
-the complete result or `edit` to make exact replacements. The XML declaration
-and the XHTML and gdocs-patch namespace declarations are required.
+Use `gdocs-patch read` to get this representation, then prefer `edit` to make
+exact replacements in the returned XHTML. Use `write` when you need to replace
+the complete document content. In either case, keep the surrounding document
+structure intact. The XML declaration and the XHTML and gdocs-patch namespace
+declarations are required.
 
 A document can also contain existing headers, footers, and footnotes. You can
 edit supported content inside them, but you cannot create or remove those
