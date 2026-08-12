@@ -30,7 +30,8 @@ batch-update API, so new lists must use a supported preset.
 
 If an edit needs to change a customized existing list, the compiler normally
 fails rather than changing its appearance. Set `allowBulletNormalization` to
-`true` in the `write` or `edit` JSON input to allow the closest supported preset:
+`true` in the `write` or `edit` JSON input to convert it to the closest supported
+preset:
 
   {"docId":"DOCUMENT_ID",
    "edits":[{"oldText":"old","newText":"new"}],
