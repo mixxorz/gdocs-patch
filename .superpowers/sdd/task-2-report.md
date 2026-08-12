@@ -199,3 +199,112 @@ Pi did not provide a subagent tool, so the requested code-review workflow was pe
 ## Live-check handoff
 
 Step 7 was deliberately skipped per instruction. The main agent must perform the live round-trip against document `1p0HNaILtDeJ-UH_tbi_KX7IKG2o7KW3IyIdG27XbeYU` and compare the structure around `Custom build` through `Open question` using the brief's acceptance criteria.
+
+---
+
+## Final-review fixes (2026-08-12)
+
+### Status and design
+
+Implemented all confirmed final-review findings. The selected minimal design keeps provider behavior at the lowering boundary: every `InsertPageBreak(N)` becomes `insertPageBreak(N)` followed by `deleteContentRange(N+1, N+2)`. Insertion eligibility remains in `generate_edit_script`, using the existing table flag plus one new `inside_non_body_segment` context flag. `compile_document` sets that flag with `dataclasses.replace` for headers, footers, and footnotes, avoiding duplicate stream scans. Alternatives rejected were compensating widths in edit generation (which would leak provider behavior into the compiler abstraction) and passing segment IDs into page-break lowering (invalid per the discovery contract).
+
+### TDD red evidence
+
+Updated existing test functions only; no test function was added.
+
+Exact command:
+
+```bash
+uv run pytest tests/compiler/test_edit_script.py::test_generate_edit_script_rejects_equation_insertion tests/compiler/test_lowering.py::test_lowers_content_paragraph_and_bullet_edits tests/compiler/test_document.py::test_compile_document_lowers_every_supported_edit_in_one_batch -q
+```
+
+Expected result before implementation:
+
+```text
+FAILED tests/compiler/test_edit_script.py::test_generate_edit_script_rejects_equation_insertion
+FAILED tests/compiler/test_lowering.py::test_lowers_content_paragraph_and_bullet_edits
+FAILED tests/compiler/test_document.py::test_compile_document_lowers_every_supported_edit_in_one_batch
+3 failed in 0.12s
+```
+
+The failures respectively showed missing table-context rejection and missing automatic-newline deletion in direct lowering and document compilation. After implementation, an initial run exposed a test import error (`NameError: EditScriptContext is not defined`); adding the missing public import produced the intended green run.
+
+### Affected green evidence
+
+Exact command:
+
+```bash
+uv run pytest tests/compiler/test_edit_script.py::test_generate_edit_script_rejects_equation_insertion tests/compiler/test_lowering.py::test_lowers_content_paragraph_and_bullet_edits tests/compiler/test_document.py::test_compile_document_lowers_every_supported_edit_in_one_batch -q
+```
+
+Result:
+
+```text
+...                                                                      [100%]
+3 passed in 0.07s
+```
+
+Exact broader affected command and result:
+
+```bash
+uv run pytest tests/compiler/test_edit_script.py tests/compiler/test_lowering.py tests/compiler/test_document.py -q
+```
+
+```text
+........................                                                 [100%]
+24 passed in 0.06s
+```
+
+### Full verification
+
+```bash
+uv run pytest -q
+# 194 passed in 0.59s
+
+uv run ruff check .
+# All checks passed!
+
+uv run ruff format --check .
+# 101 files already formatted
+
+uv run fixit lint .
+# 🧼 76 files clean 🧼
+
+uv run pyright
+# 0 errors, 0 warnings, 0 informations
+
+uv run pre-commit run --all-files
+# ruff check Passed; ruff format check Passed; pyright Passed; Fixit Passed; Detect hardcoded secrets Passed
+
+git diff --check
+# no output; exit 0
+```
+
+Commit-time pre-commit hooks also passed with the same five successful checks.
+
+### Files
+
+- `gdocs_patch/compiler/lowering.py`
+- `gdocs_patch/compiler/edit_script.py`
+- `gdocs_patch/compiler/document.py`
+- `tests/compiler/test_lowering.py`
+- `tests/compiler/test_edit_script.py`
+- `tests/compiler/test_document.py`
+- `.superpowers/sdd/task-2-report.md`
+
+### Commits
+
+- `8471a31 fix: enforce page break insertion semantics`
+- Report follow-up commit: `docs: report final page break review fixes`
+
+### Self-review
+
+- Confirmed page-break lowering preserves `tabId`, omits `segmentId`, and immediately deletes exactly `N+1..N+2`.
+- Confirmed table and non-body checks apply only when a target page break is inserted or replaces content; retained page breaks remain legal and retain style updates.
+- Confirmed all three segment categories share the context-based rejection path and `compile_document` performs no stream scan.
+- Confirmed the bullet/style alignment comment now explicitly covers page breaks and inline opaque units.
+- Confirmed only existing tests were extended.
+
+### Concerns
+
+None. The supplied live probe resolves the prior provider-behavior uncertainty; this change does not itself repeat the live API probe.
