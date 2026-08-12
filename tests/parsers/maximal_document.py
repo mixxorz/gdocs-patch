@@ -190,17 +190,23 @@ def expected_maximal_document() -> Document:
     )
     nested_toc = TableOfContents(content=[Paragraph(elements=[])])
     table = Table(
+        table_key="table-2647876e",
         rows=[
             TableRow(
+                row_key="row-0aaebe6a",
                 cells=[
                     TableCell(
+                        cell_key="cell-6ae13663",
                         content=[
                             Paragraph(elements=[TextRun(content="Cell")]),
                             Table(
+                                table_key="table-6bdd5f08",
                                 rows=[
                                     TableRow(
+                                        row_key="row-bfed655e",
                                         cells=[
                                             TableCell(
+                                                cell_key="cell-29bdbc0e",
                                                 content=[
                                                     Paragraph(
                                                         elements=[
@@ -209,11 +215,11 @@ def expected_maximal_document() -> Document:
                                                             )
                                                         ]
                                                     )
-                                                ]
+                                                ],
                                             )
-                                        ]
+                                        ],
                                     )
-                                ]
+                                ],
                             ),
                             nested_toc,
                         ],
@@ -232,7 +238,11 @@ def expected_maximal_document() -> Document:
                             content_alignment="MIDDLE",
                         ),
                     ),
-                    TableCell(content=[Paragraph(elements=[])], style=TableCellStyle()),
+                    TableCell(
+                        cell_key="cell-b25b7aaa",
+                        content=[Paragraph(elements=[])],
+                        style=TableCellStyle(),
+                    ),
                 ],
                 min_height=_dimension(20),
                 prevent_overflow=True,

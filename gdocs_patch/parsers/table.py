@@ -1,3 +1,4 @@
+import hashlib
 from typing import Any
 
 from gdocs_patch.models.base import UNSET
@@ -14,6 +15,11 @@ from gdocs_patch.models.table import (
 from .base import GDocParser, color_parser, dimension_parser
 from .paragraph import paragraph_parser
 from .section import section_break_parser
+
+
+def opaque_key(element_type: str, index: int) -> str:
+    digest = hashlib.sha256(f"{element_type}:{index}".encode()).hexdigest()[:8]
+    return f"{element_type}-{digest}"
 
 
 class TableCellBorderParser(GDocParser[TableCellBorder]):
@@ -110,6 +116,7 @@ class TableCellParser(GDocParser[TableCell]):
                 if "tableCellStyle" in data
                 else UNSET
             ),
+            cell_key=opaque_key("cell", data["startIndex"]),
         )
 
 
@@ -127,6 +134,7 @@ class TableRowParser(GDocParser[TableRow]):
             ),
             prevent_overflow=style.get("preventOverflow", UNSET),
             is_header=style.get("tableHeader", UNSET),
+            row_key=opaque_key("row", data["startIndex"]),
         )
 
 
@@ -150,6 +158,7 @@ class TableParser(GDocParser[Table]):
                 if "tableStyle" in data
                 else UNSET
             ),
+            table_key=opaque_key("table", data["tableRows"][0]["startIndex"] - 1),
         )
 
 

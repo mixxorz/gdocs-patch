@@ -57,7 +57,7 @@ def test_table_cell_style_maps_all_supported_properties() -> None:
     assert style.content_alignment == "MIDDLE"
 
 
-def test_table_cell_recursively_maps_paragraph_and_ignores_indices() -> None:
+def test_table_cell_recursively_maps_paragraph_and_generates_key() -> None:
     cell = table_cell_parser.parse(
         {
             "startIndex": 10,
@@ -79,14 +79,18 @@ def test_table_cell_recursively_maps_paragraph_and_ignores_indices() -> None:
     assert isinstance(cell.content[0], Paragraph)
     assert cell.content[0].elements[0].content == "cell"
     assert cell.style.row_span == 2
+    assert cell.cell_key == "cell-cd8a1f96"
 
 
-def test_table_row_maps_cells_and_complete_style_while_ignoring_indices() -> None:
+def test_table_row_maps_cells_style_and_generated_key() -> None:
     row = table_row_parser.parse(
         {
             "startIndex": 1,
             "endIndex": 9,
-            "tableCells": [{}, {}],
+            "tableCells": [
+                {"startIndex": 2, "endIndex": 5},
+                {"startIndex": 5, "endIndex": 9},
+            ],
             "tableRowStyle": {
                 "minRowHeight": _dimension(12),
                 "preventOverflow": True,
@@ -101,6 +105,11 @@ def test_table_row_maps_cells_and_complete_style_while_ignoring_indices() -> Non
     assert row.min_height.magnitude == 12
     assert row.prevent_overflow is True
     assert row.is_header is False
+    assert row.row_key == "row-7a670ae8"
+    assert [cell.cell_key for cell in row.cells] == [
+        "cell-63af18a5",
+        "cell-4537c442",
+    ]
 
 
 def test_table_column_maps_fixed_width() -> None:
@@ -113,12 +122,18 @@ def test_table_column_maps_fixed_width() -> None:
     assert column.width.unit == "PT"
 
 
-def test_table_maps_rows_and_column_styles_while_ignoring_counts() -> None:
+def test_table_maps_rows_column_styles_and_generated_keys() -> None:
     table = table_parser.parse(
         {
             "rows": 99,
             "columns": 88,
-            "tableRows": [{"tableCells": [{}]}],
+            "tableRows": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 4,
+                    "tableCells": [{"startIndex": 2, "endIndex": 4}],
+                }
+            ],
             "tableStyle": {
                 "tableColumnProperties": [
                     {"widthType": "FIXED_WIDTH", "width": _dimension(100)},
@@ -130,6 +145,9 @@ def test_table_maps_rows_and_column_styles_while_ignoring_counts() -> None:
 
     assert len(table.rows) == 1
     assert len(table.rows[0].cells) == 1
+    assert table.table_key == "table-c9935b85"
+    assert table.rows[0].row_key == "row-7a670ae8"
+    assert table.rows[0].cells[0].cell_key == "cell-63af18a5"
     assert table.column_styles is not UNSET
     assert [column.width_type for column in table.column_styles] == [
         "FIXED_WIDTH",

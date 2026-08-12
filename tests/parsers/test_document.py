@@ -15,7 +15,9 @@ from gdocs_patch.models import (
     Segment,
     Tab,
     Table,
+    TableCell,
     TableOfContents,
+    TableRow,
 )
 from gdocs_patch.parsers import document_parser
 from gdocs_patch.parsers.document import (
@@ -95,12 +97,38 @@ def test_parses_table_of_contents() -> None:
     decoded = {
         "content": [
             {"paragraph": {"elements": []}},
-            {"table": {"tableRows": []}},
+            {
+                "table": {
+                    "tableRows": [
+                        {
+                            "startIndex": 1,
+                            "endIndex": 4,
+                            "tableCells": [{"startIndex": 2, "endIndex": 4}],
+                        }
+                    ]
+                }
+            },
         ]
     }
 
     assert table_of_contents_parser.parse(decoded) == TableOfContents(
-        content=[Paragraph(elements=[]), Table(rows=[])]
+        content=[
+            Paragraph(elements=[]),
+            Table(
+                table_key="table-c9935b85",
+                rows=[
+                    TableRow(
+                        row_key="row-7a670ae8",
+                        cells=[
+                            TableCell(
+                                cell_key="cell-63af18a5",
+                                content=[],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        ]
     )
 
 
