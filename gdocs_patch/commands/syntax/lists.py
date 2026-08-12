@@ -6,6 +6,16 @@ A list is a group of paragraphs. Each `<li>` contains one paragraph:
   <li><p><span>Second item</span></p></li>
 </g:list>
 
+To add a new list between ordinary paragraphs, insert a preset list directly
+between them in the target XHTML. Do not give a new list a `g:list-id`:
+
+<p><span>Before the list</span></p>
+<g:list g:bullet-preset="BULLET_CHECKBOX">
+  <li><p><span>First new task</span></p></li>
+  <li><p><span>Second new task</span></p></li>
+</g:list>
+<p><span>After the list</span></p>
+
 Use `g:nesting-level` when an item is nested. Level 0 is the default:
 
 <g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">
