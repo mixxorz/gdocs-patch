@@ -1496,7 +1496,10 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
     target_header = target_tab.headers["header-stress"]
     assert isinstance(target_header.content, list)
     target_header.content[0].elements.insert(1, PageBreak())
-    with pytest.raises(UnsupportedTransformation, match="non-body segment"):
+    with pytest.raises(
+        UnsupportedTransformation,
+        match="only insert a page break in the document body",
+    ):
         compile_document(source=source, target=target)
 
 

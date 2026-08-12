@@ -832,13 +832,10 @@ def generate_edit_script(
             if any(
                 isinstance(target_unit, PageBreakUnit) for target_unit in target_range
             ):
-                if context.inside_table:
+                if context.inside_table or context.inside_non_body_segment:
                     raise UnsupportedTransformation(
-                        "Google Docs cannot insert a page break in a table cell"
-                    )
-                if context.inside_non_body_segment:
-                    raise UnsupportedTransformation(
-                        "Google Docs cannot insert a page break in a non-body segment"
+                        "Google Docs can only insert a page break in the document body "
+                        "(not in a table cell, header, footer, or footnote)"
                     )
 
     # Deleting a paragraph boundary joins the surrounding text into one

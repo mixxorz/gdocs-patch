@@ -151,6 +151,11 @@ def normalize_tree(
             ]
         )
 
+    # Body, Segment, and TableCell do not represent content of their own; they
+    # only hold content that belongs directly in this stream. We need to unwrap
+    # them here or the fallback below would turn the whole container into one
+    # OpaqueUnit and hide all of its editable children. Other unknown containers
+    # stay opaque because we do not know how to edit their contents safely.
     if isinstance(tree, (Body, Segment, TableCell)):
         items: list[ContentUnit] = []
         for child in tree.children:

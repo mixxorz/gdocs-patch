@@ -497,16 +497,12 @@ def test_generate_edit_script_preserves_removes_and_creates_list_items() -> None
         )
 
 
-def test_generate_edit_script_preserves_and_deletes_equations() -> None:
+def test_generate_edit_script_handles_equations() -> None:
     source = ContentStream(
         items=[
             TextUnit(content="A"),
-            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
-            PageBreakUnit(),
             TextUnit(content="B"),
-            OpaqueUnit(key="opaque-deleted", width=3, is_inline=False),
-            PageBreakUnit(),
             EquationUnit(),
             TextUnit(content="C"),
             ParagraphBoundary(),
@@ -515,41 +511,39 @@ def test_generate_edit_script_preserves_and_deletes_equations() -> None:
     target = ContentStream(
         items=[
             TextUnit(content="A"),
-            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
             EquationUnit(),
-            PageBreakUnit(),
             TextUnit(content="B"),
             TextUnit(content="C"),
             ParagraphBoundary(),
         ]
     )
 
-    script = generate_edit_script(source=source, target=target)
-
-    assert script.edits == [DeleteContent(start_index=6, end_index=11)]
-
-
-def test_generate_edit_script_rejects_equation_insertion() -> None:
-    source = ContentStream(
-        items=[
-            TextUnit(content="A"),
-            TextUnit(content="B"),
-            ParagraphBoundary(),
-        ]
-    )
-    target = ContentStream(
-        items=[
-            TextUnit(content="A"),
-            EquationUnit(),
-            TextUnit(content="B"),
-            ParagraphBoundary(),
-        ]
-    )
+    assert generate_edit_script(source=source, target=target).edits == [
+        DeleteContent(start_index=3, end_index=4)
+    ]
 
     with pytest.raises(UnsupportedTransformation, match="Equation"):
-        generate_edit_script(source=source, target=target)
+        generate_edit_script(
+            source=ContentStream(
+                items=[
+                    TextUnit(content="A"),
+                    TextUnit(content="B"),
+                    ParagraphBoundary(),
+                ]
+            ),
+            target=ContentStream(
+                items=[
+                    TextUnit(content="A"),
+                    EquationUnit(),
+                    TextUnit(content="B"),
+                    ParagraphBoundary(),
+                ]
+            ),
+        )
 
-    page_break_source = ContentStream(
+
+def test_generate_edit_script_handles_page_breaks() -> None:
+    source = ContentStream(
         items=[
             TextUnit(content="A"),
             PageBreakUnit(text_style=TextStyle(bold=False)),
@@ -557,7 +551,7 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
             ParagraphBoundary(),
         ]
     )
-    page_break_target = ContentStream(
+    target = ContentStream(
         items=[
             TextUnit(content="A"),
             PageBreakUnit(text_style=TextStyle(bold=True)),
@@ -565,10 +559,8 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
             ParagraphBoundary(),
         ]
     )
-    assert generate_edit_script(
-        source=page_break_source,
-        target=page_break_target,
-    ).edits == [
+
+    assert generate_edit_script(source=source, target=target).edits == [
         ApplyTextStyle(
             start_index=1,
             end_index=2,
@@ -576,29 +568,16 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
         )
     ]
 
-    with pytest.raises(UnsupportedTransformation, match="table cell"):
-        generate_edit_script(
-            source=source,
-            target=page_break_target,
-            context=EditScriptContext(inside_table=True),
-        )
-
+    source_without_page_break = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            TextUnit(content="B"),
+            ParagraphBoundary(),
+        ]
+    )
     assert generate_edit_script(
-        source=ContentStream(
-            items=[
-                TextUnit(content="A"),
-                TextUnit(content="B"),
-                ParagraphBoundary(),
-            ]
-        ),
-        target=ContentStream(
-            items=[
-                TextUnit(content="A"),
-                PageBreakUnit(text_style=TextStyle(bold=True)),
-                TextUnit(content="B"),
-                ParagraphBoundary(),
-            ]
-        ),
+        source=source_without_page_break,
+        target=target,
     ).edits == [
         InsertPageBreak(index=1),
         ApplyTextStyle(
@@ -606,6 +585,42 @@ def test_generate_edit_script_rejects_equation_insertion() -> None:
             end_index=2,
             text_style=TextStyle(bold=True),
         ),
+    ]
+
+    with pytest.raises(
+        UnsupportedTransformation,
+        match="only insert a page break in the document body",
+    ):
+        generate_edit_script(
+            source=source_without_page_break,
+            target=target,
+            context=EditScriptContext(inside_table=True),
+        )
+
+
+def test_generate_edit_script_handles_opaque_units() -> None:
+    source = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
+            TextUnit(content="B"),
+            OpaqueUnit(key="opaque-deleted", width=3, is_inline=False),
+            TextUnit(content="C"),
+            ParagraphBoundary(),
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TextUnit(content="A"),
+            OpaqueUnit(key="opaque-retained", width=2, is_inline=True),
+            TextUnit(content="B"),
+            TextUnit(content="C"),
+            ParagraphBoundary(),
+        ]
+    )
+
+    assert generate_edit_script(source=source, target=target).edits == [
+        DeleteContent(start_index=4, end_index=7)
     ]
 
     with pytest.raises(UnsupportedTransformation, match="OpaqueUnit"):

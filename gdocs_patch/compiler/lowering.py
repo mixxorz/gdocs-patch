@@ -355,6 +355,9 @@ def lower_edit_script(
                                 },
                             }
                         },
+                        # Google automatically inserts a newline after every page
+                        # break. Paragraph boundaries are already explicit in our
+                        # content stream, so remove Google's extra one immediately.
                         {
                             "deleteContentRange": {
                                 "range": {
