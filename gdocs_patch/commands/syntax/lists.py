@@ -84,8 +84,12 @@ items cannot contain `<g:bullet-style>`.
 
 List definitions
 ----------------
-`read` includes existing Google list definitions under the document tab. They
-look like this:
+`read` includes existing Google list definitions under the document tab. These
+definitions are read-only metadata: keep them unchanged in target XHTML. The
+compiler uses them to understand existing list glyphs and choose presets when
+normalization is necessary, but it does not write list-definition changes.
+
+They look like this:
 
   <g:list-definitions>
     <g:list-definition g:list-id="LIST_ID">
@@ -102,7 +106,9 @@ Each level requires `g:glyph-format` and exactly one of `g:glyph-type` or
 `g:glyph-symbol`. Glyph types are GLYPH_TYPE_UNSPECIFIED, NONE, DECIMAL,
 ZERO_DECIMAL, UPPER_ALPHA, ALPHA, UPPER_ROMAN, and ROMAN. Alignment is
 BULLET_ALIGNMENT_UNSPECIFIED, START, CENTER, or END. Indents are point values;
-`g:start-number` is an integer. Levels also accept text-style attributes.
+`g:start-number` is an integer. Levels also accept text-style attributes. These
+fields describe the existing Google list; they are reference information, not a
+way to customize lists through `write` or `edit`.
 
 Changing an existing list to a preset
 -------------------------------------
