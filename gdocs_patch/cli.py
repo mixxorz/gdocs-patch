@@ -86,8 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
               {"docId":"DOCUMENT_ID","content":"<XHTML>",
                "allowBulletNormalization":false}
 
-            docId and content are required. allowBulletNormalization is optional.
-            content is the complete target XHTML.
+            docId and content are required. content is the complete target XHTML.
+            allowBulletNormalization is optional and defaults to false. Set it to true
+            to allow customized lists to be converted to the closest supported preset.
 
             Example:
               jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \\
@@ -123,8 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
               {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}],
                "allowBulletNormalization":false}
 
-            docId and edits are required. allowBulletNormalization is optional.
-            oldText must match exactly once.
+            docId and edits are required. oldText must match exactly once.
+            allowBulletNormalization is optional and defaults to false. Set it to true
+            to allow customized lists to be converted to the closest supported preset.
 
             Example:
               printf '%s\\n' \\
