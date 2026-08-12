@@ -1,13 +1,14 @@
 GUIDE = """\
-A list is a group of paragraphs. Each `<li>` contains one paragraph:
+A list is a group of paragraphs. Each `<li>` contains one paragraph. Lists
+returned by `read` have a `g:list-id`; keep it when editing the same list:
 
-<g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">
+<g:list g:list-id="existing-list-id">
   <li><p><span>First item</span></p></li>
   <li><p><span>Second item</span></p></li>
 </g:list>
 
-To add a new list between ordinary paragraphs, insert a preset list directly
-between them in the target XHTML. Do not give a new list a `g:list-id`:
+To add a new list between ordinary paragraphs, use `g:bullet-preset` instead.
+Do not give a new list a `g:list-id`:
 
 <p><span>Before the list</span></p>
 <g:list g:bullet-preset="BULLET_CHECKBOX">
@@ -21,14 +22,6 @@ Use `g:nesting-level` when an item is nested. Level 0 is the default:
 <g:list g:bullet-preset="BULLET_DISC_CIRCLE_SQUARE">
   <li><p><span>Parent item</span></p></li>
   <li g:nesting-level="1"><p><span>Nested item</span></p></li>
-</g:list>
-
-When `read` returns an existing list, it uses `g:list-id`. Keep that ID when you
-want to preserve and edit the same Google list:
-
-<g:list g:list-id="existing-list-id">
-  <li><p><span>Existing item</span></p></li>
-  <li><p><span>Another item</span></p></li>
 </g:list>
 
 Use `g:bullet-preset` for a new list and `g:list-id` for an existing one, never
