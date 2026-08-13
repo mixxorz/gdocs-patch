@@ -17,6 +17,39 @@ uv run gdocs-patch --help
 uv run gdocs-patch --version
 ```
 
+## Google Docs support
+
+This table shows what you can currently change with gdocs-patch and whether the
+Google Docs `batchUpdate` API provides enough support for the feature.
+
+- ✅ Supported
+- ⚠️ Supported with limitations
+- ❌ Unsupported
+
+| Google Docs feature | Can add | Can edit | Can delete | `batchUpdate` supports it | Notes |
+| --- | :---: | :---: | :---: | :---: | --- |
+| Text and formatting | ✅ | ✅ | ✅ | ✅ | Includes links and common character formatting. |
+| Paragraphs and headings | ✅ | ✅ | ✅ | ✅ | Includes common paragraph styling. Heading IDs and tab stops are preserved but not editable. |
+| Bulleted, numbered, and checklist items | ✅ | ✅ | ✅ | ✅ | Includes nesting and Google's standard presets. |
+| Custom list appearance | ❌ | ⚠️ | ✅ | ❌ | Editing requires opt-in conversion to the closest Google preset, which may change its appearance. |
+| Page breaks | ✅ | ✅ | ✅ | ✅ | New page breaks can only be inserted in the document body. |
+| Sections | ✅ | ⚠️ | ✅ | ✅ | Most section formatting is editable, but some existing settings cannot be changed or cleared. |
+| Tables | ✅ | ✅ | ✅ | ✅ | Includes rows, columns, merged cells, nested content, and cell styling. |
+| Repeating table header rows | ❌ | ❌ | ❌ | ✅ | Existing settings are preserved, but gdocs-patch cannot change them yet. |
+| Headers and footers | ❌ | ✅ | ❌ | ✅ | Content in existing headers and footers is editable. |
+| Footnotes | ❌ | ✅ | ✅ | ✅ | Existing footnote content is editable. |
+| Document tabs | ❌ | ⚠️ | ❌ | ✅ | Content in existing tabs is editable, but tabs cannot be created, moved, renamed, or deleted yet. |
+| Images, drawings, and other embedded objects | ❌ | ❌ | ✅ | ⚠️ | Existing objects are preserved. Google supports some image operations, but not every kind of embedded object. |
+| Dates, people, and rich links | ❌ | ❌ | ✅ | ✅ | Existing elements are preserved. Google supports inserting these, but gdocs-patch does not yet expose it. |
+| Equations | ❌ | ❌ | ✅ | ❌ | Existing equations are preserved. Google does not expose their contents or provide requests to create or edit them. |
+| Table of contents | ❌ | ❌ | ✅ | ❌ | Existing tables of contents are preserved. Google does not provide requests to create or update them. |
+| Column breaks, horizontal rules, and auto text | ❌ | ❌ | ✅ | ❌ | Existing elements are preserved. Google does not provide requests to create them. |
+| Document-wide and named style definitions | ❌ | ❌ | ❌ | ✅ | Existing definitions are preserved. Applying a named style to a paragraph is supported. |
+| Named ranges | ❌ | ❌ | ❌ | ✅ | Named ranges are currently ignored by gdocs-patch. |
+| Comments | ❌ | ❌ | ❌ | ❌ | Text edits try to preserve comment anchors. Comments are managed through the Google Drive API instead. |
+| Suggestions | ❌ | ❌ | ❌ | ❌ | Suggested changes are not currently modeled. |
+| Document metadata | ❌ | ❌ | ❌ | ⚠️ | IDs and revision information are preserved. Google does not provide Docs requests for changing all metadata. |
+
 ## Read a document
 
 The `read` command accepts one JSON object on standard input and writes canonical
