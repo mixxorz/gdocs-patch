@@ -1,136 +1,155 @@
-# Task 1 Report: OpaqueUnit
+# Task 1 Report: FastMCP dependency, authenticated server, and launcher
 
 ## Status
 
-DONE_WITH_CONCERNS
+DONE
 
-## Commits
+## Implementation
 
-- `fab890e45ccb6ab26fc933cc451c3230ca841832` — `feat: preserve opaque content during compilation`
-- The report itself is committed separately after this file is written.
+- Added the exact optional dependency `fastmcp==3.4.4` under the `mcp` extra and refreshed `uv.lock`; the lock records FastMCP with `extra == 'mcp'`.
+- Added the `gdocs-patch-mcp = "gdocs_patch.mcp_server:main"` console script without changing the existing CLI entry point.
+- Added a dependency-free launcher in `gdocs_patch/mcp_server/__init__.py` with host/port parsing, port validation, lazy optional dependency loading, missing-extra guidance, token validation, and server dispatch.
+- Added `BearerTokenVerifier`, `create_server`, and `run_server` in `gdocs_patch/mcp_server/server.py`. Tokens are SHA-256 digested and compared with `secrets.compare_digest`; the server uses FastMCP Streamable HTTP at `/mcp`.
+- Added the required optional MCP installation, operation, authentication, TLS, and future tool-contract documentation to `README.md` after Google authentication.
+- Added a targeted Fixit suppression to the required lazy import because the repository's `NoInlineImport` codemod conflicts with the launcher's required CLI-only dependency isolation.
+- Added or modified no automated test files, as required.
 
 ## Files changed
 
-- `gdocs_patch/compiler/content_stream.py`
-- `gdocs_patch/compiler/document.py`
-- `gdocs_patch/compiler/edit_script.py`
-- `gdocs_patch/compiler/__init__.py`
-- `tests/compiler/test_document.py`
-- `tests/compiler/test_edit_script.py`
-- `.superpowers/sdd/task-1-report.md` (this report)
+- `README.md`
+- `pyproject.toml`
+- `uv.lock`
+- `gdocs_patch/mcp_server/__init__.py` (new)
+- `gdocs_patch/mcp_server/server.py` (new)
 
-## Implementation summary
+This report was written to `.superpowers/sdd/task-1-report.md`. It is tracked separately from the implementation commit.
 
-- Added exported `OpaqueUnit(key, width, is_inline)` with width-preserving UTF-16 behavior and key-based stream comparison.
-- Normalized unsupported paragraph elements as inline opaque units and unsupported structural nodes as single block opaque units.
-- Limited generic normalization recursion to `Body`, `Segment`, and `TableCell`.
-- Retained equal opaque keys, included opaque widths in source deletion indices, rejected opaque insertions/replacements, treated inline opaque units as paragraph content, reset paragraph tracking after block opaque units, and skipped retained opaque units during formatting.
+## Commands and results
 
-## TDD red evidence
+### Baseline and isolation
 
-### Normalization RED
-
-Command:
-
-```bash
-uv run pytest tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order -q
+```console
+pwd
+git branch --show-current
+git status --short
+uv run pytest
 ```
 
-Output before implementation (exit 4):
+Result: working directory was `/Users/mixxorz/Projects/gdocs_patch/.worktrees/mcp-server`, branch was `mcp-server`, status was clean, and `196 passed in 0.61s`.
+
+Worktree metadata check:
+
+```console
+GIT_DIR=$(cd "$(git rev-parse --git-dir)" && pwd -P)
+GIT_COMMON=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)
+```
+
+Result: `GIT_DIR=/Users/mixxorz/Projects/gdocs_patch/.git/worktrees/mcp-server` and `GIT_COMMON=/Users/mixxorz/Projects/gdocs_patch/.git`, confirming a linked worktree.
+
+### Dependency update
+
+```console
+uv add --optional mcp 'fastmcp==3.4.4'
+```
+
+Result: exit 0; FastMCP 3.4.4 resolved and `pyproject.toml`/`uv.lock` updated.
+
+### CLI-only isolation smoke check
+
+Ran the task brief's commands verbatim:
+
+```console
+uv sync --dev
+uv run python - <<'PY'
+import importlib.util
+
+assert importlib.util.find_spec("fastmcp") is None
+PY
+uv run gdocs-patch --help > .gdocs-patch-help.txt
+! rg -i 'mcp' .gdocs-patch-help.txt
+uv run gdocs-patch-mcp > .gdocs-patch-mcp.out 2>&1 || true
+rg "MCP support is not installed" .gdocs-patch-mcp.out
+rm .gdocs-patch-help.txt .gdocs-patch-mcp.out
+```
+
+Result: exit 0. FastMCP was absent, normal CLI help contained no MCP text, and the launcher printed:
 
 ```text
-ERROR: found no collectors for .../tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order
-ImportError: cannot import name 'OpaqueUnit' from 'gdocs_patch.compiler'
-1 error in 0.05s
+gdocs-patch-mcp: error: MCP support is not installed. Install it with: uv tool install 'gdocs-patch[mcp]'
 ```
 
-This was the expected missing-export/implementation failure.
+### FastMCP startup and authentication smoke check
 
-### Edit-script RED
+Ran the task brief's server smoke sequence using port 8765.
 
-Command:
-
-```bash
-uv run pytest tests/compiler/test_edit_script.py::test_generate_edit_script_preserves_and_deletes_equations tests/compiler/test_edit_script.py::test_generate_edit_script_rejects_equation_insertion -q
-```
-
-Output before reconciliation implementation (exit 1):
+Results:
 
 ```text
-F.                                                                       [100%]
-FAILED tests/compiler/test_edit_script.py::test_generate_edit_script_preserves_and_deletes_equations
-NotImplementedError: OpaqueUnit
-1 failed, 1 passed in 0.08s
+FastMCP version: 3.4.4
+Unauthenticated HTTP status: 401
+No tools found.
 ```
 
-The insertion assertion already reached the generic unsupported-content error containing `OpaqueUnit`; the retained opaque formatting path produced the expected missing-feature failure.
+The initial curl connection attempt was refused while the retry loop waited for startup, then succeeded with HTTP 401 as expected. The authenticated FastMCP client connected and reported the expected empty tool list. Temporary smoke files were removed and the server process was stopped.
 
-## Green and verification evidence
+### Targeted static checks
 
-Focused document GREEN:
-
-```bash
-uv run pytest tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order -q
+```console
+uv run ruff check gdocs_patch/mcp_server
+uv run ruff format --check gdocs_patch/mcp_server
+uv run pyright
+uv run fixit lint gdocs_patch/mcp_server
+git diff --check
 ```
 
-```text
-.                                                                        [100%]
-1 passed in 0.04s
-```
+Results: Ruff check passed; 2 files already formatted; Pyright reported 0 errors, 0 warnings, and 0 informations; Fixit reported 2 files clean; diff check passed.
 
-Required compiler test files:
+### Full project checks
 
-```bash
-uv run pytest tests/compiler/test_document.py tests/compiler/test_edit_script.py -q
-```
-
-```text
-....................                                                     [100%]
-20 passed in 0.06s
-```
-
-Final quality gate:
-
-```bash
-uv run pytest -q
+```console
+uv run pytest
 uv run ruff check .
-uv run ruff format --check gdocs_patch tests
+uv run ruff format --check .
 uv run fixit lint .
 uv run pyright
 uv run pre-commit run --all-files
 git diff --check
 ```
 
-Outputs:
+Results: 196 tests passed; Ruff check passed; 105 files already formatted; Fixit reported 78 files clean; Pyright reported 0 errors, 0 warnings, and 0 informations; all five pre-commit hooks passed (Ruff check, Ruff format, Pyright, Fixit, hardcoded-secret detection); diff check passed.
 
-```text
-194 passed in 0.60s
-All checks passed!
-73 files already formatted
-🧼 76 files clean 🧼
-0 errors, 0 warnings, 0 informations
-ruff check...............................................................Passed
-ruff format check........................................................Passed
-pyright..................................................................Passed
-Fixit - lint and apply autofixes.........................................Passed
-Detect hardcoded secrets.................................................Passed
+### Test-file constraint
+
+```console
+git diff --name-only -- tests
 ```
 
-`git diff --check` produced no output and exited successfully.
+Result: no output; no test files changed.
 
-The commit hook reran Ruff, Pyright, Fixit, and gitleaks; all passed.
+## Branch-isolation checks
+
+`git branch --show-current` was run before implementation, after dependency changes, after CLI-only smoke checks, during static verification, immediately before commit, and immediately after commit. Every result was `mcp-server`.
+
+`git status --short` was checked throughout. Before commit it showed only the five intended implementation paths. Immediately after commit it was clean. No command switched, reset, modified, or committed in main/master or `/Users/mixxorz/Projects/gdocs_patch`.
+
+## Commit
+
+```text
+23bc5cfa590e476994a674866d5f5ad32345757e feat: add optional authenticated MCP server
+```
+
+Pre-commit hooks all passed during the implementation commit. The report is committed separately with subject `docs: add Task 1 implementation report` so the required final worktree state is committed.
 
 ## Self-review
 
-- Reviewed the complete six-file implementation diff and ran `git diff --check`.
-- Confirmed changes are limited to the brief's production/test files plus this required report.
-- Confirmed opaque identity comparison uses only the opaque key while width remains available for UTF-16 indexing.
-- Confirmed unsupported containers become one opaque unit rather than exposing recursively traversed children.
-- Confirmed target opaque rejection occurs before edit generation, preventing partial scripts.
-- Confirmed no extra tests were added; only the two existing tests named by the brief were expanded.
-- Kept implementation local to existing compiler abstractions without adding unnecessary helper layers.
+- Compared the launcher, server configuration, exact dependency pin, script entry point, README placement/content, and smoke commands against every brief step.
+- Confirmed `gdocs_patch.mcp_server` does not import FastMCP, MCP, Pydantic, Starlette, or the MCP server module at module import time.
+- Confirmed the token is not retained as plaintext by the verifier; only its SHA-256 digest is retained, and candidate comparison is timing-safe.
+- Confirmed the endpoint uses `transport="http"` and `path="/mcp"`.
+- Confirmed lockfile metadata gates FastMCP behind the `mcp` extra.
+- Confirmed no test files were added or modified.
+- Reviewed the final diff and ran `git diff --check`.
 
 ## Concerns
 
-- A repository-wide `uv run ruff format --check .` also checks the pre-existing plan file `docs/superpowers/plans/2026-08-13-page-break-opaque-unit-compilation.md`, which Ruff reports would be reformatted. It was outside Task 1's listed files and was intentionally not modified. Source/tests formatting and the repository pre-commit suite pass.
-- The required opaque key resembles a generic API key to gitleaks when written as one literal. The assertion carries `# gitleaks:allow` so the required hard-coded value can remain while commit hooks pass.
+None. The README describes the complete four-tool contract required by this setup task, while this task intentionally creates an authenticated empty server; tool registration belongs to subsequent tasks.
