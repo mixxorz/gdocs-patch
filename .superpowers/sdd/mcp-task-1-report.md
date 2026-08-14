@@ -22,7 +22,7 @@ DONE
 - `gdocs_patch/mcp_server/__init__.py` (new)
 - `gdocs_patch/mcp_server/server.py` (new)
 
-This report was written to `.superpowers/sdd/task-1-report.md`. It is tracked separately from the implementation commit.
+This report was written to `.superpowers/sdd/mcp-task-1-report.md`. It is tracked separately from the implementation commit.
 
 ## Commands and results
 
