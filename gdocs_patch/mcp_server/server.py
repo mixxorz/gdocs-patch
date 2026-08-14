@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -14,6 +14,7 @@ from gdocs_patch.client import AuthenticationError, GoogleDocsClient, load_crede
 from gdocs_patch.commands import (
     XhtmlEdit,
     XhtmlEditError,
+    describe_syntax,
 )
 from gdocs_patch.commands import (
     edit_document as run_edit_document,
@@ -129,6 +130,22 @@ def write_document(
     return f"Successfully wrote to {document_id}."
 
 
+def syntax_help(
+    *,
+    topic: Literal[
+        "paragraphs",
+        "lists",
+        "tables",
+        "equations",
+        "sections",
+    ]
+    | None = None,
+    reference: bool = False,
+) -> str:
+    """Explain the canonical XHTML syntax accepted by gdocs-patch."""
+    return describe_syntax(topic, reference=reference)
+
+
 def create_server(*, token: str) -> FastMCP:
     """Create the configured gdocs-patch MCP server."""
     server = FastMCP(
@@ -168,6 +185,15 @@ def create_server(*, token: str) -> FastMCP:
             openWorldHint=True,
         ),
     )(write_document)
+    server.tool(
+        title="Syntax Help",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )(syntax_help)
     return server
 
 
