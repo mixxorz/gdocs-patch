@@ -11,7 +11,18 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from gdocs_patch.client import AuthenticationError, GoogleDocsClient, load_credentials
-from gdocs_patch.commands import read_document as run_read_document
+from gdocs_patch.commands import (
+    XhtmlEdit,
+    XhtmlEditError,
+)
+from gdocs_patch.commands import (
+    edit_document as run_edit_document,
+)
+from gdocs_patch.commands import (
+    read_document as run_read_document,
+)
+from gdocs_patch.compiler import UnsupportedTransformation
+from gdocs_patch.xhtml import XHTMLParseError
 
 
 class BearerTokenVerifier(TokenVerifier):
@@ -51,6 +62,43 @@ def read_document(
         raise ToolError(str(error)) from None
 
 
+def edit_document(
+    *,
+    document_id: str,
+    edits: list[XhtmlEdit],
+    allow_bullet_normalization: bool = False,
+) -> str:
+    """Apply exact canonical-XHTML replacements to a Google document."""
+    if not edits:
+        raise ToolError("edits must contain at least one replacement.")
+    for edit_index, edit in enumerate(edits):
+        if not edit.old_text:
+            raise ToolError(
+                f"edits[{edit_index}].old_text must not be empty in {document_id}."
+            )
+
+    try:
+        client = GoogleDocsClient(credentials=load_credentials())
+        count = run_edit_document(
+            client=client,
+            doc_id=document_id,
+            edits=edits,
+            allow_bullet_normalization=allow_bullet_normalization,
+        )
+    except (
+        XhtmlEditError,
+        XHTMLParseError,
+        UnsupportedTransformation,
+        AuthenticationError,
+        GoogleAuthError,
+        HttpError,
+    ) as error:
+        raise ToolError(str(error)) from None
+
+    noun = "block" if count == 1 else "blocks"
+    return f"Successfully replaced {count} {noun} in {document_id}."
+
+
 def create_server(*, token: str) -> FastMCP:
     """Create the configured gdocs-patch MCP server."""
     server = FastMCP(
@@ -72,6 +120,15 @@ def create_server(*, token: str) -> FastMCP:
             openWorldHint=True,
         ),
     )(read_document)
+    server.tool(
+        title="Edit Document",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=True,
+        ),
+    )(edit_document)
     return server
 
 
