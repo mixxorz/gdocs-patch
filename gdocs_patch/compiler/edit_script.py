@@ -41,6 +41,7 @@ class UnsupportedTransformation(Exception):
 @dataclass(frozen=True, kw_only=True)
 class EditScriptContext:
     allow_bullet_normalization: bool = False
+    prevent_table_indent_inheritance: bool = True
     inside_table: bool = False
     inside_non_body_segment: bool = False
 
@@ -132,6 +133,7 @@ class InsertTable(Edit):
     rows: int
     columns: int
     preceding_boundary: Literal["INSERTED", "RETAINED"]
+    prevent_indent_inheritance: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -306,6 +308,10 @@ def compile_inserted_table(
             rows=len(table.rows),
             columns=table.column_count,
             preceding_boundary=preceding_boundary,
+            prevent_indent_inheritance=(
+                context.prevent_table_indent_inheritance
+                and preceding_boundary == "RETAINED"
+            ),
         )
     ]
     # Google creates an inserted table as a blank grid, with one empty paragraph
@@ -860,6 +866,7 @@ def generate_edit_script(
     # These are stream positions of target ParagraphBoundary units whose
     # paragraph styles must be reapplied after a source boundary is deleted.
     forced_paragraph_style_positions: set[int] = set()
+    forced_newline_text_style_positions: set[int] = set()
     for (
         tag,
         source_start_pos,
@@ -1031,17 +1038,24 @@ def generate_edit_script(
                 table_utf16_offset = (
                     target.utf16_index(target_pos) - target_range_start_utf16_index
                 )
+                source_table_start_index = insertion_utf16_index + table_utf16_offset
                 edits.extend(
                     compile_inserted_table(
                         table=target_unit,
-                        source_table_start_index=(
-                            insertion_utf16_index + table_utf16_offset
-                        ),
+                        source_table_start_index=source_table_start_index,
                         target_table_start_index=target.utf16_index(target_pos),
                         preceding_boundary=preceding_boundary,
                         context=context,
                     )
                 )
+                if (
+                    context.prevent_table_indent_inheritance
+                    and preceding_boundary == "RETAINED"
+                    and target_pos > 0
+                    and isinstance(target.items[target_pos - 1], ParagraphBoundary)
+                ):
+                    forced_paragraph_style_positions.add(target_pos - 1)
+                    forced_newline_text_style_positions.add(target_pos - 1)
                 target_pos += 1
                 continue
 
@@ -1453,7 +1467,8 @@ def generate_edit_script(
                 # style or the paragraph's own style. Compare and emit those
                 # independently after deciding the list operation.
                 if (
-                    source_boundary_unit is None
+                    target_pos in forced_newline_text_style_positions
+                    or source_boundary_unit is None
                     or source_boundary_unit.text_style
                     != target_boundary_unit.text_style
                 ):

@@ -235,7 +235,18 @@ def test_generate_edit_script_inserts_table_between_existing_paragraphs() -> Non
             rows=1,
             columns=1,
             preceding_boundary="RETAINED",
-        )
+            prevent_indent_inheritance=True,
+        ),
+        ApplyParagraphStyle(
+            start_index=1,
+            end_index=3,
+            paragraph_style=UNSET,
+        ),
+        ApplyTextStyle(
+            start_index=2,
+            end_index=3,
+            text_style=UNSET,
+        ),
     ]
 
 

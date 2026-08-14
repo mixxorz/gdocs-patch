@@ -37,6 +37,7 @@ from gdocs_patch.models import (
     SectionBreak,
     SectionStyle,
     Segment,
+    StructuralElement,
     Tab,
     Table,
     TableCell,
@@ -462,6 +463,97 @@ def test_normalize_document_normalizes_every_loaded_tab_region() -> None:
             ),
         }
     )
+
+
+def test_compile_document_prevents_inserted_tables_from_inheriting_indent_by_default() -> (
+    None
+):
+    indented_style = ParagraphStyle(
+        indent_first_line=Dimension(magnitude=18, unit="PT"),
+        indent_start=Dimension(magnitude=36, unit="PT"),
+    )
+
+    def document_with_table(*, include_table: bool) -> Document:
+        content: list[StructuralElement] = [
+            Paragraph(
+                elements=[
+                    TextRun(
+                        content="A\n",
+                        text_style=TextStyle(bold=True),
+                    )
+                ],
+                style=indented_style,
+                bullet=Bullet(list_id="list-indented"),
+            )
+        ]
+        if include_table:
+            content.append(
+                Table(
+                    rows=[
+                        TableRow(
+                            cells=[TableCell(content=[Paragraph(elements=[])])],
+                        )
+                    ]
+                )
+            )
+        content.append(Paragraph(elements=[TextRun(content="B\n")]))
+        return Document(
+            document_id="document-table-indent",
+            title="Table indent",
+            revision_id="revision-table-indent",
+            tabs=[
+                Tab(
+                    tab_id="tab-table-indent",
+                    title="Table indent",
+                    index=0,
+                    children=[],
+                    content=DocumentTab(body=Body(content=content)),
+                )
+            ],
+        )
+
+    source = document_with_table(include_table=False)
+    target = document_with_table(include_table=True)
+
+    default_requests = compile_document(source=source, target=target)["requests"]
+    inherited_requests = compile_document(
+        source=source,
+        target=target,
+        prevent_table_indent_inheritance=False,
+    )["requests"]
+
+    assert [next(iter(request)) for request in default_requests] == [
+        "insertTable",
+        "updateParagraphStyle",
+        "deleteParagraphBullets",
+        "deleteContentRange",
+        "updateParagraphStyle",
+        "updateTextStyle",
+    ]
+    assert default_requests[0]["insertTable"]["location"]["index"] == 2
+    assert default_requests[1]["updateParagraphStyle"]["paragraphStyle"] == {
+        "indentFirstLine": {"magnitude": 0, "unit": "PT"},
+        "indentStart": {"magnitude": 0, "unit": "PT"},
+    }
+    assert default_requests[-1]["updateTextStyle"]["textStyle"] == {"bold": True}
+    assert inherited_requests[:2] == [
+        {
+            "insertTable": {
+                "rows": 1,
+                "columns": 1,
+                "location": {"index": 1, "tabId": "tab-table-indent"},
+            }
+        },
+        {
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": 7,
+                    "endIndex": 8,
+                    "tabId": "tab-table-indent",
+                }
+            }
+        },
+    ]
 
 
 def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
@@ -1190,12 +1282,27 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 "insertTable": {
                     "rows": 2,
                     "columns": 2,
-                    "location": {"index": 20, "tabId": "tab-stress"},
+                    "location": {"index": 21, "tabId": "tab-stress"},
+                }
+            },
+            {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 21, "endIndex": 22, "tabId": "tab-stress"},
+                    "paragraphStyle": {
+                        "indentFirstLine": {"magnitude": 0, "unit": "PT"},
+                        "indentStart": {"magnitude": 0, "unit": "PT"},
+                    },
+                    "fields": "indentFirstLine,indentStart",
+                }
+            },
+            {
+                "deleteParagraphBullets": {
+                    "range": {"startIndex": 21, "endIndex": 22, "tabId": "tab-stress"}
                 }
             },
             {
                 "deleteContentRange": {
-                    "range": {"startIndex": 33, "endIndex": 34, "tabId": "tab-stress"}
+                    "range": {"startIndex": 20, "endIndex": 21, "tabId": "tab-stress"}
                 }
             },
             {
@@ -1366,6 +1473,13 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
                 }
             },
             {
+                "updateParagraphStyle": {
+                    "range": {"startIndex": 19, "endIndex": 21, "tabId": "tab-stress"},
+                    "paragraphStyle": {},
+                    "fields": "namedStyleType,alignment,direction,lineSpacing,spacingMode,spaceAbove,spaceBelow,indentFirstLine,indentStart,indentEnd,keepLinesTogether,keepWithNext,avoidWidowAndOrphan,pageBreakBefore,borderBetween,borderTop,borderBottom,borderLeft,borderRight,shading",
+                }
+            },
+            {
                 "updateTextStyle": {
                     "range": {"startIndex": 63, "endIndex": 64, "tabId": "tab-stress"},
                     "textStyle": {},
@@ -1417,6 +1531,13 @@ def test_compile_document_lowers_every_supported_edit_in_one_batch() -> None:
             {
                 "updateTextStyle": {
                     "range": {"startIndex": 8, "endIndex": 10, "tabId": "tab-stress"},
+                    "textStyle": {},
+                    "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
+                }
+            },
+            {
+                "updateTextStyle": {
+                    "range": {"startIndex": 20, "endIndex": 21, "tabId": "tab-stress"},
                     "textStyle": {},
                     "fields": "bold,italic,underline,strikethrough,smallCaps,baselineOffset,fontSize,weightedFontFamily,foregroundColor,backgroundColor,link",
                 }

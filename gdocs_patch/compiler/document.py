@@ -256,11 +256,13 @@ def compile_document(
     source: Document,
     target: Document,
     allow_bullet_normalization: bool = False,
+    prevent_table_indent_inheritance: bool = True,
 ) -> dict[str, object]:
     source_content = normalize_document(source)
     target_content = normalize_document(target)
     context = EditScriptContext(
         allow_bullet_normalization=allow_bullet_normalization,
+        prevent_table_indent_inheritance=prevent_table_indent_inheritance,
     )
 
     if source_content.tabs.keys() != target_content.tabs.keys():

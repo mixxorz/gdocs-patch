@@ -552,33 +552,101 @@ def lower_edit_script(
                     }
                 )
             case InsertTable():
-                # Docs inserts a newline before a new table, so its request
-                # location is one code unit before the table's final index.
-                requests.append(
-                    {
-                        "insertTable": {
-                            "rows": edit.rows,
-                            "columns": edit.columns,
-                            "location": {"index": edit.index - 1, **context},
-                        }
-                    }
-                )
-                if edit.preceding_boundary == "RETAINED":
-                    # Google creates the table as a blank grid before later cell
-                    # content requests run, leaving its extra boundary after the grid.
-                    blank_table_utf16_width = 2 + edit.rows * (1 + 2 * edit.columns)
-                    extra_boundary_start_index = edit.index + blank_table_utf16_width
+                if edit.prevent_indent_inheritance:
+                    # Google Docs can visually indent a table inserted after an
+                    # indented or bulleted paragraph. documents.get exposes no table
+                    # property for this inherited state, and the API provides no way
+                    # to reset it after insertion.
+                    #
+                    # To avoid that inheritance, insert one code unit after the
+                    # normal insertion location. Docs creates a temporary paragraph
+                    # boundary before the table; clear its indentation and bullet,
+                    # then delete the styled boundary that previously ended the
+                    # preceding paragraph. The neutral boundary replaces it, leaving
+                    # the table at its target index. Since deleting a paragraph
+                    # boundary can change the preceding paragraph's formatting,
+                    # edit-script generation forces its target paragraph and newline
+                    # styles to be reapplied after the swap.
+                    requests.extend(
+                        [
+                            {
+                                "insertTable": {
+                                    "rows": edit.rows,
+                                    "columns": edit.columns,
+                                    "location": {"index": edit.index, **context},
+                                }
+                            },
+                            {
+                                "updateParagraphStyle": {
+                                    "range": {
+                                        "startIndex": edit.index,
+                                        "endIndex": edit.index + 1,
+                                        **context,
+                                    },
+                                    "paragraphStyle": {
+                                        "indentFirstLine": {
+                                            "magnitude": 0,
+                                            "unit": "PT",
+                                        },
+                                        "indentStart": {
+                                            "magnitude": 0,
+                                            "unit": "PT",
+                                        },
+                                    },
+                                    "fields": "indentFirstLine,indentStart",
+                                }
+                            },
+                            {
+                                "deleteParagraphBullets": {
+                                    "range": {
+                                        "startIndex": edit.index,
+                                        "endIndex": edit.index + 1,
+                                        **context,
+                                    }
+                                }
+                            },
+                            {
+                                "deleteContentRange": {
+                                    "range": {
+                                        "startIndex": edit.index - 1,
+                                        "endIndex": edit.index,
+                                        **context,
+                                    }
+                                }
+                            },
+                        ]
+                    )
+                else:
+                    # Docs inserts a newline before a new table, so its request
+                    # location is one code unit before the table's final index.
                     requests.append(
                         {
-                            "deleteContentRange": {
-                                "range": {
-                                    "startIndex": extra_boundary_start_index,
-                                    "endIndex": extra_boundary_start_index + 1,
-                                    **context,
-                                }
+                            "insertTable": {
+                                "rows": edit.rows,
+                                "columns": edit.columns,
+                                "location": {"index": edit.index - 1, **context},
                             }
                         }
                     )
+                    if edit.preceding_boundary == "RETAINED":
+                        # Google creates the table as a blank grid before later cell
+                        # content requests run, leaving its extra boundary after the
+                        # grid.
+                        blank_table_utf16_width = 2 + edit.rows * (1 + 2 * edit.columns)
+                        extra_boundary_start_index = (
+                            edit.index + blank_table_utf16_width
+                        )
+                        requests.append(
+                            {
+                                "deleteContentRange": {
+                                    "range": {
+                                        "startIndex": extra_boundary_start_index,
+                                        "endIndex": extra_boundary_start_index + 1,
+                                        **context,
+                                    }
+                                }
+                            }
+                        )
             case InsertTableRow():
                 requests.append(
                     {
