@@ -162,7 +162,22 @@ def normalize_tree(
             items.extend(normalize_tree(child, list_definitions=list_definitions).items)
         return ContentStream(items=items)
 
-    semantic_value = f"{type(tree).__name__}:{tree!r}"
+    # OpaqueUnits let unsupported elements be retained or deleted, but not
+    # inserted. Prefer a model ID so retained elements still match across an
+    # XHTML round-trip, falling back to the full representation when no ID exists.
+    object_identity = next(
+        (
+            f"{field_name}={value!r}"
+            for field_name, value in vars(tree).items()
+            if field_name.endswith("_id") and isinstance(value, str)
+        ),
+        None,
+    )
+    semantic_value = (
+        f"{type(tree).__name__}:{object_identity}"
+        if object_identity is not None
+        else f"{type(tree).__name__}:{tree!r}"
+    )
     return ContentStream(
         items=[
             OpaqueUnit(
@@ -171,6 +186,8 @@ def normalize_tree(
                 ),
                 width=cast("IndexedNode", tree).utf16_width,
                 is_inline=isinstance(tree, ParagraphElement),
+                element_type=type(tree).__name__,
+                object_identity=object_identity,
             )
         ]
     )

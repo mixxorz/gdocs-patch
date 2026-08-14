@@ -827,8 +827,22 @@ def generate_edit_script(
                 raise UnsupportedTransformation(
                     "Google Docs cannot insert Equation elements"
                 )
-            if any(isinstance(target_unit, OpaqueUnit) for target_unit in target_range):
-                raise UnsupportedTransformation("cannot insert OpaqueUnit content")
+            opaque_elements = sorted(
+                {
+                    (
+                        f"{target_unit.element_type} ({target_unit.object_identity})"
+                        if target_unit.object_identity is not None
+                        else target_unit.element_type
+                    )
+                    for target_unit in target_range
+                    if isinstance(target_unit, OpaqueUnit)
+                }
+            )
+            if opaque_elements:
+                elements = ", ".join(opaque_elements)
+                raise UnsupportedTransformation(
+                    f"cannot insert unsupported Google Docs element(s): {elements}"
+                )
             if any(
                 isinstance(target_unit, PageBreakUnit) for target_unit in target_range
             ):

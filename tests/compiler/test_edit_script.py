@@ -623,7 +623,13 @@ def test_generate_edit_script_handles_opaque_units() -> None:
         DeleteContent(start_index=4, end_index=7)
     ]
 
-    with pytest.raises(UnsupportedTransformation, match="OpaqueUnit"):
+    with pytest.raises(
+        UnsupportedTransformation,
+        match=(
+            r"^cannot insert unsupported Google Docs element\(s\): "
+            r"InlineObjectReference \(inline_object_id='inline-new'\)$"
+        ),
+    ):
         generate_edit_script(
             source=ContentStream(
                 items=[
@@ -635,7 +641,13 @@ def test_generate_edit_script_handles_opaque_units() -> None:
             target=ContentStream(
                 items=[
                     TextUnit(content="A"),
-                    OpaqueUnit(key="opaque-new", width=1, is_inline=True),
+                    OpaqueUnit(
+                        key="opaque-new",
+                        width=1,
+                        is_inline=True,
+                        element_type="InlineObjectReference",
+                        object_identity="inline_object_id='inline-new'",
+                    ),
                     TextUnit(content="B"),
                     ParagraphBoundary(),
                 ]

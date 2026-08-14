@@ -36,6 +36,8 @@ class OpaqueUnit(ContentUnit):
     key: str
     width: int
     is_inline: bool
+    element_type: str = field(default="unknown", compare=False)
+    object_identity: str | None = field(default=None, compare=False)
 
     @property
     def utf16_width(self) -> int:
