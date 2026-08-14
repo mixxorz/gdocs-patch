@@ -102,3 +102,32 @@ Result: exit 0; returned exactly the first three canonical XHTML lines: the XML 
 
 - The brief's `fastmcp call ... limit=3` syntax is incompatible with strict input validation in the installed FastMCP CLI because it sends `3` as a string. Typed `--input-json` succeeds and validates the intended behavior. This is a smoke-command/CLI issue, not a server implementation issue.
 - No automated MCP regression tests exist for this task by explicit user requirement; confidence comes from static checks, pre-commit hooks, schema discovery, and the successful real read-only smoke call.
+
+## Reviewer follow-up: typed smoke payload
+
+### Fix
+
+Corrected only Task 2's smoke call in `docs/superpowers/plans/2026-08-15-hosted-mcp-server.md`. It now constructs typed JSON with `jq` and passes it through FastMCP's `--input-json`, so `limit` is the JSON integer `3` rather than the string `"3"`.
+
+Regenerated this unique brief from corrected Task 2:
+
+```bash
+/Users/mixxorz/.pi/agent/git/github.com/obra/superpowers/skills/subagent-driven-development/scripts/task-brief \
+  docs/superpowers/plans/2026-08-15-hosted-mcp-server.md 2 \
+  .superpowers/sdd/mcp-task-2-brief.md
+```
+
+Result: exit 0, `wrote .superpowers/sdd/mcp-task-2-brief.md: 129 lines`; the generated brief contains the corrected `--input-json` command.
+
+### Exact verification command
+
+With the provided read-only smoke document ID exported as `GDOCS_PATCH_SMOKE_DOC_ID`, a random token, and the MCP server running on port 8765:
+
+```bash
+uv run fastmcp call http://127.0.0.1:8765/mcp read_document \
+  --input-json "$(jq -n --arg document_id "$GDOCS_PATCH_SMOKE_DOC_ID" \
+    '{document_id: $document_id, limit: 3}')" \
+  --auth "$TOKEN"
+```
+
+Result: exit 0. FastMCP accepted the strict schema input and returned exactly the first three canonical XHTML lines (XML declaration, opening `html`, and opening `body`) from document `16kfDIsmv4l3RXq1lWGKyH1cqf5pVoyQ_AEH3AJXQvKU`. The read-only call did not mutate the document.

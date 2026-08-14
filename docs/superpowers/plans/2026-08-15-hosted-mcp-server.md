@@ -387,7 +387,9 @@ trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || 
 uv run fastmcp list http://127.0.0.1:8765/mcp \
   --auth "$TOKEN" --input-schema
 uv run fastmcp call http://127.0.0.1:8765/mcp read_document \
-  document_id="$GDOCS_PATCH_SMOKE_DOC_ID" limit=3 --auth "$TOKEN"
+  --input-json "$(jq -n --arg document_id "$GDOCS_PATCH_SMOKE_DOC_ID" \
+    '{document_id: $document_id, limit: 3}')" \
+  --auth "$TOKEN"
 kill "$SERVER_PID"
 wait "$SERVER_PID" 2>/dev/null || true
 trap - EXIT
