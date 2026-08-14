@@ -1,8 +1,17 @@
 import hashlib
 import secrets
+from typing import Annotated
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from google.auth.exceptions import GoogleAuthError
+from googleapiclient.errors import HttpError  # pyright: ignore[reportMissingTypeStubs]
+from mcp.types import ToolAnnotations
+from pydantic import Field
+
+from gdocs_patch.client import AuthenticationError, GoogleDocsClient, load_credentials
+from gdocs_patch.commands import read_document as run_read_document
 
 
 class BearerTokenVerifier(TokenVerifier):
@@ -23,9 +32,28 @@ class BearerTokenVerifier(TokenVerifier):
         )
 
 
+def read_document(
+    *,
+    document_id: str,
+    offset: Annotated[int, Field(ge=1)] = 1,
+    limit: Annotated[int | None, Field(gt=0)] = None,
+) -> str:
+    """Read canonical XHTML lines from a Google document."""
+    try:
+        client = GoogleDocsClient(credentials=load_credentials())
+        return run_read_document(
+            client=client,
+            doc_id=document_id,
+            offset=offset,
+            limit=limit,
+        )
+    except (AuthenticationError, GoogleAuthError, HttpError) as error:
+        raise ToolError(str(error)) from None
+
+
 def create_server(*, token: str) -> FastMCP:
     """Create the configured gdocs-patch MCP server."""
-    return FastMCP(
+    server = FastMCP(
         name="gdocs-patch",
         instructions=(
             "Read and update Google Docs through canonical XHTML. Read a document "
@@ -35,6 +63,16 @@ def create_server(*, token: str) -> FastMCP:
         mask_error_details=True,
         strict_input_validation=True,
     )
+    server.tool(
+        title="Read Document",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=True,
+        ),
+    )(read_document)
+    return server
 
 
 def run_server(*, host: str, port: int, token: str) -> None:
