@@ -145,6 +145,52 @@ export GDOCS_PATCH_BEARER_TOKEN="..."
 
 The environment token takes precedence over saved user credentials.
 
+## Optional MCP server
+
+MCP support is optional. A CLI-only installation does not install FastMCP:
+
+```console
+uv tool install gdocs-patch
+```
+
+Install the `mcp` extra to run the hosted server:
+
+```console
+uv tool install 'gdocs-patch[mcp]'
+```
+
+The server uses the same Google credentials as the CLI: either the saved
+`~/.config/gdocs-patch/credentials.json` file or `GDOCS_PATCH_BEARER_TOKEN`.
+It does not provide a Google login endpoint.
+
+Generate and inject a separate token for MCP clients, then start the server:
+
+```console
+export GDOCS_PATCH_MCP_TOKEN="$(openssl rand -hex 32)"
+gdocs-patch-mcp --host 127.0.0.1 --port 8000
+```
+
+The Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp`. Every request must
+include `Authorization: Bearer` with the value of `GDOCS_PATCH_MCP_TOKEN`.
+The built-in server does not provide TLS. Put it behind an HTTPS reverse proxy
+or ingress before exposing it beyond localhost, and inject the token through
+your deployment's secret manager.
+
+The server exposes four tools:
+
+- `read_document(document_id, offset=1, limit=null)` returns canonical XHTML;
+- `edit_document(document_id, edits, allow_bullet_normalization=false)` applies
+  exact XHTML replacements immediately;
+- `write_document(document_id, content, allow_bullet_normalization=false)`
+  applies a complete target XHTML document immediately; and
+- `syntax_help(topic=null, reference=false)` explains the XHTML grammar.
+
+Each edit object contains string `old_text` and `new_text` fields. Syntax topics
+are `paragraphs`, `lists`, `tables`, `equations`, and `sections`. Read and syntax
+help are read-only; edit and write mutate the Google document during the tool
+call. Mutations use Google's required revision ID and are not retried when the
+document changes concurrently.
+
 ## Google Docs client
 
 The client returns decoded Google API responses and accepts batch-update
