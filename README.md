@@ -153,6 +153,11 @@ MCP support is optional. A CLI-only installation does not install FastMCP:
 uv tool install gdocs-patch
 ```
 
+Python console entry points are unconditional, so this base install still includes
+`gdocs-patch-mcp`. Without the `mcp` extra, invoking it exits cleanly without a
+traceback and directs you to install the extra with
+`uv tool install 'gdocs-patch[mcp]'`.
+
 Install the `mcp` extra to run the hosted server:
 
 ```console
