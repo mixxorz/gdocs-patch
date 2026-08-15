@@ -86,9 +86,21 @@ server = FastMCP(
 )
 def read_document(
     *,
-    document_id: str,
-    offset: Annotated[int, Field(ge=1)] = 1,
-    limit: Annotated[int | None, Field(gt=0)] = None,
+    document_id: Annotated[str, Field(description="Google document ID to read.")],
+    offset: Annotated[
+        int,
+        Field(
+            ge=1,
+            description="Line number to start reading from (1-indexed).",
+        ),
+    ] = 1,
+    limit: Annotated[
+        int | None,
+        Field(
+            gt=0,
+            description="Maximum number of lines to read.",
+        ),
+    ] = None,
 ) -> ToolResult:
     """Read canonical XHTML lines from a Google document."""
     try:

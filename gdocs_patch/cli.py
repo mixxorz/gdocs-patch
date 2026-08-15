@@ -67,7 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
             Input (JSON on stdin):
               {"docId":"DOCUMENT_ID","offset":1,"limit":200}
 
-            docId is required. offset and limit are optional line-based pagination.
+            docId: Google document ID to read. Required.
+            offset: Line number to start reading from (1-indexed). Defaults to 1.
+            limit: Maximum number of lines to read. Defaults to all remaining lines.
 
             Example:
               printf '%s\\n' '{"docId":"DOCUMENT_ID"}' | gdocs-patch read

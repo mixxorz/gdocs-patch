@@ -60,9 +60,11 @@ printf '%s\n' '{"docId":"DOCUMENT_ID","offset":8,"limit":4}' \
   | uv run gdocs-patch read
 ```
 
-`offset` is an optional one-based line number, and `limit` is an optional line
-count. The output is raw, unnumbered XHTML, so it can be redirected to a file or
-passed directly to another tool without stripping line prefixes.
+`offset` is the optional line number to start reading from (1-indexed) and
+defaults to 1. `limit` is the optional maximum number of lines to read and
+defaults to all remaining lines. The output is raw, unnumbered XHTML, so it can
+be redirected to a file or passed directly to another tool without stripping
+line prefixes.
 
 ## Write a document
 
