@@ -3,6 +3,10 @@ import sys
 from collections.abc import Sequence
 
 
+class MCPTokenNotConfiguredError(RuntimeError):
+    """Raised when the MCP bearer token is missing."""
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the optional hosted MCP server."""
     parser = argparse.ArgumentParser(
@@ -18,10 +22,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # Keep CLI-only installs dependency-free.
         # lint-ignore: NoInlineImport
-        from gdocs_patch.mcp_server.server import (
-            MCPTokenNotConfiguredError,
-            run_server,
-        )
+        from gdocs_patch.mcp_server.server import run_server
+    except MCPTokenNotConfiguredError as error:
+        print(f"gdocs-patch-mcp: error: {error}", file=sys.stderr)
+        return 1
     except ModuleNotFoundError as error:
         if error.name != "fastmcp":
             raise
@@ -32,9 +36,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    try:
-        run_server(host=args.host, port=args.port)
-    except MCPTokenNotConfiguredError as error:
-        print(f"gdocs-patch-mcp: error: {error}", file=sys.stderr)
-        return 1
+    run_server(host=args.host, port=args.port)
     return 0

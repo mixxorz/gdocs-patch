@@ -27,11 +27,8 @@ from gdocs_patch.commands import (
     write_document as run_write_document,
 )
 from gdocs_patch.compiler import UnsupportedTransformation
+from gdocs_patch.mcp_server import MCPTokenNotConfiguredError
 from gdocs_patch.xhtml import XHTMLParseError
-
-
-class MCPTokenNotConfiguredError(RuntimeError):
-    """Raised when the MCP bearer token is missing."""
 
 
 # FastMCP's static verifier is intended for development and uses a regular
@@ -57,6 +54,36 @@ class BearerTokenVerifier(TokenVerifier):
         )
 
 
+server = FastMCP(
+    name="gdocs-patch",
+    instructions=(
+        "Read and update Google Docs through canonical XHTML. Read a document "
+        "before editing it, and use syntax_help when XHTML syntax is unclear."
+    ),
+    auth=BearerTokenVerifier(),
+    mask_error_details=True,
+    strict_input_validation=True,
+)
+
+
+@server.tool(
+    title="Read Document",
+    output_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["document_id", "content"],
+        "additionalProperties": False,
+    },
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def read_document(
     *,
     document_id: str,
@@ -84,6 +111,24 @@ def read_document(
     )
 
 
+@server.tool(
+    title="Edit Document",
+    output_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string"},
+            "blocks_replaced": {"type": "integer", "minimum": 1},
+        },
+        "required": ["document_id", "blocks_replaced"],
+        "additionalProperties": False,
+    },
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=False,
+        openWorldHint=True,
+    ),
+)
 def edit_document(
     *,
     document_id: str,
@@ -127,6 +172,21 @@ def edit_document(
     )
 
 
+@server.tool(
+    title="Write Document",
+    output_schema={
+        "type": "object",
+        "properties": {"document_id": {"type": "string"}},
+        "required": ["document_id"],
+        "additionalProperties": False,
+    },
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
 def write_document(
     *,
     document_id: str,
@@ -157,6 +217,39 @@ def write_document(
     )
 
 
+@server.tool(
+    title="Syntax Help",
+    output_schema={
+        "type": "object",
+        "properties": {
+            "topic": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "enum": [
+                            "paragraphs",
+                            "lists",
+                            "tables",
+                            "equations",
+                            "sections",
+                        ],
+                    },
+                    {"type": "null"},
+                ]
+            },
+            "reference": {"type": "boolean"},
+            "content": {"type": "string"},
+        },
+        "required": ["topic", "reference", "content"],
+        "additionalProperties": False,
+    },
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 def syntax_help(
     *,
     topic: Literal[
@@ -181,108 +274,8 @@ def syntax_help(
     )
 
 
-def create_server() -> FastMCP:
-    """Create the configured gdocs-patch MCP server."""
-    server = FastMCP(
-        name="gdocs-patch",
-        instructions=(
-            "Read and update Google Docs through canonical XHTML. Read a document "
-            "before editing it, and use syntax_help when XHTML syntax is unclear."
-        ),
-        auth=BearerTokenVerifier(),
-        mask_error_details=True,
-        strict_input_validation=True,
-    )
-    server.tool(
-        title="Read Document",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "string"},
-                "content": {"type": "string"},
-            },
-            "required": ["document_id", "content"],
-            "additionalProperties": False,
-        },
-        annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=True,
-        ),
-    )(read_document)
-    server.tool(
-        title="Edit Document",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "document_id": {"type": "string"},
-                "blocks_replaced": {"type": "integer", "minimum": 1},
-            },
-            "required": ["document_id", "blocks_replaced"],
-            "additionalProperties": False,
-        },
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=True,
-            idempotentHint=False,
-            openWorldHint=True,
-        ),
-    )(edit_document)
-    server.tool(
-        title="Write Document",
-        output_schema={
-            "type": "object",
-            "properties": {"document_id": {"type": "string"}},
-            "required": ["document_id"],
-            "additionalProperties": False,
-        },
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=True,
-            idempotentHint=True,
-            openWorldHint=True,
-        ),
-    )(write_document)
-    server.tool(
-        title="Syntax Help",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "anyOf": [
-                        {
-                            "type": "string",
-                            "enum": [
-                                "paragraphs",
-                                "lists",
-                                "tables",
-                                "equations",
-                                "sections",
-                            ],
-                        },
-                        {"type": "null"},
-                    ]
-                },
-                "reference": {"type": "boolean"},
-                "content": {"type": "string"},
-            },
-            "required": ["topic", "reference", "content"],
-            "additionalProperties": False,
-        },
-        annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
-    )(syntax_help)
-    return server
-
-
 def run_server(*, host: str, port: int) -> None:
     """Serve gdocs-patch using FastMCP's Streamable HTTP transport."""
-    server = create_server()
     server.run(
         transport="http",
         host=host,
