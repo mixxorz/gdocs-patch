@@ -91,8 +91,12 @@ The committed approved spec and plan now describe exactly four new tests and an 
 
 ## Commits
 
-- `0fb4048 fix: preserve table anchors during replacement`
-- This report is committed separately after the implementation commit.
+- `89d6ed0 fix: preserve table anchors during replacement`
+- `363bd27 docs: report table anchor replacement fix`
+
+## Rebase
+
+The feature branch was cleanly rebased onto main `320c476`. Production and test changes remain only on `fix/table-structural-reconciliation`.
 
 ## Concerns
 
