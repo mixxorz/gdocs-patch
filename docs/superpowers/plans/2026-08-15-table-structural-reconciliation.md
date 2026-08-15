@@ -4,7 +4,7 @@
 
 **Goal:** Make retained-table compilation apply keyed removals and keyless additions together for rows and columns.
 
-**Architecture:** Keep `generate_table_edits()` as the single table-reconciliation module. Preserve its existing key matching, but consume unmatched source and target structures in independent delete-then-insert phases; use a retained row as the column identity reference.
+**Architecture:** Keep `generate_table_edits()` as the single table-reconciliation module. Preserve its existing key matching and delete-then-insert phases whenever an old row or cell remains as an anchor. For complete nonempty replacement, insert first against an old anchor and then delete the shifted old structures; use a retained row as the column identity reference.
 
 **Tech Stack:** Python 3.12+, pytest, uv
 
@@ -13,7 +13,7 @@
 - Keep model classes ordinary, mutable, hand-written, and explicitly typed.
 - Preserve intentional `UNSET` and proto-default behavior.
 - Test meaningful behavior and invariants without duplicating MCP-level coverage.
-- Add exactly two tests: one mixed row test and one mixed column test.
+- Add exactly four tests: mixed and complete-replacement anchor tests for both rows and columns.
 - Run pytest, Ruff lint/format, Fixit, Pyright, and pre-commit before completion.
 
 ---
@@ -26,9 +26,9 @@
 
 **Interfaces:**
 - Consumes: Existing `generate_table_edits(*, source: TableUnit, target: TableUnit, ...) -> list[Edit]` row-key matching.
-- Produces: A row structural edit prefix containing every `DeleteTableRow` for unmatched source rows, followed by every `InsertTableRow` for unmatched target rows.
+- Produces: A row structural edit prefix containing every unmatched row operation. Preserve delete-then-insert ordering when a row survives; for complete nonempty replacement, insert target rows first and delete shifted old rows afterward.
 
-- [ ] **Step 1: Add the focused mixed-row test**
+- [ ] **Step 1: Add the focused mixed-row and all-row-replacement anchor tests**
 
 Add this test after `test_generate_edit_script_deletes_a_table_row`:
 
@@ -114,17 +114,21 @@ def test_generate_edit_script_reconciles_mixed_table_rows() -> None:
     ]
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+Also add a focused boundary test where every source row is unmatched and the nonempty target replaces all rows. It must require target-row insertions before deletion of old rows at indexes shifted by the number of inserted target rows.
+
+- [ ] **Step 2: Run the tests and verify RED**
 
 Run:
 
 ```bash
-uv run pytest -q tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows
+uv run pytest -q \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_replaces_all_table_rows_before_deleting_anchor
 ```
 
-Expected: FAIL because the current target-larger branch emits three insertions and no deletions.
+Expected: the mixed test passes from the first implementation, while the anchor test fails because deleting every old row first destroys the table before insertion.
 
-- [ ] **Step 3: Make row removal and addition independent**
+- [ ] **Step 3: Make row removal and addition anchor-safe**
 
 Replace the net row-count branch in `generate_table_edits()` with:
 
@@ -153,6 +157,8 @@ Replace the net row-count branch in `generate_table_edits()` with:
         )
 ```
 
+Scope an insertion-first branch to the case where all source rows are unmatched and the target has rows. Insert all target rows in ascending target order, then delete old rows in descending source order at `len(new_row_indices) + source_row_index`. Keep the shown delete-then-insert ordering for every case with a retained row.
+
 - [ ] **Step 4: Run row tests and verify GREEN**
 
 Run:
@@ -161,10 +167,11 @@ Run:
 uv run pytest -q \
   tests/compiler/test_table_edit_script.py::test_generate_edit_script_deletes_a_table_row \
   tests/compiler/test_edit_script.py::test_generate_edit_script_inserts_two_table_rows \
-  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_replaces_all_table_rows_before_deleting_anchor
 ```
 
-Expected: `3 passed`.
+Expected: `4 passed`.
 
 - [ ] **Step 5: Refactor review and commit**
 
@@ -185,9 +192,9 @@ git commit -m "fix: reconcile mixed table row changes"
 
 **Interfaces:**
 - Consumes: `source_rows_by_target`, `new_cells`, and `deleted_cell_indices` produced by existing row/cell key matching.
-- Produces: A column structural edit sequence containing every `DeleteTableColumn` for the retained reference row, followed by every `InsertTableColumn` for that row. If no row is retained, dimensions are reconciled positionally because no shared cell keys exist.
+- Produces: A column structural edit sequence containing every unmatched column operation for the retained reference row. Preserve delete-then-insert ordering when a cell survives; for complete nonempty replacement, insert target columns first and delete shifted old columns afterward. If no row is retained, dimensions are reconciled positionally because no shared cell keys exist.
 
-- [ ] **Step 1: Add the focused mixed-column test**
+- [ ] **Step 1: Add the focused mixed-column and all-column-replacement anchor tests**
 
 Add this test after `test_generate_edit_script_deletes_a_table_column`:
 
@@ -273,15 +280,19 @@ def test_generate_edit_script_reconciles_mixed_table_columns() -> None:
     ]
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+Also add a focused boundary test where a retained row has no retained cells and nonempty target columns replace every source column. It must require target-column insertions before deletion of old columns at indexes shifted by the number of inserted target columns.
+
+- [ ] **Step 2: Run the tests and verify RED**
 
 Run:
 
 ```bash
-uv run pytest -q tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_columns
+uv run pytest -q \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_columns \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_replaces_all_table_columns_before_deleting_anchor
 ```
 
-Expected: FAIL because the current positive column delta emits three insertions and no deletions.
+Expected: the mixed test passes from the first implementation, while the anchor test fails because deleting every old column first destroys the table before insertion.
 
 - [ ] **Step 3: Select a retained column-identity reference**
 
@@ -325,6 +336,13 @@ if column_reference_row_index is not None:
                 insert_right=column_index > 0,
             )
         )
+```
+
+Scope an insertion-first branch within the retained-row case to the condition where every source cell is unmatched and the target reference row has new cells. Insert target columns in ascending target order, then delete old columns in descending source order at `len(new_column_indices) + source_column_index`. Keep the shown delete-then-insert ordering whenever a retained cell supplies the column anchor.
+
+The no-retained-row fallback remains:
+
+```python
 elif column_delta > 0:
     for column_index in range(source.column_count, target.column_count):
         edits.append(
@@ -354,10 +372,11 @@ Run:
 uv run pytest -q \
   tests/compiler/test_table_edit_script.py::test_generate_edit_script_inserts_a_table_column \
   tests/compiler/test_table_edit_script.py::test_generate_edit_script_deletes_a_table_column \
-  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_columns
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_columns \
+  tests/compiler/test_table_edit_script.py::test_generate_edit_script_replaces_all_table_columns_before_deleting_anchor
 ```
 
-Expected: `3 passed`.
+Expected: `4 passed`.
 
 - [ ] **Step 6: Refactor review, full verification, and commit**
 
@@ -373,7 +392,7 @@ uv run pre-commit run --all-files
 git diff --check
 ```
 
-Expected: 198 tests pass and every static/pre-commit check exits successfully. Then commit:
+Expected: 200 tests pass and every static/pre-commit check exits successfully. Then commit:
 
 ```bash
 git add gdocs_patch/compiler/edit_script.py tests/compiler/test_table_edit_script.py
