@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 from collections.abc import Sequence
 
@@ -19,7 +18,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         # Keep CLI-only installs dependency-free.
         # lint-ignore: NoInlineImport
-        from gdocs_patch.mcp_server.server import run_server
+        from gdocs_patch.mcp_server.server import (
+            MCPTokenNotConfiguredError,
+            run_server,
+        )
     except ModuleNotFoundError as error:
         if error.name != "fastmcp":
             raise
@@ -30,13 +32,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    token = os.environ.get("GDOCS_PATCH_MCP_TOKEN")
-    if not token:
-        print(
-            "gdocs-patch-mcp: error: GDOCS_PATCH_MCP_TOKEN must be set.",
-            file=sys.stderr,
-        )
+    try:
+        run_server(host=args.host, port=args.port)
+    except MCPTokenNotConfiguredError as error:
+        print(f"gdocs-patch-mcp: error: {error}", file=sys.stderr)
         return 1
-
-    run_server(host=args.host, port=args.port, token=token)
     return 0

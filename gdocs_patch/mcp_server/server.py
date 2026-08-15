@@ -1,3 +1,4 @@
+import os
 import secrets
 from typing import Annotated, Literal
 
@@ -29,14 +30,21 @@ from gdocs_patch.compiler import UnsupportedTransformation
 from gdocs_patch.xhtml import XHTMLParseError
 
 
+class MCPTokenNotConfiguredError(RuntimeError):
+    """Raised when the MCP bearer token is missing."""
+
+
 # FastMCP's static verifier is intended for development and uses a regular
 # dictionary lookup. Keep this small verifier so the server compares its one
 # configured secret in constant time.
 class BearerTokenVerifier(TokenVerifier):
     """Verify the single bearer token configured for this server."""
 
-    def __init__(self, *, token: str) -> None:
+    def __init__(self) -> None:
         super().__init__()
+        token = os.environ.get("GDOCS_PATCH_MCP_TOKEN")
+        if not token:
+            raise MCPTokenNotConfiguredError("GDOCS_PATCH_MCP_TOKEN must be set.")
         self._token = token
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -173,7 +181,7 @@ def syntax_help(
     )
 
 
-def create_server(*, token: str) -> FastMCP:
+def create_server() -> FastMCP:
     """Create the configured gdocs-patch MCP server."""
     server = FastMCP(
         name="gdocs-patch",
@@ -181,7 +189,7 @@ def create_server(*, token: str) -> FastMCP:
             "Read and update Google Docs through canonical XHTML. Read a document "
             "before editing it, and use syntax_help when XHTML syntax is unclear."
         ),
-        auth=BearerTokenVerifier(token=token),
+        auth=BearerTokenVerifier(),
         mask_error_details=True,
         strict_input_validation=True,
     )
@@ -272,9 +280,9 @@ def create_server(*, token: str) -> FastMCP:
     return server
 
 
-def run_server(*, host: str, port: int, token: str) -> None:
+def run_server(*, host: str, port: int) -> None:
     """Serve gdocs-patch using FastMCP's Streamable HTTP transport."""
-    server = create_server(token=token)
+    server = create_server()
     server.run(
         transport="http",
         host=host,
