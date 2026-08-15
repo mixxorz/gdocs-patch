@@ -432,6 +432,87 @@ def test_generate_edit_script_deletes_a_table_column() -> None:
     ]
 
 
+def test_generate_edit_script_reconciles_mixed_table_columns() -> None:
+    empty_content = ContentStream(items=[ParagraphBoundary()])
+    source = ContentStream(
+        items=[
+            TableUnit(
+                table_key="table",
+                rows=[
+                    TableRowUnit(
+                        row_key="retained-row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="retained-cell",
+                                content=empty_content,
+                            ),
+                            TableCellUnit(
+                                cell_key="removed-cell-1",
+                                content=empty_content,
+                            ),
+                            TableCellUnit(
+                                cell_key="removed-cell-2",
+                                content=empty_content,
+                            ),
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TableUnit(
+                table_key="table",
+                rows=[
+                    TableRowUnit(
+                        row_key="retained-row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="retained-cell",
+                                content=empty_content,
+                            ),
+                            TableCellUnit(content=empty_content),
+                            TableCellUnit(content=empty_content),
+                            TableCellUnit(content=empty_content),
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+
+    script = generate_edit_script(source=source, target=target)
+    structural_edits = [
+        edit
+        for edit in script.edits
+        if isinstance(edit, (DeleteTableColumn, InsertTableColumn))
+    ]
+
+    assert structural_edits == [
+        DeleteTableColumn(table_start_index=0, row_index=0, column_index=2),
+        DeleteTableColumn(table_start_index=0, row_index=0, column_index=1),
+        InsertTableColumn(
+            table_start_index=0,
+            row_index=0,
+            column_index=0,
+            insert_right=True,
+        ),
+        InsertTableColumn(
+            table_start_index=0,
+            row_index=0,
+            column_index=1,
+            insert_right=True,
+        ),
+        InsertTableColumn(
+            table_start_index=0,
+            row_index=0,
+            column_index=2,
+            insert_right=True,
+        ),
+    ]
+
+
 def test_generate_edit_script_merges_table_cells() -> None:
     source_table = TableUnit(
         table_key="table",

@@ -516,16 +516,37 @@ def generate_table_edits(
             cell_index for cell_index, _cell in available_source_cells
         ]
 
-    # Change the column count
-    # -----------------------
-    # A column operation changes the whole table, even though Google locates it
-    # through one row and cell. The first row therefore tells us which target
-    # columns were added or which source columns disappeared.
+    column_reference_row_index = next(iter(source_rows_by_target), None)
+
+    # Reconcile columns
+    # -----------------
+    # A retained row supplies the cell identities for table-wide column edits.
+    # Without one, only the source and target dimensions can be reconciled.
     column_delta = target.column_count - source.column_count
-    if column_delta > 0:
+    if column_reference_row_index is not None:
+        for column_index in reversed(deleted_cell_indices[column_reference_row_index]):
+            edits.append(
+                DeleteTableColumn(
+                    table_start_index=source_table_start_index,
+                    row_index=column_reference_row_index,
+                    column_index=column_index,
+                )
+            )
         for column_index in [
-            cell_index for row_index, cell_index, _cell in new_cells if row_index == 0
+            cell_index
+            for row_index, cell_index, _cell in new_cells
+            if row_index == column_reference_row_index
         ]:
+            edits.append(
+                InsertTableColumn(
+                    table_start_index=source_table_start_index,
+                    row_index=column_reference_row_index,
+                    column_index=max(0, column_index - 1),
+                    insert_right=column_index > 0,
+                )
+            )
+    elif column_delta > 0:
+        for column_index in range(source.column_count, target.column_count):
             edits.append(
                 InsertTableColumn(
                     table_start_index=source_table_start_index,
@@ -535,7 +556,7 @@ def generate_table_edits(
                 )
             )
     elif column_delta < 0:
-        for column_index in reversed(deleted_cell_indices.get(0, [])):
+        for column_index in reversed(range(target.column_count, source.column_count)):
             edits.append(
                 DeleteTableColumn(
                     table_start_index=source_table_start_index,
