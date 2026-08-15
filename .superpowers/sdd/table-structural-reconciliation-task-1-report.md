@@ -22,7 +22,7 @@ Row-key matching remains unchanged. Column reconciliation was not modified.
 - `tests/compiler/test_table_edit_script.py`
   - Added the requested behavior-focused, mock-free mixed row reconciliation test.
   - Imported `InsertTableRow` for structural edit assertions.
-- `.superpowers/sdd/task-1-report.md`
+- `.superpowers/sdd/table-structural-reconciliation-task-1-report.md`
   - Added this implementation and verification report.
 
 ## RED Evidence
