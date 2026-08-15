@@ -298,56 +298,52 @@ This uses target order because `source_rows_by_target` is populated while walkin
 Replace the net column-count branch with:
 
 ```python
-    # Reconcile columns
-    # -----------------
-    # A retained row supplies the cell identities for table-wide column edits.
-    # Without one, only the source and target dimensions can be reconciled.
-    column_delta = target.column_count - source.column_count
-    if column_reference_row_index is not None:
-        for column_index in reversed(
-            deleted_cell_indices[column_reference_row_index]
-        ):
-            edits.append(
-                DeleteTableColumn(
-                    table_start_index=source_table_start_index,
-                    row_index=column_reference_row_index,
-                    column_index=column_index,
-                )
+# Reconcile columns
+# -----------------
+# A retained row supplies the cell identities for table-wide column edits.
+# Without one, only the source and target dimensions can be reconciled.
+column_delta = target.column_count - source.column_count
+if column_reference_row_index is not None:
+    for column_index in reversed(deleted_cell_indices[column_reference_row_index]):
+        edits.append(
+            DeleteTableColumn(
+                table_start_index=source_table_start_index,
+                row_index=column_reference_row_index,
+                column_index=column_index,
             )
-        for column_index in [
-            cell_index
-            for row_index, cell_index, _cell in new_cells
-            if row_index == column_reference_row_index
-        ]:
-            edits.append(
-                InsertTableColumn(
-                    table_start_index=source_table_start_index,
-                    row_index=column_reference_row_index,
-                    column_index=max(0, column_index - 1),
-                    insert_right=column_index > 0,
-                )
+        )
+    for column_index in [
+        cell_index
+        for row_index, cell_index, _cell in new_cells
+        if row_index == column_reference_row_index
+    ]:
+        edits.append(
+            InsertTableColumn(
+                table_start_index=source_table_start_index,
+                row_index=column_reference_row_index,
+                column_index=max(0, column_index - 1),
+                insert_right=column_index > 0,
             )
-    elif column_delta > 0:
-        for column_index in range(source.column_count, target.column_count):
-            edits.append(
-                InsertTableColumn(
-                    table_start_index=source_table_start_index,
-                    row_index=0,
-                    column_index=max(0, column_index - 1),
-                    insert_right=column_index > 0,
-                )
+        )
+elif column_delta > 0:
+    for column_index in range(source.column_count, target.column_count):
+        edits.append(
+            InsertTableColumn(
+                table_start_index=source_table_start_index,
+                row_index=0,
+                column_index=max(0, column_index - 1),
+                insert_right=column_index > 0,
             )
-    elif column_delta < 0:
-        for column_index in reversed(
-            range(target.column_count, source.column_count)
-        ):
-            edits.append(
-                DeleteTableColumn(
-                    table_start_index=source_table_start_index,
-                    row_index=0,
-                    column_index=column_index,
-                )
+        )
+elif column_delta < 0:
+    for column_index in reversed(range(target.column_count, source.column_count)):
+        edits.append(
+            DeleteTableColumn(
+                table_start_index=source_table_start_index,
+                row_index=0,
+                column_index=column_index,
             )
+        )
 ```
 
 - [ ] **Step 5: Run column tests and verify GREEN**
