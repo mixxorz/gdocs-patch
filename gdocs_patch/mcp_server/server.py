@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from fastmcp.tools import ToolResult
 from google.auth.exceptions import GoogleAuthError
 from googleapiclient.errors import HttpError  # pyright: ignore[reportMissingTypeStubs]
 from mcp.types import ToolAnnotations
@@ -52,11 +53,11 @@ def read_document(
     document_id: str,
     offset: Annotated[int, Field(ge=1)] = 1,
     limit: Annotated[int | None, Field(gt=0)] = None,
-) -> str:
+) -> ToolResult:
     """Read canonical XHTML lines from a Google document."""
     try:
         client = GoogleDocsClient(credentials=load_credentials())
-        return run_read_document(
+        content = run_read_document(
             client=client,
             doc_id=document_id,
             offset=offset,
@@ -65,13 +66,21 @@ def read_document(
     except (AuthenticationError, GoogleAuthError, HttpError) as error:
         raise ToolError(str(error)) from None
 
+    return ToolResult(
+        content=content,
+        structured_content={
+            "document_id": document_id,
+            "content": content,
+        },
+    )
+
 
 def edit_document(
     *,
     document_id: str,
     edits: list[XhtmlEdit],
     allow_bullet_normalization: bool = False,
-) -> str:
+) -> ToolResult:
     """Apply exact canonical-XHTML replacements to a Google document."""
     if not edits:
         raise ToolError("edits must contain at least one replacement.")
@@ -100,7 +109,13 @@ def edit_document(
         raise ToolError(str(error)) from None
 
     noun = "block" if count == 1 else "blocks"
-    return f"Successfully replaced {count} {noun} in {document_id}."
+    return ToolResult(
+        content=f"Successfully replaced {count} {noun} in {document_id}.",
+        structured_content={
+            "document_id": document_id,
+            "blocks_replaced": count,
+        },
+    )
 
 
 def write_document(
@@ -108,7 +123,7 @@ def write_document(
     document_id: str,
     content: str,
     allow_bullet_normalization: bool = False,
-) -> str:
+) -> ToolResult:
     """Apply complete target XHTML to a Google document."""
     try:
         client = GoogleDocsClient(credentials=load_credentials())
@@ -127,7 +142,10 @@ def write_document(
     ) as error:
         raise ToolError(str(error)) from None
 
-    return f"Successfully wrote to {document_id}."
+    return ToolResult(
+        content=f"Successfully wrote to {document_id}.",
+        structured_content={"document_id": document_id},
+    )
 
 
 def syntax_help(
@@ -141,9 +159,17 @@ def syntax_help(
     ]
     | None = None,
     reference: bool = False,
-) -> str:
+) -> ToolResult:
     """Explain the canonical XHTML syntax accepted by gdocs-patch."""
-    return describe_syntax(topic, reference=reference)
+    content = describe_syntax(topic, reference=reference)
+    return ToolResult(
+        content=content,
+        structured_content={
+            "topic": topic,
+            "reference": reference,
+            "content": content,
+        },
+    )
 
 
 def create_server(*, token: str) -> FastMCP:
@@ -160,6 +186,15 @@ def create_server(*, token: str) -> FastMCP:
     )
     server.tool(
         title="Read Document",
+        output_schema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["document_id", "content"],
+            "additionalProperties": False,
+        },
         annotations=ToolAnnotations(
             readOnlyHint=True,
             destructiveHint=False,
@@ -169,6 +204,15 @@ def create_server(*, token: str) -> FastMCP:
     )(read_document)
     server.tool(
         title="Edit Document",
+        output_schema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "string"},
+                "blocks_replaced": {"type": "integer", "minimum": 1},
+            },
+            "required": ["document_id", "blocks_replaced"],
+            "additionalProperties": False,
+        },
         annotations=ToolAnnotations(
             readOnlyHint=False,
             destructiveHint=True,
@@ -178,6 +222,12 @@ def create_server(*, token: str) -> FastMCP:
     )(edit_document)
     server.tool(
         title="Write Document",
+        output_schema={
+            "type": "object",
+            "properties": {"document_id": {"type": "string"}},
+            "required": ["document_id"],
+            "additionalProperties": False,
+        },
         annotations=ToolAnnotations(
             readOnlyHint=False,
             destructiveHint=True,
@@ -187,6 +237,30 @@ def create_server(*, token: str) -> FastMCP:
     )(write_document)
     server.tool(
         title="Syntax Help",
+        output_schema={
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "enum": [
+                                "paragraphs",
+                                "lists",
+                                "tables",
+                                "equations",
+                                "sections",
+                            ],
+                        },
+                        {"type": "null"},
+                    ]
+                },
+                "reference": {"type": "boolean"},
+                "content": {"type": "string"},
+            },
+            "required": ["topic", "reference", "content"],
+            "additionalProperties": False,
+        },
         annotations=ToolAnnotations(
             readOnlyHint=True,
             destructiveHint=False,

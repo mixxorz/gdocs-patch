@@ -190,11 +190,14 @@ The server exposes four tools:
   applies a complete target XHTML document immediately; and
 - `syntax_help(topic=null, reference=false)` explains the XHTML grammar.
 
-Each edit object contains string `old_text` and `new_text` fields. Syntax topics
-are `paragraphs`, `lists`, `tables`, `equations`, and `sections`. Read and syntax
-help are read-only; edit and write mutate the Google document during the tool
-call. Mutations use Google's required revision ID and are not retried when the
-document changes concurrently.
+Each successful call returns both human-readable text and typed MCP structured
+content. The structured results identify the document and include the XHTML,
+replacement count, or syntax help relevant to the tool. Each edit object
+contains string `old_text` and `new_text` fields. Syntax topics are `paragraphs`,
+`lists`, `tables`, `equations`, and `sections`. Read and syntax help are read-only;
+edit and write mutate the Google document during the tool call. Mutations use
+Google's required revision ID and are not retried when the document changes
+concurrently.
 
 ## Google Docs client
 
