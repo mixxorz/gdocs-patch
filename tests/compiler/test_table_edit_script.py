@@ -369,6 +369,7 @@ def test_generate_edit_script_replaces_all_table_rows_before_deleting_anchor() -
     ]
 
     assert structural_edits == [
+        DeleteTableRow(table_start_index=0, row_index=1, column_index=0),
         InsertTableRow(
             table_start_index=0,
             row_index=0,
@@ -381,7 +382,6 @@ def test_generate_edit_script_replaces_all_table_rows_before_deleting_anchor() -
             column_index=0,
             insert_below=True,
         ),
-        DeleteTableRow(table_start_index=0, row_index=3, column_index=0),
         DeleteTableRow(table_start_index=0, row_index=2, column_index=0),
     ]
 
@@ -620,6 +620,7 @@ def test_generate_edit_script_replaces_all_table_columns_before_deleting_anchor(
     ]
 
     assert structural_edits == [
+        DeleteTableColumn(table_start_index=0, row_index=0, column_index=1),
         InsertTableColumn(
             table_start_index=0,
             row_index=0,
@@ -632,7 +633,6 @@ def test_generate_edit_script_replaces_all_table_columns_before_deleting_anchor(
             column_index=0,
             insert_right=True,
         ),
-        DeleteTableColumn(table_start_index=0, row_index=0, column_index=3),
         DeleteTableColumn(table_start_index=0, row_index=0, column_index=2),
     ]
 

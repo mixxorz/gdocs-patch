@@ -283,6 +283,7 @@ class EditScript:
 
 
 Opcode = tuple[str, int, int, int, int]
+TableAxisOperation = tuple[Literal["delete", "insert"], int]
 
 
 def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[Opcode]:
@@ -291,6 +292,30 @@ def match_content(*, source: ContentStream, target: ContentStream) -> Sequence[O
         b=target.comparison_values(),
         autojunk=False,
     ).get_opcodes()
+
+
+def _plan_table_axis_operations(
+    *,
+    source_count: int,
+    deleted_source_indices: Sequence[int],
+    new_target_indices: Sequence[int],
+) -> list[TableAxisOperation]:
+    deleted_indices = list(deleted_source_indices)
+    deferred_anchor = (
+        source_count > 0
+        and len(deleted_indices) == source_count
+        and bool(new_target_indices)
+    )
+    if deferred_anchor:
+        deleted_indices = deleted_indices[1:]
+
+    operations: list[TableAxisOperation] = [
+        ("delete", index) for index in reversed(deleted_indices)
+    ]
+    operations.extend(("insert", index) for index in new_target_indices)
+    if deferred_anchor:
+        operations.append(("delete", len(new_target_indices)))
+    return operations
 
 
 def compile_inserted_table(
@@ -453,36 +478,17 @@ def generate_table_edits(
 
     # Reconcile rows
     # --------------
-    # Google removes the table when its last row is deleted. For a complete
-    # nonempty replacement, insert the target rows against an old row first,
-    # then delete the old rows at their shifted indices. Other cases retain the
-    # existing delete-then-insert ordering.
+    # Google removes the table when its last row is deleted. The shared axis
+    # planner keeps one temporary source anchor during a complete replacement.
     edits: list[Edit] = []
-    replacing_all_rows = (
-        bool(source.rows)
-        and len(available_source_rows) == len(source.rows)
-        and bool(new_row_indices)
-    )
-    if replacing_all_rows:
-        for row_index in new_row_indices:
-            edits.append(
-                InsertTableRow(
-                    table_start_index=source_table_start_index,
-                    row_index=max(0, row_index - 1),
-                    column_index=0,
-                    insert_below=row_index > 0,
-                )
-            )
-        for row_index, _row in reversed(available_source_rows):
-            edits.append(
-                DeleteTableRow(
-                    table_start_index=source_table_start_index,
-                    row_index=len(new_row_indices) + row_index,
-                    column_index=0,
-                )
-            )
-    else:
-        for row_index, _row in reversed(available_source_rows):
+    for operation, row_index in _plan_table_axis_operations(
+        source_count=len(source.rows),
+        deleted_source_indices=[
+            source_row_index for source_row_index, _source_row in available_source_rows
+        ],
+        new_target_indices=new_row_indices,
+    ):
+        if operation == "delete":
             edits.append(
                 DeleteTableRow(
                     table_start_index=source_table_start_index,
@@ -490,7 +496,7 @@ def generate_table_edits(
                     column_index=0,
                 )
             )
-        for row_index in new_row_indices:
+        else:
             edits.append(
                 InsertTableRow(
                     table_start_index=source_table_start_index,
@@ -556,66 +562,40 @@ def generate_table_edits(
             for row_index, cell_index, _cell in new_cells
             if row_index == column_reference_row_index
         ]
-        replacing_all_columns = (
-            bool(source.column_count)
-            and len(deleted_column_indices) == source.column_count
-            and bool(new_column_indices)
+        column_location_row_index = column_reference_row_index
+    else:
+        deleted_column_indices = (
+            list(range(target.column_count, source.column_count))
+            if column_delta < 0
+            else []
         )
-        if replacing_all_columns:
-            # Deleting the last column removes the table. Build the target
-            # columns against an old column, then remove the shifted old ones.
-            for column_index in new_column_indices:
-                edits.append(
-                    InsertTableColumn(
-                        table_start_index=source_table_start_index,
-                        row_index=column_reference_row_index,
-                        column_index=max(0, column_index - 1),
-                        insert_right=column_index > 0,
-                    )
-                )
-            for column_index in reversed(deleted_column_indices):
-                edits.append(
-                    DeleteTableColumn(
-                        table_start_index=source_table_start_index,
-                        row_index=column_reference_row_index,
-                        column_index=len(new_column_indices) + column_index,
-                    )
-                )
-        else:
-            for column_index in reversed(deleted_column_indices):
-                edits.append(
-                    DeleteTableColumn(
-                        table_start_index=source_table_start_index,
-                        row_index=column_reference_row_index,
-                        column_index=column_index,
-                    )
-                )
-            for column_index in new_column_indices:
-                edits.append(
-                    InsertTableColumn(
-                        table_start_index=source_table_start_index,
-                        row_index=column_reference_row_index,
-                        column_index=max(0, column_index - 1),
-                        insert_right=column_index > 0,
-                    )
-                )
-    elif column_delta > 0:
-        for column_index in range(source.column_count, target.column_count):
-            edits.append(
-                InsertTableColumn(
-                    table_start_index=source_table_start_index,
-                    row_index=0,
-                    column_index=max(0, column_index - 1),
-                    insert_right=column_index > 0,
-                )
-            )
-    elif column_delta < 0:
-        for column_index in reversed(range(target.column_count, source.column_count)):
+        new_column_indices = (
+            list(range(source.column_count, target.column_count))
+            if column_delta > 0
+            else []
+        )
+        column_location_row_index = 0
+
+    for operation, column_index in _plan_table_axis_operations(
+        source_count=source.column_count,
+        deleted_source_indices=deleted_column_indices,
+        new_target_indices=new_column_indices,
+    ):
+        if operation == "delete":
             edits.append(
                 DeleteTableColumn(
                     table_start_index=source_table_start_index,
-                    row_index=0,
+                    row_index=column_location_row_index,
                     column_index=column_index,
+                )
+            )
+        else:
+            edits.append(
+                InsertTableColumn(
+                    table_start_index=source_table_start_index,
+                    row_index=column_location_row_index,
+                    column_index=max(0, column_index - 1),
+                    insert_right=column_index > 0,
                 )
             )
 
