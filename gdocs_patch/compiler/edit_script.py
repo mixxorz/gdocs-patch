@@ -451,31 +451,28 @@ def generate_table_edits(
         key=lambda source_row: source_row[0],
     )
 
-    # Change the row count
-    # --------------------
-    # Rows left unmatched in the target are new. Rows left in the source pool
-    # disappeared. Google addresses these operations through a cell in the row,
-    # so column zero is used as a stable reference point.
+    # Reconcile rows
+    # --------------
+    # Delete from the bottom so each source index remains valid, then insert from
+    # the top so each target index exists before the next request is applied.
     edits: list[Edit] = []
-    if len(target.rows) > len(source.rows):
-        for row_index in new_row_indices:
-            edits.append(
-                InsertTableRow(
-                    table_start_index=source_table_start_index,
-                    row_index=max(0, row_index - 1),
-                    column_index=0,
-                    insert_below=row_index > 0,
-                )
+    for row_index, _row in reversed(available_source_rows):
+        edits.append(
+            DeleteTableRow(
+                table_start_index=source_table_start_index,
+                row_index=row_index,
+                column_index=0,
             )
-    elif len(source.rows) > len(target.rows):
-        for row_index, _row in reversed(available_source_rows):
-            edits.append(
-                DeleteTableRow(
-                    table_start_index=source_table_start_index,
-                    row_index=row_index,
-                    column_index=0,
-                )
+        )
+    for row_index in new_row_indices:
+        edits.append(
+            InsertTableRow(
+                table_start_index=source_table_start_index,
+                row_index=max(0, row_index - 1),
+                column_index=0,
+                insert_below=row_index > 0,
             )
+        )
 
     # Match cells
     # -----------

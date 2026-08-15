@@ -9,6 +9,7 @@ from gdocs_patch.compiler import (
     DeleteTableColumn,
     DeleteTableRow,
     InsertTableColumn,
+    InsertTableRow,
     InsertText,
     MergeTableCells,
     ParagraphBoundary,
@@ -245,6 +246,87 @@ def test_generate_edit_script_deletes_a_table_row() -> None:
 
     assert script.edits == [
         DeleteTableRow(table_start_index=0, row_index=1, column_index=0)
+    ]
+
+
+def test_generate_edit_script_reconciles_mixed_table_rows() -> None:
+    empty_content = ContentStream(items=[ParagraphBoundary()])
+    source = ContentStream(
+        items=[
+            TableUnit(
+                table_key="table",
+                rows=[
+                    TableRowUnit(
+                        row_key="retained-row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="retained-cell",
+                                content=empty_content,
+                            )
+                        ],
+                    ),
+                    TableRowUnit(
+                        row_key="removed-row-1",
+                        cells=[TableCellUnit(content=empty_content)],
+                    ),
+                    TableRowUnit(
+                        row_key="removed-row-2",
+                        cells=[TableCellUnit(content=empty_content)],
+                    ),
+                ],
+            )
+        ]
+    )
+    target = ContentStream(
+        items=[
+            TableUnit(
+                table_key="table",
+                rows=[
+                    TableRowUnit(
+                        row_key="retained-row",
+                        cells=[
+                            TableCellUnit(
+                                cell_key="retained-cell",
+                                content=empty_content,
+                            )
+                        ],
+                    ),
+                    TableRowUnit(cells=[TableCellUnit(content=empty_content)]),
+                    TableRowUnit(cells=[TableCellUnit(content=empty_content)]),
+                    TableRowUnit(cells=[TableCellUnit(content=empty_content)]),
+                ],
+            )
+        ]
+    )
+
+    script = generate_edit_script(source=source, target=target)
+    structural_edits = [
+        edit
+        for edit in script.edits
+        if isinstance(edit, (DeleteTableRow, InsertTableRow))
+    ]
+
+    assert structural_edits == [
+        DeleteTableRow(table_start_index=0, row_index=2, column_index=0),
+        DeleteTableRow(table_start_index=0, row_index=1, column_index=0),
+        InsertTableRow(
+            table_start_index=0,
+            row_index=0,
+            column_index=0,
+            insert_below=True,
+        ),
+        InsertTableRow(
+            table_start_index=0,
+            row_index=1,
+            column_index=0,
+            insert_below=True,
+        ),
+        InsertTableRow(
+            table_start_index=0,
+            row_index=2,
+            column_index=0,
+            insert_below=True,
+        ),
     ]
 
 
