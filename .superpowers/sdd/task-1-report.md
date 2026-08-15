@@ -1,113 +1,114 @@
-# Task 1 Report: Reconcile Removed and Added Rows Together
+# Task 1 Report: OpaqueUnit
 
 ## Status
 
 DONE_WITH_CONCERNS
 
-## Implementation
+## Commits
 
-Updated retained-table row structural reconciliation so unmatched source rows and unmatched target rows are handled independently rather than selected through a net row-count branch.
+- `fab890e45ccb6ab26fc933cc451c3230ca841832` — `feat: preserve opaque content during compilation`
+- The report itself is committed separately after this file is written.
 
-The row edit prefix now:
+## Files changed
 
-1. Deletes every unmatched source row from bottom to top.
-2. Inserts every unmatched target row from top to bottom.
-
-Row-key matching remains unchanged. Column reconciliation was not modified.
-
-## Files
-
+- `gdocs_patch/compiler/content_stream.py`
+- `gdocs_patch/compiler/document.py`
 - `gdocs_patch/compiler/edit_script.py`
-  - Replaced the mutually exclusive row-count branch with independent deletion and insertion loops.
-- `tests/compiler/test_table_edit_script.py`
-  - Added the requested behavior-focused, mock-free mixed row reconciliation test.
-  - Imported `InsertTableRow` for structural edit assertions.
-- `.superpowers/sdd/task-1-report.md`
-  - Added this implementation and verification report.
+- `gdocs_patch/compiler/__init__.py`
+- `tests/compiler/test_document.py`
+- `tests/compiler/test_edit_script.py`
+- `.superpowers/sdd/task-1-report.md` (this report)
 
-## RED Evidence
+## Implementation summary
 
-Command:
+- Added exported `OpaqueUnit(key, width, is_inline)` with width-preserving UTF-16 behavior and key-based stream comparison.
+- Normalized unsupported paragraph elements as inline opaque units and unsupported structural nodes as single block opaque units.
+- Limited generic normalization recursion to `Body`, `Segment`, and `TableCell`.
+- Retained equal opaque keys, included opaque widths in source deletion indices, rejected opaque insertions/replacements, treated inline opaque units as paragraph content, reset paragraph tracking after block opaque units, and skipped retained opaque units during formatting.
 
-```bash
-uv run pytest -q tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows
-```
+## TDD red evidence
 
-The first invocation exposed a missing test import (`NameError: name 'InsertTableRow' is not defined`). After adding the required test-only import, the same command produced the intended behavioral RED:
-
-```text
-F                                                                        [100%]
-=================================== FAILURES ===================================
-____________ test_generate_edit_script_reconciles_mixed_table_rows _____________
-...
-E       assert [InsertTableR...t_below=True)] == [DeleteTableR...t_below=True)]
-E
-E         At index 0 diff: InsertTableRow(table_start_index=0, row_index=0, column_index=0, insert_below=True) != DeleteTableRow(table_start_index=0, row_index=2, column_index=0)
-E         Right contains 2 more items, first extra item: InsertTableRow(table_start_index=0, row_index=1, column_index=0, insert_below=True)
-E         Use -v to get more diff
-
- tests/compiler/test_table_edit_script.py:309: AssertionError
-=========================== short test summary info ============================
-FAILED tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows
-1 failed in 0.05s
-```
-
-This confirmed the existing target-larger branch emitted insertions without the two required deletions.
-
-## GREEN Evidence
+### Normalization RED
 
 Command:
 
 ```bash
-uv run pytest -q \
-  tests/compiler/test_table_edit_script.py::test_generate_edit_script_deletes_a_table_row \
-  tests/compiler/test_edit_script.py::test_generate_edit_script_inserts_two_table_rows \
-  tests/compiler/test_table_edit_script.py::test_generate_edit_script_reconciles_mixed_table_rows
+uv run pytest tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order -q
 ```
 
-Output:
+Output before implementation (exit 4):
 
 ```text
-...                                                                      [100%]
-3 passed in 0.04s
+ERROR: found no collectors for .../tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order
+ImportError: cannot import name 'OpaqueUnit' from 'gdocs_patch.compiler'
+1 error in 0.05s
 ```
 
-## Full-Suite Evidence
+This was the expected missing-export/implementation failure.
+
+### Edit-script RED
 
 Command:
+
+```bash
+uv run pytest tests/compiler/test_edit_script.py::test_generate_edit_script_preserves_and_deletes_equations tests/compiler/test_edit_script.py::test_generate_edit_script_rejects_equation_insertion -q
+```
+
+Output before reconciliation implementation (exit 1):
+
+```text
+F.                                                                       [100%]
+FAILED tests/compiler/test_edit_script.py::test_generate_edit_script_preserves_and_deletes_equations
+NotImplementedError: OpaqueUnit
+1 failed, 1 passed in 0.08s
+```
+
+The insertion assertion already reached the generic unsupported-content error containing `OpaqueUnit`; the retained opaque formatting path produced the expected missing-feature failure.
+
+## Green and verification evidence
+
+Focused document GREEN:
+
+```bash
+uv run pytest tests/compiler/test_document.py::test_normalize_tree_normalizes_kitchen_sink_body_in_document_order -q
+```
+
+```text
+.                                                                        [100%]
+1 passed in 0.04s
+```
+
+Required compiler test files:
+
+```bash
+uv run pytest tests/compiler/test_document.py tests/compiler/test_edit_script.py -q
+```
+
+```text
+....................                                                     [100%]
+20 passed in 0.06s
+```
+
+Final quality gate:
 
 ```bash
 uv run pytest -q
+uv run ruff check .
+uv run ruff format --check gdocs_patch tests
+uv run fixit lint .
+uv run pyright
+uv run pre-commit run --all-files
+git diff --check
 ```
 
-Output:
+Outputs:
 
 ```text
-........................................................................ [ 36%]
-........................................................................ [ 73%]
-.....................................................                    [100%]
-197 passed in 2.44s
-```
-
-Additional verification:
-
-```text
-$ git diff --check
-(exit 0)
-
-$ uv run ruff check gdocs_patch/compiler/edit_script.py tests/compiler/test_table_edit_script.py
+194 passed in 0.60s
 All checks passed!
-
-$ uv run ruff format --check gdocs_patch/compiler/edit_script.py tests/compiler/test_table_edit_script.py
-2 files already formatted
-
-$ uv run fixit lint .
+73 files already formatted
 🧼 76 files clean 🧼
-
-$ uv run pyright
 0 errors, 0 warnings, 0 informations
-
-$ uv run pre-commit run --all-files
 ruff check...............................................................Passed
 ruff format check........................................................Passed
 pyright..................................................................Passed
@@ -115,16 +116,21 @@ Fixit - lint and apply autofixes.........................................Passed
 Detect hardcoded secrets.................................................Passed
 ```
 
-## Refactor and Self-Review
+`git diff --check` produced no output and exited successfully.
 
-- The row phase has one explicit ordering rule: delete unmatched source rows bottom-up, then insert unmatched target rows top-down.
-- No row behavior branches on net source/target row count.
-- Existing row-key matching and source-row queue behavior are untouched.
-- The implementation is the minimal change specified in the brief.
-- The test asserts externally visible edit values and ordering using real compiler models, without mocks.
-- No Task 2 column logic was changed.
-- `git diff --check` passed.
+The commit hook reran Ruff, Pyright, Fixit, and gitleaks; all passed.
+
+## Self-review
+
+- Reviewed the complete six-file implementation diff and ran `git diff --check`.
+- Confirmed changes are limited to the brief's production/test files plus this required report.
+- Confirmed opaque identity comparison uses only the opaque key while width remains available for UTF-16 indexing.
+- Confirmed unsupported containers become one opaque unit rather than exposing recursively traversed children.
+- Confirmed target opaque rejection occurs before edit generation, preventing partial scripts.
+- Confirmed no extra tests were added; only the two existing tests named by the brief were expanded.
+- Kept implementation local to existing compiler abstractions without adding unnecessary helper layers.
 
 ## Concerns
 
-A repository-wide direct Ruff format check (`uv run ruff format --check .`) reports a pre-existing formatting issue in `docs/superpowers/plans/2026-08-15-table-structural-reconciliation.md`. That file was not modified because it is outside Task 1 scope. Focused Ruff checks for both changed Python files and the repository's configured `pre-commit run --all-files` both pass.
+- A repository-wide `uv run ruff format --check .` also checks the pre-existing plan file `docs/superpowers/plans/2026-08-13-page-break-opaque-unit-compilation.md`, which Ruff reports would be reformatted. It was outside Task 1's listed files and was intentionally not modified. Source/tests formatting and the repository pre-commit suite pass.
+- The required opaque key resembles a generic API key to gitleaks when written as one literal. The assertion carries `# gitleaks:allow` so the required hard-coded value can remain while commit hooks pass.
