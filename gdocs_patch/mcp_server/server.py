@@ -1,4 +1,3 @@
-import hashlib
 import secrets
 from typing import Annotated, Literal
 
@@ -30,16 +29,18 @@ from gdocs_patch.compiler import UnsupportedTransformation
 from gdocs_patch.xhtml import XHTMLParseError
 
 
+# FastMCP's static verifier is intended for development and uses a regular
+# dictionary lookup. Keep this small verifier so the server compares its one
+# configured secret in constant time.
 class BearerTokenVerifier(TokenVerifier):
     """Verify the single bearer token configured for this server."""
 
     def __init__(self, *, token: str) -> None:
         super().__init__()
-        self._token_digest: bytes = hashlib.sha256(token.encode("utf-8")).digest()
+        self._token = token
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        candidate_digest = hashlib.sha256(token.encode("utf-8")).digest()
-        if not secrets.compare_digest(candidate_digest, self._token_digest):
+        if not secrets.compare_digest(token, self._token):
             return None
         return AccessToken(
             token=token,
