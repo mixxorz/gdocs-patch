@@ -92,9 +92,10 @@ def build_parser() -> argparse.ArgumentParser:
               {"docId":"DOCUMENT_ID","content":"<XHTML>",
                "allowBulletNormalization":false}
 
-            docId and content are required. content is the complete target XHTML.
-            allowBulletNormalization is optional and defaults to false. Set it to true
-            to allow customized lists to be converted to the closest supported preset.
+            docId: Google document ID to write. Required.
+            content: Complete target canonical XHTML to write to the document. Required.
+            allowBulletNormalization: Allow customized lists to be converted to the
+              closest supported preset. Defaults to false.
 
             Example:
               jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \\
@@ -134,9 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
               {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}],
                "allowBulletNormalization":false}
 
-            docId and edits are required. oldText must match exactly once.
-            allowBulletNormalization is optional and defaults to false. Set it to true
-            to allow customized lists to be converted to the closest supported preset.
+            docId: Google document ID to edit. Required.
+            edits: One or more exact canonical XHTML replacements. Required.
+            oldText: Exact canonical XHTML to replace. It must match exactly once in the
+              original document.
+            newText: Replacement canonical XHTML.
+            allowBulletNormalization: Allow customized lists to be converted to the
+              closest supported preset. Defaults to false.
 
             Example:
               printf '%s\\n' \\

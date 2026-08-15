@@ -143,9 +143,25 @@ def read_document(
 )
 def edit_document(
     *,
-    document_id: str,
-    edits: list[XhtmlEdit],
-    allow_bullet_normalization: bool = False,
+    document_id: Annotated[str, Field(description="Google document ID to edit.")],
+    edits: Annotated[
+        list[XhtmlEdit],
+        Field(
+            description=(
+                "One or more exact canonical XHTML replacements. Each replacement "
+                "is matched against the original document."
+            )
+        ),
+    ],
+    allow_bullet_normalization: Annotated[
+        bool,
+        Field(
+            description=(
+                "Allow customized lists to be converted to the closest supported "
+                "preset."
+            )
+        ),
+    ] = False,
 ) -> ToolResult:
     """Apply exact canonical-XHTML replacements to a Google document."""
     if not edits:
@@ -201,9 +217,20 @@ def edit_document(
 )
 def write_document(
     *,
-    document_id: str,
-    content: str,
-    allow_bullet_normalization: bool = False,
+    document_id: Annotated[str, Field(description="Google document ID to write.")],
+    content: Annotated[
+        str,
+        Field(description="Complete target canonical XHTML to write to the document."),
+    ],
+    allow_bullet_normalization: Annotated[
+        bool,
+        Field(
+            description=(
+                "Allow customized lists to be converted to the closest supported "
+                "preset."
+            )
+        ),
+    ] = False,
 ) -> ToolResult:
     """Apply complete target XHTML to a Google document."""
     try:
@@ -264,15 +291,21 @@ def write_document(
 )
 def syntax_help(
     *,
-    topic: Literal[
-        "paragraphs",
-        "lists",
-        "tables",
-        "equations",
-        "sections",
-    ]
-    | None = None,
-    reference: bool = False,
+    topic: Annotated[
+        Literal[
+            "paragraphs",
+            "lists",
+            "tables",
+            "equations",
+            "sections",
+        ]
+        | None,
+        Field(description="Supported XHTML content type to explain."),
+    ] = None,
+    reference: Annotated[
+        bool,
+        Field(description="Return the detailed reference for the content type."),
+    ] = False,
 ) -> ToolResult:
     """Explain the canonical XHTML syntax accepted by gdocs-patch."""
     content = describe_syntax(topic, reference=reference)

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import pairwise
 
 from gdocs_patch.client import GoogleDocsClient
@@ -14,8 +14,15 @@ class XhtmlEditError(Exception):
 
 @dataclass(frozen=True, kw_only=True)
 class XhtmlEdit:
-    old_text: str
-    new_text: str
+    old_text: str = field(
+        metadata={
+            "description": (
+                "Exact canonical XHTML to replace. It must match exactly once in the "
+                "original document."
+            )
+        }
+    )
+    new_text: str = field(metadata={"description": "Replacement canonical XHTML."})
 
 
 def apply_xhtml_edits(
