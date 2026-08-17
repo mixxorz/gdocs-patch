@@ -121,7 +121,10 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
             EDITS_FILE must contain one JSON object:
-              {"edits":[{"oldText":"old","newText":"new"}]}
+              {"edits":[{"oldText":"old XHTML","newText":"new XHTML"}]}
+
+            oldText and newText are canonical XHTML fragments. oldText must match
+            exactly once in the current document; newText may be empty to delete it.
 
             Use - as EDITS_FILE to read the JSON object from standard input.
 
