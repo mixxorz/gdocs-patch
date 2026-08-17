@@ -6,91 +6,115 @@ description: Read and safely modify Google Docs through canonical XHTML.
 
 # gdocs-patch
 
-Use `gdocs-patch` to inspect and modify an existing Google document while
-preserving structure and formatting that the Google Docs API exposes.
+Use `gdocs-patch` to modify an existing Google document while preserving the
+structure and formatting represented by its canonical XHTML.
 
-## Default workflow
+## Work from one local snapshot
 
-1. Read the complete document once into a working file:
+1. Read the complete document once into a local file:
 
    gdocs-patch read DOCUMENT_ID --output working.xhtml
 
-2. Inspect and modify `working.xhtml` locally. Keep the complete XHTML out of
-   model context when local search and editing tools are sufficient.
-3. Preserve every unrelated element, attribute, style, namespace declaration,
-   object reference, tab, header, footer, and footnote.
-4. Collect and review all intended changes before making a remote mutation.
-5. Apply one `edit` or `write`. After it succeeds, stop unless the user asks for
-   verification or recovery from a reported failure requires another read.
+2. Inspect `working.xhtml` with local tools such as `rg`, `read`, or a script.
+   Do not stream the complete XHTML into model context when local inspection is
+   sufficient.
+3. Make one replacement for each element explicitly named by the task. Do not
+   replace a broad conceptual region just because its visible paragraphs are
+   nearby.
+4. Apply one `edit` or `write`. After it succeeds, stop unless the user asks for
+   verification or a reported failure requires recovery.
 
-## Choose the smallest safe mutation
+Use `--offset` and `--limit` only for small inspection reads. Their output is
+partial XHTML and must never be passed to `write`.
 
-Prefer `edit` for a few exact, localized replacements. Its JSON file has this
-shape:
+## Prefer exact edits for localized changes
+
+Use `edit` when a task changes a few exact strings, attributes, or isolated XHTML
+fragments. Create `edits.json`:
 
   {"edits":[{"oldText":"exact old XHTML","newText":"replacement XHTML"}]}
 
-Run it with:
+Then run:
 
   gdocs-patch edit DOCUMENT_ID edits.json
 
-Each `oldText` must be non-empty, exact, and unique in the canonical XHTML.
-Include enough surrounding markup and whitespace to make the match unique, but
-no more than needed. Edits must be disjoint and are all matched against the
-original document, not against earlier replacements in the same file.
+Every `oldText` must be non-empty, exact, and unique in `working.xhtml`. Copy it
+from that file. Include only enough surrounding content to make it unique. All
+edits are matched against the original document, so they must be disjoint and
+must not depend on earlier edits in the same file.
 
-Prefer `write` for coordinated, structural, or numerous changes after editing a
-complete local working file:
+For text-only changes, replace the smallest unique text inside its existing
+markup. Plain escaped text is a valid edit when it is unique. Do not replace a
+paragraph, list item, link, table cell, or object wrapper merely to change its
+text.
 
+## Preserve existing structure during text edits
+
+Canonical XHTML records structure that may not be obvious in the rendered
+Google Doc. Follow these rules when the task does not explicitly request a
+structural or formatting change:
+
+- Keep every existing element, attribute, namespace, key, and style unchanged.
+- Keep `<g:list>`, `<li>`, `<g:bullet-style>`, and their paragraph elements when
+  changing list-item text. Replace text inside the existing item; never rebuild
+  the list or turn its items into ordinary paragraphs.
+- Keep styled span boundaries. When visible text is split across spans, edit the
+  text within those spans and retain their attributes. Do not collapse the spans
+  into one run unless the task explicitly changes formatting.
+- For links, change only the requested visible text or target attribute. Preserve
+  the link element and every unrelated style attribute.
+- Never include an inline or positioned object element in a replacement unless
+  the task explicitly removes that object.
+- Preserve leading control characters, line breaks, repeated spaces, and trailing
+  whitespace unless the task explicitly changes them. If whitespace is unclear,
+  inspect the source text with a representation that makes invisible characters
+  visible before editing it.
+- In tables, keep table, row, and cell wrappers and their opaque keys when only
+  cell contents change.
+
+These constraints apply equally in the body, headers, footers, footnotes, table
+cells, captions, and styled quotes.
+
+## Use write for structural or numerous changes
+
+Use `write` when changes are structural, coordinated, or too numerous for a
+small set of exact edits:
+
+  cp working.xhtml original.xhtml
+  # Modify working.xhtml locally.
+  diff -u original.xhtml working.xhtml
   gdocs-patch write DOCUMENT_ID working.xhtml
 
-Never pass paginated or otherwise partial `read` output to `write`.
+Start from the complete XHTML returned by `read`; never recreate the document
+from scratch. Review the local diff before writing. It should contain only the
+requested changes. If unrelated list wrappers, paragraphs, styles, links,
+objects, tables, headers, or footers disappear, correct the local file first.
 
 Use `-` only when a pipeline is clearer than a file:
 
   gdocs-patch edit DOCUMENT_ID - < edits.json
   gdocs-patch write DOCUMENT_ID - < working.xhtml
 
-## Learn the XHTML before changing structure
+## Learn syntax only when structure changes
 
-Run `gdocs-patch syntax` for an overview. Focused guides are available for
-`paragraphs`, `lists`, `tables`, `equations`, and `sections`:
+Do not guess unfamiliar elements, attributes, namespaces, or nesting. Before
+creating or restructuring content, use the focused guide:
 
+  gdocs-patch syntax paragraphs
+  gdocs-patch syntax lists
   gdocs-patch syntax tables
-  gdocs-patch syntax tables --reference
+  gdocs-patch syntax equations
+  gdocs-patch syntax sections
 
-Read the relevant guide before creating or restructuring unfamiliar markup.
-Do not guess element names, attributes, namespaces, or structural nesting.
+Add `--reference` for the detailed grammar. Customized list appearance is
+preserved by default. Use `--allow-bullet-normalization` only when changing such
+a list is necessary and conversion to the closest Google preset is acceptable.
 
-## Preserve canonical document invariants
-
-Treat the XHTML from `read` as the source of truth. Preserve the XML declaration,
-the XHTML and `g` namespace declarations, root metadata, tab and segment
-structure, and unsupported or opaque content. Do not recreate the document from
-scratch when a targeted change will work.
-
-Document identity and revision metadata are read-only. Existing tabs, headers,
-footers, and footnotes may contain editable content, but cannot all be created or
-removed. A mutation compiled against a stale revision fails instead of silently
-writing at stale indices; on that failure, read the current document and rebuild
-the change.
-
-Customized list appearance is preserved by default. Use
-`--allow-bullet-normalization` only when changing such a list is necessary and
-conversion to the closest supported Google preset is acceptable.
-
-## Read efficiently
-
-A plain read writes complete canonical XHTML to standard output:
-
-  gdocs-patch read DOCUMENT_ID
-
-Use `--output` for a working file. Use `--offset` and `--limit` only to inspect a
-small line range; those options return partial XHTML that is not a writable
-document.
+## Handle failures deliberately
 
 Expected failures are printed to standard error. Do not retry unchanged input.
-Use the error to correct the local XHTML or exact replacements first.
+Correct the exact replacement or local XHTML first. If the document revision is
+stale, read a fresh complete snapshot and rebuild the change against it.
 """
 
 
