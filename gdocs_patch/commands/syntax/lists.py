@@ -28,17 +28,15 @@ Use `g:bullet-preset` for a new list and `g:list-id` for an existing one, never
 both. Google Docs cannot recreate arbitrary custom bullet glyphs through its
 batch-update API, so new lists must use a supported preset.
 
-If an edit needs to change a customized existing list, the compiler normally
-fails rather than changing its appearance. Set `allowBulletNormalization` to
-`true` in the `write` or `edit` JSON input to convert it to the closest supported
-preset:
+If a change needs to rebuild a customized existing list, the compiler normally
+fails rather than changing its appearance. Pass `--allow-bullet-normalization`
+to `write` or `edit` to convert it to the closest supported preset:
 
-  {"docId":"DOCUMENT_ID",
-   "edits":[{"oldText":"old","newText":"new"}],
-   "allowBulletNormalization":true}
+  gdocs-patch edit DOCUMENT_ID edits.json --allow-bullet-normalization
+  gdocs-patch write DOCUMENT_ID document.xhtml --allow-bullet-normalization
 
 For the complete list of presets and list-definition attributes, run:
-  gdocs-patch syntax lists reference
+  gdocs-patch syntax lists --reference
 """
 
 REFERENCE = """\
@@ -113,7 +111,8 @@ from `g:list-id` to the preset you want:
 
 The compiler removes the old list membership and recreates the paragraphs with
 the chosen preset. This explicit change does not require
-`allowBulletNormalization` because the target already says which preset to use.
+`--allow-bullet-normalization` because the target already says which preset to
+use.
 
 Compiler limits
 ---------------
@@ -123,7 +122,6 @@ to a customized list, such as changing its nesting, require the compiler to
 rebuild it even though the target still uses `g:list-id`.
 
 By default, that implicit normalization fails rather than changing the list's
-appearance. Set `allowBulletNormalization` to `true` in the `write` or `edit`
-JSON input to let the compiler choose the closest supported preset from the
-existing list's glyphs.
+appearance. Pass `--allow-bullet-normalization` to `write` or `edit` to let the
+compiler choose the closest supported preset from the existing list's glyphs.
 """

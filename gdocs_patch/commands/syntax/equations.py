@@ -16,7 +16,7 @@ The Google Docs batch-update API cannot insert an equation. Adding a new
 compilation fail rather than silently produce the wrong document.
 
 For the exact equation contract and compiler behavior, run:
-  gdocs-patch syntax equations reference
+  gdocs-patch syntax equations --reference
 """
 
 REFERENCE = """\

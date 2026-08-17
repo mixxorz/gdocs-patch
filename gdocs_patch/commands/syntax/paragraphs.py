@@ -39,7 +39,7 @@ A paragraph's final newline is implicit, so do not add a `<br />` just to end
 the paragraph. Use `<br />` only for an additional line break inside it.
 
 For the complete list of paragraph and text-style attributes, run:
-  gdocs-patch syntax paragraphs reference
+  gdocs-patch syntax paragraphs --reference
 """
 
 REFERENCE = """\

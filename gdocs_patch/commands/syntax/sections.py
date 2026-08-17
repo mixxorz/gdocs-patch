@@ -40,7 +40,7 @@ concrete section setting cannot currently be cleared by removing its attribute.
 Other supported section-style changes are compiled normally.
 
 For the complete list of section-style fields and limitations, run:
-  gdocs-patch syntax sections reference
+  gdocs-patch syntax sections --reference
 """
 
 REFERENCE = """\

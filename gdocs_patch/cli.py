@@ -21,6 +21,7 @@ from gdocs_patch.client import (
 from gdocs_patch.commands import (
     XhtmlEdit,
     XhtmlEditError,
+    describe_skill,
     describe_syntax,
     edit_document,
     read_document,
@@ -34,15 +35,34 @@ class InputError(Exception):
     """Raised when command input is invalid."""
 
 
-def _read_json_object() -> dict[str, object]:
+def _read_text(source: Path) -> str:
     try:
-        value = json.load(sys.stdin)
-    except (ValueError, UnicodeDecodeError, RecursionError):
-        # Hide the decoder's low-level exception if this helper is called directly.
+        if source == Path("-"):
+            return sys.stdin.read()
+        return source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        location = "standard input" if source == Path("-") else str(source)
+        raise InputError(f"Could not read {location}: {error}") from None
+
+
+def _read_json_object(source: Path) -> dict[str, object]:
+    try:
+        value = json.loads(_read_text(source))
+    except (ValueError, RecursionError):
         raise InputError("Input must contain one valid JSON object.") from None
     if not isinstance(value, dict):
         raise InputError("Input must be a JSON object.")
     return cast(dict[str, object], value)
+
+
+def _write_text(output: Path | None, content: str) -> None:
+    if output is None:
+        sys.stdout.write(content)
+        return
+    try:
+        output.write_text(content, encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise InputError(f"Could not write {output}: {error}") from None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,53 +78,91 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser(
+
+    read_parser = commands.add_parser(
         "read",
         help="Read a Google document as canonical XHTML.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
-            Input (JSON on stdin):
-              {"docId":"DOCUMENT_ID","offset":1,"limit":200}
+            Examples:
+              gdocs-patch read DOCUMENT_ID
+              gdocs-patch read DOCUMENT_ID --output document.xhtml
+              gdocs-patch read DOCUMENT_ID --offset 8 --limit 4
 
-            docId: Google document ID to read. Required.
-            offset: Line number to start reading from (1-indexed). Defaults to 1.
-            limit: Maximum number of lines to read. Defaults to all remaining lines.
-
-            Example:
-              printf '%s\\n' '{"docId":"DOCUMENT_ID"}' | gdocs-patch read
-
-            Output: canonical XHTML on stdout.
+            Output is complete canonical XHTML by default. --offset selects the
+            first line to return (1-indexed), and --limit bounds the number of lines.
             """
         ),
     )
-    commands.add_parser(
+    read_parser.add_argument("document_id", metavar="DOCUMENT_ID")
+    read_parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        help="Write XHTML to this file instead of standard output.",
+    )
+    read_parser.add_argument(
+        "--offset",
+        type=int,
+        default=1,
+        help="Line number to start reading from (1-indexed).",
+    )
+    read_parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of XHTML lines to return.",
+    )
+
+    edit_parser = commands.add_parser(
+        "edit",
+        help="Edit exact text in canonical XHTML.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+            EDITS_FILE must contain one JSON object:
+              {"edits":[{"oldText":"old","newText":"new"}]}
+
+            Use - as EDITS_FILE to read the JSON object from standard input.
+
+            Examples:
+              gdocs-patch edit DOCUMENT_ID edits.json
+              gdocs-patch edit DOCUMENT_ID - < edits.json
+            """
+        ),
+    )
+    edit_parser.add_argument("document_id", metavar="DOCUMENT_ID")
+    edit_parser.add_argument("input", metavar="EDITS_FILE", type=Path)
+    edit_parser.add_argument(
+        "--allow-bullet-normalization",
+        action="store_true",
+        help="Allow customized lists to use the closest supported preset.",
+    )
+
+    write_parser = commands.add_parser(
         "write",
         help="Write canonical XHTML to a Google document.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """\
-            Start by running `gdocs-patch read` to get the document's current XHTML.
-            Use that output as the basis for your new content so you preserve the
-            document's structure and metadata.
+            Start with complete XHTML produced by `gdocs-patch read` and preserve
+            unrelated document structure and metadata. Use - as XHTML_FILE to read
+            the document from standard input.
 
-            Input (JSON on stdin):
-              {"docId":"DOCUMENT_ID","content":"<XHTML>",
-               "allowBulletNormalization":false}
-
-            docId: Google document ID to write. Required.
-            content: Complete target canonical XHTML to write to the document. Required.
-            allowBulletNormalization: Allow customized lists to be converted to the
-              closest supported preset. Defaults to false.
-
-            Example:
-              jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \\
-                '{docId: $docId, content: $content}' | gdocs-patch write
-
-            Output: a plain-text success message.
+            Examples:
+              gdocs-patch write DOCUMENT_ID document.xhtml
+              gdocs-patch write DOCUMENT_ID - < document.xhtml
             """
         ),
     )
+    write_parser.add_argument("document_id", metavar="DOCUMENT_ID")
+    write_parser.add_argument("input", metavar="XHTML_FILE", type=Path)
+    write_parser.add_argument(
+        "--allow-bullet-normalization",
+        action="store_true",
+        help="Allow customized lists to use the closest supported preset.",
+    )
+
     syntax_parser = commands.add_parser(
         "syntax",
         help="Explore the XHTML document syntax.",
@@ -116,42 +174,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show syntax for one supported content type.",
     )
     syntax_parser.add_argument(
-        "syntax_detail",
-        nargs="?",
-        choices=("reference",),
+        "--reference",
+        action="store_true",
         help="Show the detailed reference for a content type.",
     )
+
     commands.add_parser(
-        "edit",
-        help="Edit exact text in canonical XHTML.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent(
-            """\
-            Start by running `gdocs-patch read` to get the document's current XHTML.
-            Choose oldText from that output so your edit matches the current structure
-            and preserves surrounding content and metadata.
-
-            Input (JSON on stdin):
-              {"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}],
-               "allowBulletNormalization":false}
-
-            docId: Google document ID to edit. Required.
-            edits: One or more exact canonical XHTML replacements. Required.
-            oldText: Exact canonical XHTML to replace. It must match exactly once in the
-              original document.
-            newText: Replacement canonical XHTML.
-            allowBulletNormalization: Allow customized lists to be converted to the
-              closest supported preset. Defaults to false.
-
-            Example:
-              printf '%s\\n' \\
-                '{"docId":"DOCUMENT_ID","edits":[{"oldText":"old","newText":"new"}]}' \\
-                | gdocs-patch edit
-
-            Output: a plain-text success message.
-            """
-        ),
+        "skill",
+        help="Show best practices for coding agents using gdocs-patch.",
     )
+
     auth_parser = commands.add_parser("auth", help="Manage Google authentication.")
     auth_commands = auth_parser.add_subparsers(dest="auth_command", required=True)
     login_parser = auth_commands.add_parser(
@@ -183,82 +215,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Credentials saved to {credentials_path}")
         return 0
 
+    if args.command == "skill":
+        sys.stdout.write(describe_skill())
+        return 0
+
     if args.command == "syntax":
+        if args.reference and args.syntax_topic is None:
+            parser.error("--reference requires TOPIC")
         sys.stdout.write(
             describe_syntax(
                 args.syntax_topic,
-                reference=args.syntax_detail == "reference",
+                reference=args.reference,
             )
         )
         return 0
 
     if args.command == "read":
         try:
-            input_object = _read_json_object()
-            unknown_fields = input_object.keys() - {"docId", "offset", "limit"}
-            if unknown_fields:
-                field = sorted(unknown_fields)[0]
-                raise InputError(f"Read command input has unknown field: {field}.")
-
-            doc_id = input_object.get("docId")
-            if not isinstance(doc_id, str):
-                raise InputError("Read command input requires string field: docId.")
-
-            offset = input_object.get("offset", 1)
-            if type(offset) is not int or offset < 1:
-                raise InputError("Read command input offset must be an integer >= 1.")
-
-            limit = input_object.get("limit")
-            if "limit" in input_object and (type(limit) is not int or limit <= 0):
-                raise InputError("Read command input limit must be an integer > 0.")
+            if args.offset < 1:
+                raise InputError("Read command offset must be an integer >= 1.")
+            if args.limit is not None and args.limit <= 0:
+                raise InputError("Read command limit must be an integer > 0.")
 
             client = GoogleDocsClient(credentials=load_credentials())
             output = read_document(
                 client=client,
-                doc_id=doc_id,
-                offset=offset,
-                limit=cast(int | None, limit),
+                doc_id=args.document_id,
+                offset=args.offset,
+                limit=args.limit,
             )
+            _write_text(args.output, output)
         except (InputError, AuthenticationError, GoogleAuthError, HttpError) as error:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
-        sys.stdout.write(output)
         return 0
 
     if args.command == "write":
         try:
-            input_object = _read_json_object()
-            unknown_fields = input_object.keys() - {
-                "docId",
-                "content",
-                "allowBulletNormalization",
-            }
-            if unknown_fields:
-                field = sorted(unknown_fields)[0]
-                raise InputError(f"Write command input has unknown field: {field}.")
-
-            doc_id = input_object.get("docId")
-            if not isinstance(doc_id, str):
-                raise InputError("Write command input requires string field: docId.")
-
-            content = input_object.get("content")
-            if not isinstance(content, str):
-                raise InputError("Write command input requires string field: content.")
-
-            allow_bullet_normalization = input_object.get(
-                "allowBulletNormalization", False
-            )
-            if not isinstance(allow_bullet_normalization, bool):
-                raise InputError(
-                    "Write command input allowBulletNormalization must be a boolean."
-                )
-
+            content = _read_text(args.input)
             client = GoogleDocsClient(credentials=load_credentials())
             write_document(
                 client=client,
-                doc_id=doc_id,
+                doc_id=args.document_id,
                 content=content,
-                allow_bullet_normalization=allow_bullet_normalization,
+                allow_bullet_normalization=args.allow_bullet_normalization,
             )
         except (
             InputError,
@@ -270,24 +270,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         ) as error:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
-        print(f"Successfully wrote to {doc_id}.")
+        print(f"Successfully wrote to {args.document_id}.")
         return 0
 
     if args.command == "edit":
         try:
-            input_object = _read_json_object()
-            unknown_fields = input_object.keys() - {
-                "docId",
-                "edits",
-                "allowBulletNormalization",
-            }
+            input_object = _read_json_object(args.input)
+            unknown_fields = input_object.keys() - {"edits"}
             if unknown_fields:
                 field = sorted(unknown_fields)[0]
                 raise InputError(f"Edit command input has unknown field: {field}.")
-
-            doc_id = input_object.get("docId")
-            if not isinstance(doc_id, str):
-                raise InputError("Edit command input requires string field: docId.")
 
             input_edits = input_object.get("edits")
             if not isinstance(input_edits, list):
@@ -317,14 +309,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 edits.append(XhtmlEdit(old_text=old_text, new_text=new_text))
 
-            allow_bullet_normalization = input_object.get(
-                "allowBulletNormalization", False
-            )
-            if not isinstance(allow_bullet_normalization, bool):
-                raise InputError(
-                    "Edit command input allowBulletNormalization must be a boolean."
-                )
-
             if not edits:
                 raise InputError(
                     "Edit command input is invalid. edits must contain at least one "
@@ -333,15 +317,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             for edit_index, edit in enumerate(edits):
                 if not edit.old_text:
                     raise InputError(
-                        f"edits[{edit_index}].oldText must not be empty in {doc_id}."
+                        f"edits[{edit_index}].oldText must not be empty in "
+                        f"{args.document_id}."
                     )
 
             client = GoogleDocsClient(credentials=load_credentials())
             count = edit_document(
                 client=client,
-                doc_id=doc_id,
+                doc_id=args.document_id,
                 edits=edits,
-                allow_bullet_normalization=allow_bullet_normalization,
+                allow_bullet_normalization=args.allow_bullet_normalization,
             )
         except (
             InputError,
@@ -355,7 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"gdocs-patch: error: {error}", file=sys.stderr)
             return 1
         noun = "block" if count == 1 else "blocks"
-        print(f"Successfully replaced {count} {noun} in {doc_id}.")
+        print(f"Successfully replaced {count} {noun} in {args.document_id}.")
         return 0
 
     parser.print_help()

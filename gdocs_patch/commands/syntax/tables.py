@@ -50,7 +50,7 @@ and `<g:cell-style>` metadata:
 </table>
 
 For the complete list of table, column, row, cell, and border attributes, run:
-  gdocs-patch syntax tables reference
+  gdocs-patch syntax tables --reference
 """
 
 REFERENCE = """\

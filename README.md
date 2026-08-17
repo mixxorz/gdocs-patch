@@ -52,30 +52,36 @@ Google Docs `batchUpdate` API provides enough support for the feature.
 
 ## Read a document
 
-The `read` command accepts one JSON object on standard input and writes canonical
-XHTML directly to standard output:
+Pass the Google document ID directly. The `read` command writes complete canonical
+XHTML to standard output by default:
 
 ```console
-printf '%s\n' '{"docId":"DOCUMENT_ID","offset":8,"limit":4}' \
-  | uv run gdocs-patch read
+uv run gdocs-patch read DOCUMENT_ID
 ```
 
-`offset` is the optional line number to start reading from (1-indexed) and
-defaults to 1. `limit` is the optional maximum number of lines to read and
-defaults to all remaining lines. The output is raw, unnumbered XHTML, so it can
-be redirected to a file or passed directly to another tool without stripping
-line prefixes.
+Use `--output` to save the XHTML without shell redirection:
+
+```console
+uv run gdocs-patch read DOCUMENT_ID --output document.xhtml
+```
+
+`--offset` selects the optional line number to start reading from (1-indexed),
+and `--limit` bounds the number of lines. The output remains raw, unnumbered
+XHTML. Paginated output is useful for inspection but is not a complete document
+and must not be passed to `write`.
 
 ## Write a document
 
-The `write` command accepts a document ID and complete target XHTML as one JSON
-object on standard input. Use `jq --rawfile` to preserve multiline XHTML without
-shell escaping or command-line argument limits:
+Pass the document ID and a file containing complete target XHTML:
 
 ```console
-jq -n --arg docId "DOCUMENT_ID" --rawfile content document.xhtml \
-  '{docId: $docId, content: $content}' \
-  | uv run gdocs-patch write
+uv run gdocs-patch write DOCUMENT_ID document.xhtml
+```
+
+Use `-` explicitly to read the XHTML from standard input:
+
+```console
+uv run gdocs-patch write DOCUMENT_ID - < document.xhtml
 ```
 
 The command fetches the current document, compiles the target against that
@@ -85,19 +91,21 @@ must preserve compatible existing tab and segment structure.
 ## Edit a document
 
 The `edit` command applies exact-text replacements to the canonical, unnumbered
-XHTML returned by `read`. Each match is located in that original XHTML rather
-than in the result of an earlier replacement:
+XHTML returned by `read`. Pass a JSON file containing one object with an `edits`
+array:
 
-```console
-cat <<'JSON' | uv run gdocs-patch edit
+```json
 {
-  "docId": "DOCUMENT_ID",
   "edits": [
     {"oldText": "First old block", "newText": "First new block"},
     {"oldText": "Second old block", "newText": "Second new block"}
   ]
 }
-JSON
+```
+
+```console
+uv run gdocs-patch edit DOCUMENT_ID edits.json
+uv run gdocs-patch edit DOCUMENT_ID - < edits.json
 ```
 
 Each `oldText` must be non-empty, unique, and exact, including whitespace and
@@ -109,6 +117,27 @@ edited XHTML against the fetched source revision, and applies the batch update.
 The edited XHTML must preserve compatible existing tab and segment structure.
 If the source revision is stale when the update runs, read the document again
 and retry the edit against that new XHTML.
+
+For `edit` or `write`, pass `--allow-bullet-normalization` only when conversion
+of customized lists to the closest supported Google preset is acceptable.
+
+## Syntax and agent guidance
+
+Explore the XHTML format with an overview, a topic guide, or a detailed topic
+reference:
+
+```console
+uv run gdocs-patch syntax
+uv run gdocs-patch syntax tables
+uv run gdocs-patch syntax tables --reference
+```
+
+Coding agents can load the tool's recommended working-file workflow, mutation
+strategy, preservation rules, and recovery guidance directly from the CLI:
+
+```console
+uv run gdocs-patch skill
+```
 
 ## Google authentication
 
