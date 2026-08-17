@@ -4,11 +4,7 @@ from gdocs_patch.models import (
     Dimension,
     Document,
     DocumentTab,
-    InlineObjectReference,
-    PageBreak,
     Paragraph,
-    PersonReference,
-    RichLink,
     SectionBreak,
     SectionStyle,
     Table,
@@ -52,13 +48,6 @@ def test_full_supported_document_has_normalized_stable_round_trip() -> None:
     assert isinstance(body, Body)
     rich_paragraph = body.content[1]
     assert isinstance(rich_paragraph, Paragraph)
-    for index in (7, 8, 9, 10):
-        element = rich_paragraph.elements[index]
-        assert isinstance(
-            element,
-            (InlineObjectReference, PageBreak, PersonReference, RichLink),
-        )
-        element.text_style = UNSET
 
     table = body.content[3]
     assert isinstance(table, Table)

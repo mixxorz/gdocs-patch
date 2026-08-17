@@ -1,4 +1,5 @@
 from gdocs_patch.models import (
+    UNSET,
     AutoText,
     Body,
     BookmarkLink,
@@ -117,20 +118,20 @@ def expected_maximal_document() -> Document:
             HorizontalRule(
                 text_style=TextStyle(link=HeadingLink(heading_id="heading-legacy"))
             ),
-            InlineObjectReference(inline_object_id="inline-1", text_style=TextStyle()),
-            PageBreak(text_style=TextStyle()),
+            InlineObjectReference(inline_object_id="inline-1", text_style=UNSET),
+            PageBreak(text_style=UNSET),
             PersonReference(
                 person_id="person-1",
                 email="person@example.test",
                 name="Person",
-                text_style=TextStyle(),
+                text_style=UNSET,
             ),
             RichLink(
                 rich_link_id="rich-1",
                 uri="https://rich.test",
                 title="Rich",
                 mime_type="text/html",
-                text_style=TextStyle(),
+                text_style=UNSET,
             ),
         ],
         style=ParagraphStyle(

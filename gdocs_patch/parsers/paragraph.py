@@ -1,6 +1,6 @@
 from typing import Any
 
-from gdocs_patch.models.base import UNSET
+from gdocs_patch.models.base import UNSET, UnsetType
 from gdocs_patch.models.paragraph import (
     AutoText,
     BookmarkLink,
@@ -50,8 +50,11 @@ class HeadingLinkParser(GDocParser[HeadingLink]):
         return HeadingLink(heading_id=data["id"], tab_id=data.get("tabId", UNSET))
 
 
-class TextStyleParser(GDocParser[TextStyle]):
-    def parse(self, data: Any) -> TextStyle:
+class TextStyleParser(GDocParser[TextStyle | UnsetType]):
+    def parse(self, data: Any) -> TextStyle | UnsetType:
+        if not data:
+            return UNSET
+
         weighted_font_family = data.get("weightedFontFamily", {})
         link = UNSET
         if "link" in data:
