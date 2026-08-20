@@ -1,7 +1,7 @@
 [project]
 name = "gdocs-patch"
 version = "0.1.0"
-description = "Apply structured patches to Google Docs."
+description = "Efficient Google Doc editing for agents"
 authors = [{ name = "Mitchel Cabuloy", email = "mixxorz@gmail.com" }]
 readme = "README.md"
 license = "MIT"
