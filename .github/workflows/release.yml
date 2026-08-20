@@ -1,0 +1,115 @@
+name: Release to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release commit
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git fetch origin main
+          release_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          if ! git merge-base --is-ancestor "$release_commit" origin/main; then
+            echo "Release commit $release_commit is not contained in main" >&2
+            exit 1
+          fi
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Install build tools
+        run: uv sync --locked --dev
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          import tomllib
+          from packaging.version import Version
+
+          with open("pyproject.toml", "rb") as pyproject_file:
+              project_version = tomllib.load(pyproject_file)["project"]["version"]
+
+          release_tag = os.environ["RELEASE_TAG"]
+          if release_tag != project_version:
+              raise SystemExit(
+                  f"Release tag {release_tag} does not match project version "
+                  f"{project_version}"
+              )
+
+          parsed_version = Version(project_version)
+          if str(parsed_version) != project_version:
+              raise SystemExit(
+                  f"Version {project_version} is not canonical PEP 440; use "
+                  f"{parsed_version}"
+              )
+
+          release_is_prerelease = os.environ["RELEASE_IS_PRERELEASE"] == "true"
+          if parsed_version.is_prerelease != release_is_prerelease:
+              expected = "a pre-release" if parsed_version.is_prerelease else "a final release"
+              raise SystemExit(
+                  f"Version {project_version} must be marked as {expected} on GitHub"
+              )
+          PY
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Check distribution metadata
+        run: uv run twine check --strict dist/*
+
+      - name: Store distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gdocs-patch
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          attestations: true
+          print-hash: true

@@ -4,11 +4,13 @@ A Python CLI for applying structured patches to Google Docs.
 
 ## Setup
 
-Install Python 3.12 and the project dependencies with [uv](https://docs.astral.sh/uv/):
+Install Python 3.14 and the project dependencies with [uv](https://docs.astral.sh/uv/):
 
 ```console
-uv sync --dev
+uv sync --dev --all-extras
 ```
+
+The published package supports Python 3.12 and newer.
 
 ## Usage
 
@@ -257,6 +259,7 @@ Run the test and static-analysis tools:
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
+uv run fixit lint .
 uv run pyright
 ```
 
@@ -266,3 +269,6 @@ Install and run the Git hooks:
 uv run pre-commit install
 uv run pre-commit run --all-files
 ```
+
+See [RELEASING.md](RELEASING.md) for package build, versioning, and PyPI
+publication instructions.

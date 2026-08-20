@@ -89,17 +89,17 @@ A GitHub Release for an alpha, beta, or release candidate is marked as a pre-rel
 
 ## PyPI Publication
 
-Add `.github/workflows/release.yml`, triggered only when a GitHub Release is published. The publication job:
+Add `.github/workflows/release.yml`, triggered only when a GitHub Release is published. Its unprivileged build job:
 
 1. checks out the release tag;
 2. confirms that the tag is attached to a commit contained in `main`;
-3. reads the project version and requires the release tag to match it exactly;
+3. reads the project version, requires the release tag to match its canonical PEP 440 form exactly, and verifies GitHub's pre-release classification;
 4. verifies that `uv.lock` is current;
 5. rebuilds the wheel and source distribution from the tagged source;
 6. validates both distributions with Twine;
-7. publishes through `pypa/gh-action-pypi-publish`.
+7. uploads the distributions as a short-lived workflow artifact.
 
-The workflow grants `contents: read` and job-level `id-token: write`. It does not read or store a PyPI API token. The publish job uses the GitHub `pypi` environment and identifies the PyPI project URL as its deployment URL.
+A separate publish job downloads only that artifact and publishes it through `pypa/gh-action-pypi-publish`. Actions are pinned to immutable commit SHAs. The workflow grants `contents: read` by default; only the publish job receives `id-token: write`, so checkout, dependency installation, and builds cannot request a publishing identity. It does not read or store a PyPI API token. The publish job uses the GitHub `pypi` environment and identifies the PyPI project URL as its deployment URL.
 
 PyPI artifacts are immutable. If publication partially succeeds or PyPI already contains a version, the workflow must not try to replace that version. Recovery consists of diagnosing the failure, incrementing to a new PEP 440 version, and publishing a new release.
 
