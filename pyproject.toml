@@ -2,12 +2,30 @@
 name = "gdocs-patch"
 version = "0.1.0"
 description = "Apply structured patches to Google Docs."
+authors = [{ name = "Mitchel Cabuloy", email = "mixxorz@gmail.com" }]
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = [
     "google-api-python-client>=2.198.0",
     "google-auth-oauthlib>=1.4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mixxorz/gdocs-patch"
+Repository = "https://github.com/mixxorz/gdocs-patch"
+Issues = "https://github.com/mixxorz/gdocs-patch/issues"
 
 [project.scripts]
 gdocs-patch = "gdocs_patch.cli:main"
@@ -24,6 +42,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+source-exclude = ["**/.DS_Store"]
 
 [tool.ruff]
 target-version = "py312"
@@ -44,8 +63,10 @@ venv = ".venv"
 [dependency-groups]
 dev = [
     "fixit>=2.2.1",
+    "packaging>=26.0",
     "pre-commit>=4.6.1",
     "pyright>=1.1.411",
     "pytest>=9.1.1",
     "ruff>=0.16.1",
+    "twine>=6.2.0",
 ]
