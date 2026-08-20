@@ -5,13 +5,13 @@ Efficient Google Doc editing for agents
 ## Overview
 
 When you ask an agent to edit a Google Doc, they would typically need to
-assemble Google Doc API reqeusts manually. This involves finding the right order
+assemble Google Docs API requests manually. This involves finding the right order
 of operations, managing document indices, and keeping track of styles. It is all
-quite error prone and could lead to data loss if the agent makes a mistake.
+quite error-prone and could lead to data loss if the agent makes a mistake.
 
 gdocs-patch is a CLI and MCP that allows agents to efficiently edit Google
 documents by representing documents as XHTML and allowing the agent to make
-targetted edits; just like editing a normal file locally.
+targeted edits, just like editing a normal file locally.
 
 ## Install
 
@@ -49,8 +49,8 @@ skill commands.
 
 gdocs-patch at its core is a `source doc + target doc = google doc batch
 update request` compiler. The agent reads the source document, edits the XHTML
-locally, calls `write` to apply the edits to the Google doc. Alternatively,
-agents can call `edit` to make targetted replacements without a local copy.
+locally, and calls `write` to apply the edits to the Google Doc. Alternatively,
+agents can call `edit` to make targeted replacements without a local copy.
 
 ## Authenticating with Google
 
@@ -65,19 +65,19 @@ mkdir -p ~/.config/gdocs-patch
 cp ~/Downloads/client_secret.json ~/.config/gdocs-patch/client_secret.json
 ```
 
-The client_secret allows `gdocs-patch` to log you in via OAuth.
+The `client_secret.json` file allows `gdocs-patch` to log you in via OAuth.
 
 ```console
 gdocs-patch auth login
 ```
 
-This commands opens the OAuth authorization screen. Authorize the app. Once done,
+This command opens the OAuth authorization screen. Authorize the app. Once done,
 `gdocs-patch` should say you're good to go.
 
 If you need to run the tool non-interactively, you can copy the OAuth
-authorization URL from the terminal and paste it in your local browser. After
-finishing authorization, copy the URL Google redirected to you to and paste it
-back in the terminal. Once done, you're good to go.
+authorization URL from the terminal and paste it into your local browser. After
+finishing authorization, copy the complete callback URL from your browser's
+address bar and paste it back into the terminal.
 
 ## MCP server
 
@@ -100,9 +100,9 @@ gdocs-patch-mcp --host 127.0.0.1 --port 8000
 ```
 
 Every request must include `Authorization: Bearer` with the value of
-`GDOCS_PATCH_MCP_TOKEN`. There's no built-in TLS though, so you'd still need
+`GDOCS_PATCH_MCP_TOKEN`. There's no built-in TLS, though, so you'd still need
 your own reverse proxy and potentially more security if you want to expose the
-MCP over the open internet.
+MCP server over the open internet.
 
 ## Google Docs support
 
