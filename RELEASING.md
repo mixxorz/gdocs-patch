@@ -4,26 +4,6 @@ Releases are created manually in GitHub after a version change passes CI on
 `main`. Publishing a GitHub Release builds the distributions again and uploads
 them to PyPI through Trusted Publishing.
 
-## One-time setup
-
-The `pypi` environment must exist in the GitHub repository. It does not contain
-a password or API token.
-
-Before the first release, add a pending Trusted Publisher in the PyPI account's
-**Publishing** settings with these values:
-
-| Setting | Value |
-| --- | --- |
-| PyPI project name | `gdocs-patch` |
-| GitHub owner | `mixxorz` |
-| GitHub repository | `gdocs-patch` |
-| Workflow | `release.yml` |
-| Environment | `pypi` |
-
-A pending publisher lets the first successful workflow create the PyPI project.
-Afterward, confirm that the publisher appears in the project's PyPI publishing
-settings.
-
 ## Choose a version
 
 Use canonical PEP 440 versions and tags without a `v` prefix:

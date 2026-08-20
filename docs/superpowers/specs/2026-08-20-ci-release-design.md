@@ -105,7 +105,7 @@ PyPI artifacts are immutable. If publication partially succeeds or PyPI already 
 
 ## Trusted Publisher Setup
 
-Create the `pypi` environment in the GitHub repository. The repository owner must perform one external setup step in PyPI: register `mixxorz/gdocs-patch`, `.github/workflows/release.yml`, and environment `pypi` as a Trusted Publisher. `RELEASING.md` documents this prerequisite and the exact normal release sequence.
+Create the `pypi` environment in the GitHub repository. The repository owner must perform one external setup step in PyPI: register `mixxorz/gdocs-patch`, `.github/workflows/release.yml`, and environment `pypi` as a Trusted Publisher. `RELEASING.md` documents the normal release sequence after that repository-level configuration is complete.
 
 ## Repository Protection
 
@@ -125,7 +125,6 @@ Disable force pushes and branch deletion. Match `slippers` by not enforcing thes
 
 Add `RELEASING.md` covering:
 
-- one-time PyPI Trusted Publisher registration;
 - final and prerelease PEP 440 formats;
 - version and lockfile update commands;
 - local verification commands;
