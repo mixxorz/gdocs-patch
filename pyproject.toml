@@ -1,6 +1,6 @@
 [project]
 name = "gdocs-patch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Efficient Google Doc editing for agents"
 authors = [{ name = "Mitchel Cabuloy", email = "mixxorz@gmail.com" }]
 readme = "README.md"
