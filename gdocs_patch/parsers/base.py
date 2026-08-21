@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import Any, Generic, Literal, TypeVar
 
 from gdocs_patch.models.base import Color, Dimension
 
+T_co = TypeVar("T_co", covariant=True)
 
-class GDocParser[T](ABC):
+
+class GDocParser(ABC, Generic[T_co]):
     @abstractmethod
-    def parse(self, data: Any) -> T:
+    def parse(self, data: Any) -> T_co:
         raise NotImplementedError
 
 

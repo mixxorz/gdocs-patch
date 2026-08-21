@@ -1,4 +1,4 @@
-from typing import Never
+from typing_extensions import Never
 
 XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
 GDOCS_NAMESPACE = "urn:gdocs-patch:xhtml:1"

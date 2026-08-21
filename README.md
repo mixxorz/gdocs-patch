@@ -27,7 +27,7 @@ Alternatively, install it with pip:
 pip install gdocs-patch
 ```
 
-gdocs-patch supports Python 3.12 and newer.
+gdocs-patch supports Python 3.10 and newer.
 
 ## How it works
 

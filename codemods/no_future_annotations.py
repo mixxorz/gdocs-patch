@@ -1,6 +1,6 @@
 """Codemod: ban `from __future__ import annotations`.
 
-This project requires Python 3.12 or newer and deliberately avoids postponed
+This project requires Python 3.10 or newer and deliberately avoids postponed
 annotation evaluation so runtime annotation behavior stays explicit. Keeping
 the import can silently change runtime behaviour for code that calls
 typing.get_type_hints().
@@ -18,7 +18,7 @@ from libcst.metadata import ParentNodeProvider
 class NoFutureAnnotations(LintRule):
     """Ban `from __future__ import annotations`.
 
-    This project requires Python 3.12 or newer and deliberately avoids
+    This project requires Python 3.10 or newer and deliberately avoids
     postponed annotation evaluation so runtime annotation behavior stays
     explicit. The ``from __future__ import annotations`` shim (PEP 563) can
     silently alter runtime behaviour for anything that inspects annotations

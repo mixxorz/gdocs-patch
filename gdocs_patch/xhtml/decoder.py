@@ -1,8 +1,10 @@
 import re
 from collections.abc import Callable
-from typing import Any, Never, cast
+from typing import Any, TypeVar, cast
 from xml.etree import ElementTree
 from xml.parsers import expat
+
+from typing_extensions import Never
 
 from gdocs_patch import models
 
@@ -31,10 +33,13 @@ from .nodes import (
 
 _FORBIDDEN_XML_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)\b")
 
+ModelT = TypeVar("ModelT")
+TagT = TypeVar("TagT", bound=Tag)
 
-def _decode_tag[T: Tag](
-    element: ElementTree.Element, tag_type: type[T], decoder: TagDecoder
-) -> T:
+
+def _decode_tag(
+    element: ElementTree.Element, tag_type: type[TagT], decoder: TagDecoder
+) -> TagT:
     try:
         with decoder.at(element.tag):
             return decoder.decode_element(element, tag_type)
@@ -68,7 +73,7 @@ class _DocumentDecoder:
     def source_location(self, element: Tag) -> str:
         return str(self.source_map.location_for(element))
 
-    def construct_model[ModelT](
+    def construct_model(
         self,
         element: Tag,
         model_type: Callable[..., ModelT],

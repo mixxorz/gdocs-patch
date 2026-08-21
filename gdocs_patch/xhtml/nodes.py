@@ -2,12 +2,17 @@ from abc import ABC
 from collections.abc import Callable, Generator, Iterable, Mapping, MutableMapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Never, Self, cast, overload
+from typing import Any, Generic, TypeVar, cast, overload
 from xml.etree import ElementTree
+
+from typing_extensions import Never, Self
 
 from gdocs_patch.models import UNSET, UnsetType
 
 from .base import display_name
+
+T = TypeVar("T")
+TagT = TypeVar("TagT", bound="Tag")
 
 
 def _quantity(value: int) -> str:
@@ -104,7 +109,7 @@ class Text(Node):
     value: str
 
 
-class Field[T](ABC):
+class Field(ABC, Generic[T]):
     """A value declared on a Tag."""
 
     required = False
@@ -412,7 +417,9 @@ class Tag(Node):
         self.clean()
 
     @classmethod
-    def decode_from(cls, element: ElementTree.Element, decoder: "TagDecoder") -> Self:
+    def decode_from(
+        cls: type[TagT], element: ElementTree.Element, decoder: "TagDecoder"
+    ) -> TagT:
         if cls.tag_name is None:
             decoder.fail(f"{cls.__name__} has no tag_name")
         if element.tag != cls.tag_name:
@@ -480,9 +487,9 @@ class TagDecoder:
         finally:
             self._path.pop()
 
-    def decode_element[T: Tag](
-        self, element: ElementTree.Element, node_type: type[T]
-    ) -> T:
+    def decode_element(
+        self, element: ElementTree.Element, node_type: type[TagT]
+    ) -> TagT:
         position = next(self._source_positions, None)
         location = SourceLocation(tuple(self._path), position)
         previous_location = self._current_location
