@@ -1,5 +1,5 @@
 # AGENTS.md
-- Use Python 3.12+ and manage dependencies and commands with `uv`.
+- Use Python 3.10+ and manage dependencies and commands with `uv`.
 - Keep model classes ordinary, mutable, hand-written, and explicitly typed.
 - Use keyword-only constructors, `snake_case` attributes, and inline `Literal` types.
 - Group code by semantic feature under `gdocs_patch/models/`.

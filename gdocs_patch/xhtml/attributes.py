@@ -2,7 +2,7 @@ import math
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, MutableMapping
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from gdocs_patch.models import UNSET, Color, Dimension, UnsetType
 
@@ -10,6 +10,8 @@ from .nodes import Field, TagDecoder, TagEncoder, ValidationError
 
 _CANONICAL_INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
 _CANONICAL_FLOAT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?\Z")
+
+T = TypeVar("T")
 
 
 def _format_number(value: int | float) -> str:
@@ -19,7 +21,7 @@ def _format_number(value: int | float) -> str:
     return text[:-2] if text.endswith(".0") else text
 
 
-class Attribute[T](Field[T], ABC):
+class Attribute(Field[T], ABC):
     """A field represented by exactly one XML attribute."""
 
     def __init__(
@@ -195,7 +197,7 @@ class LiteralAttribute(Attribute[bool]):
         return self.value
 
 
-class MultiValueAttribute[T](Field[T], ABC):
+class MultiValueAttribute(Field[T], ABC):
     """One field represented by several XML attributes."""
 
     def __init__(

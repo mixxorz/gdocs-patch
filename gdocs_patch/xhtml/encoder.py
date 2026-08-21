@@ -1,4 +1,4 @@
-from typing import cast
+from typing import TypeVar, cast
 from xml.etree import ElementTree
 
 from gdocs_patch import models
@@ -11,8 +11,10 @@ from .base import (
 )
 from .nodes import Tag, TagEncoder, Text
 
+T = TypeVar("T")
 
-def _omit_default[T](value: T, default: T) -> T | models.UnsetType:
+
+def _omit_default(value: T, default: T) -> T | models.UnsetType:
     return models.UNSET if value == default else value
 
 
