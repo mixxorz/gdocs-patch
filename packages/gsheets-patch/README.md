@@ -23,6 +23,12 @@ Credentials are stored at `~/.config/gsheets-patch/credentials.json`. The defaul
 OAuth client path is `~/.config/gsheets-patch/client_secret.json`. Set
 `GSHEETS_PATCH_BEARER_TOKEN` to use a Google access token directly.
 
+## Agent guide
+
+Start with `gsheets-patch skill` (or the MCP `skill` tool) for method-first schema
+discovery, choosing/batching operations, and a worked inventory-tab example.
+The guide is plain Markdown, works offline, and needs no Google credentials.
+
 ## CLI
 
 Spreadsheet methods are top-level and values methods are under `values`:
@@ -62,6 +68,7 @@ have `--no-...` forms; omitted flags stay omitted.
 | `values batch-clear` | `batch_clear_values` |
 | `values batch-clear-by-data-filter` | `batch_clear_values_by_data_filter` |
 | `schema [NAME]` | `schema` |
+| `skill` | `skill` |
 
 API commands take `SPREADSHEET_ID` first; single-range commands take `RANGE` next.
 Write/filter bodies use native Google JSON. For example, `get-by-data-filter`
@@ -105,7 +112,7 @@ GSHEETS_PATCH_MCP_TOKEN=replace-me gsheets-patch-mcp --host 127.0.0.1 --port 800
 ```
 
 Connect to `http://127.0.0.1:8000/mcp` with that static bearer token. The server
-provides 13 individual API tools plus `schema`; authentication login remains CLI
+provides 13 individual API tools plus `schema` and `skill`; authentication login remains CLI
 only. Tool arguments use snake_case; native body keys retain camelCase. Successful
 results include matching structured JSON and JSON text; failed calls are marked
 as tool errors. The MCP token is separate from the Google access token.

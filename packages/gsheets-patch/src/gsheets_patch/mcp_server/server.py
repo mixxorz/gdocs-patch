@@ -17,6 +17,7 @@ from gsheets_patch.client import GoogleSheetsClient
 from gsheets_patch.errors import api_error_value, error_json, error_value
 from gsheets_patch.mcp_server import MCPTokenNotConfiguredError
 from gsheets_patch.schema import describe_schema
+from gsheets_patch.skill import SKILL
 
 
 class BearerTokenVerifier(TokenVerifier):
@@ -37,7 +38,8 @@ server = FastMCP(
     name="gsheets-patch",
     instructions=(
         "Call selected Google Sheets v4 methods with native request bodies and "
-        "responses. Use schema to inspect native method and body definitions."
+        "responses. Use skill for workflows and examples, and schema to inspect "
+        "native method and body definitions."
     ),
     auth=BearerTokenVerifier(),
     mask_error_details=False,
@@ -299,6 +301,12 @@ def batch_clear_values_by_data_filter(
         body=body,
         fields=fields,
     )
+
+
+@tool(read_only=True)
+def skill() -> ToolResult:
+    """Read the agent guide: method-first discovery, batching, and native examples."""
+    return ToolResult(content=SKILL)
 
 
 @tool(read_only=True)

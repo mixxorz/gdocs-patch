@@ -27,7 +27,8 @@ and a draft PR within the guardrails below. Do not use Superpowers for this work
 - Add a schema CLI command and MCP tool for on-demand native method and
   batch-request schema documentation. Keep large nested schemas out of normal
   tool definitions. This is a documentation surface, not an API mutation method
-  or runtime validation layer: 13 API tools plus the schema tool.
+  or runtime validation layer. A later dogfood follow-up adds a shared skill
+  guide: 13 API tools plus schema and skill (15 MCP tools total).
 - Drop the redundant spreadsheets prefix from CLI commands. Spreadsheet-level
   methods live at the root; values methods live under the values command group.
 - gsheets-patch exists to make spreadsheet work efficient and reliable for
@@ -455,6 +456,22 @@ merge, other remote branch change, or permanent live integration suite was made.
 - Independent review found no blockers. Sheets production is now 904 physical
   LOC; tests remain 586 LOC and 37 cases. The increase is deliberate explicitness
   and documentation, not new functionality.
+
+## Follow-up: agent skill guide
+
+- Added `gsheets-patch skill` and a read-only MCP `skill` tool, both returning the
+  same plain Markdown without Google credentials or a network request.
+- The guide explains method-first schema discovery, choosing/batching native
+  operations, JSON file inputs, and a worked inventory-tab example with formatting.
+  It documents native semantics and the OAuth-refresh exception to no API retries.
+- Added one offline cross-interface guide test and updated tool discovery to 15
+  tools. Current suite: 242 total cases (198 Docs, 38 Sheets, 6 release tooling).
+- Updated installed-package smoke checks and package docs. The two example JSON
+  bodies were parsed and built with the real SDK offline, without API execution.
+- Also replaced the unnecessary two-flag CLI loop with explicit add_argument
+  calls as requested. No new validation or editing abstractions were introduced.
+- Sheets production is 1,033 physical LOC, including the 110-line guide module;
+  tests are 612 LOC. Independent review found no blockers.
 
 ## Unattended execution guardrails
 

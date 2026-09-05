@@ -1,10 +1,13 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastmcp import Client
+
+from gsheets_patch import auth, cli
 
 os.environ.setdefault("GSHEETS_PATCH_MCP_TOKEN", "offline-mcp-token")
 
@@ -25,6 +28,7 @@ EXPECTED_TOOLS = {
     "batch_clear_values",
     "batch_clear_values_by_data_filter",
     "schema",
+    "skill",
 }
 
 
@@ -38,6 +42,28 @@ def test_native_client_discovers_exact_tool_surface() -> None:
             return {tool.name for tool in await client.list_tools()}
 
     assert run(discover()) == EXPECTED_TOOLS
+
+
+def test_skill_is_shared_plain_text_without_google_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("GSHEETS_PATCH_BEARER_TOKEN", raising=False)
+    monkeypatch.setattr(auth, "DEFAULT_CREDENTIALS_PATH", tmp_path / "missing.json")
+    assert cli.main(["skill"]) == 0
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert output.out.startswith("---\nname: gsheets-patch\n")
+    assert "schema spreadsheets.batchUpdate" in output.out
+
+    async def invoke() -> Any:
+        async with Client(mcp_module.server) as client:
+            return await client.call_tool("skill", {})
+
+    result = run(invoke())
+    assert not result.is_error
+    assert result.content[0].text == output.out
 
 
 def test_native_client_returns_matching_structured_and_text(

@@ -15,6 +15,7 @@ from gsheets_patch.auth import AuthenticationError, load_credentials, login
 from gsheets_patch.client import GoogleSheetsClient
 from gsheets_patch.errors import api_error_value, error_json, error_value
 from gsheets_patch.schema import describe_schema
+from gsheets_patch.skill import SKILL
 
 
 class InputError(Exception):
@@ -66,8 +67,14 @@ def build_parser() -> argparse.ArgumentParser:
     # would add no information. Filtered reads put their options in the JSON body.
     get = commands.add_parser("get")
     add_api_arguments(get, "spreadsheets.get")
-    for flag in ("--include-grid-data", "--exclude-tables-in-banded-ranges"):
-        get.add_argument(flag, action=argparse.BooleanOptionalAction, default=None)
+    get.add_argument(
+        "--include-grid-data", action=argparse.BooleanOptionalAction, default=None
+    )
+    get.add_argument(
+        "--exclude-tables-in-banded-ranges",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
     get.add_argument("--ranges", action="append")
     add_api_arguments(
         commands.add_parser("get-by-data-filter"),
@@ -131,8 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_api_arguments(clear, "spreadsheets.values.clear", body=True)
     clear.add_argument("range", metavar="RANGE")
 
-    # Local commands don't construct a Sheets request. Schema lookup also works
-    # without credentials; interactive OAuth login is deliberately CLI-only.
+    # Local guidance doesn't need Google credentials. Interactive OAuth login
+    # is deliberately CLI-only.
+    commands.add_parser("skill", help="Show agent workflows and native API examples.")
     schema = commands.add_parser("schema")
     schema.add_argument("name", nargs="?")
     auth = commands.add_parser("auth").add_subparsers(
@@ -151,6 +159,9 @@ def report_error(value: dict[str, Any]) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "skill":
+        sys.stdout.write(SKILL)
+        return 0
     if args.command == "auth":
         try:
             path = login(client_secrets=args.client_secrets)

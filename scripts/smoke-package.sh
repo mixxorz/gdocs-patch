@@ -32,4 +32,5 @@ grep -F "MCP support is not installed" <<<"$output"
 env "$token_var=smoke-test" "$mcp/bin/python" -I -c "import $module.mcp_server.server"
 if [[ "$package" == gsheets-patch ]]; then
     "$base/bin/$package" schema RepeatCellRequest >/dev/null
+    "$base/bin/$package" skill >/dev/null
 fi
