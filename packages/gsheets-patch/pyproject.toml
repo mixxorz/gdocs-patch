@@ -1,0 +1,44 @@
+[project]
+name = "gsheets-patch"
+version = "0.1.0"
+description = "Thin Google Sheets API access for agents"
+authors = [{ name = "Mitchel Cabuloy", email = "mixxorz@gmail.com" }]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "google-api-python-client>=2.198.0",
+    "google-auth-oauthlib>=1.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mixxorz/gdocs-patch"
+Repository = "https://github.com/mixxorz/gdocs-patch"
+Issues = "https://github.com/mixxorz/gdocs-patch/issues"
+
+[project.scripts]
+gsheets-patch = "gsheets_patch.cli:main"
+gsheets-patch-mcp = "gsheets_patch.mcp_server:main"
+
+[project.optional-dependencies]
+mcp = ["fastmcp==3.4.4"]
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+source-exclude = ["**/.DS_Store"]
