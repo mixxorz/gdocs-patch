@@ -20,3 +20,6 @@ dist/
 # Local Git worktrees and agent scratch files
 .worktrees/
 .superpowers/
+.smoke/
+.test-tmp/
+.cache/

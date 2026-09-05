@@ -1,5 +1,6 @@
 from gdocs_patch.commands.write import write_document
-from tests.commands.support import FakeGoogleDocsClient
+
+from .support import FakeGoogleDocsClient
 
 
 def test_writes_compiled_xhtml_to_requested_document() -> None:

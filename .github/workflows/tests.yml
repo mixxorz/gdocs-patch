@@ -20,104 +20,59 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Install uv and Python 3.14
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Install dependencies
-        run: uv sync --locked --dev --all-extras
-
-      - name: Check lockfile
-        run: uv lock --check
-
-      - name: Run Ruff lint
-        run: uv run ruff check .
-
-      - name: Check Ruff formatting
-        run: uv run ruff format --check .
-
-      - name: Run Fixit
-        run: uv run fixit lint .
-
-      - name: Run Pyright
-        run: uv run pyright
-
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: Install workspace and development dependencies
+        run: uv sync --locked --all-packages --all-extras --dev
+      - run: uv lock --check
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run python -m fixit lint .
+      - run: uv run pyright
+      - run: uv run pre-commit run --all-files
+      - name: Test release selection
+        run: uv run pytest scripts
 
   tests:
-    name: Test - Python ${{ matrix.python-version }}
+    name: ${{ matrix.package }} - Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        package: [gdocs-patch, gsheets-patch]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
-
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Install uv and Python ${{ matrix.python-version }}
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Install dependencies
-        run: uv sync --locked --dev --all-extras
-
-      - name: Run tests
-        run: uv run pytest
+      - run: uv sync --locked --all-packages --all-extras --dev
+      - name: Test package
+        run: uv run pytest packages/${{ matrix.package }}/tests
 
   package:
+    name: Build - ${{ matrix.package }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [gdocs-patch, gsheets-patch]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Install uv and Python 3.14
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.14"
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Install build tools
-        run: uv sync --locked --dev
-
-      - name: Build distributions
-        run: uv build
-
-      - name: Check distribution metadata
-        run: uv run twine check --strict dist/*
-
-      - name: Smoke-test base wheel
-        run: |
-          wheel=$(echo dist/*.whl)
-          uv venv --python 3.14 /tmp/gdocs-patch-base
-          uv pip install --python /tmp/gdocs-patch-base/bin/python "$wheel"
-          /tmp/gdocs-patch-base/bin/gdocs-patch --help >/dev/null
-          /tmp/gdocs-patch-base/bin/gdocs-patch --version
-          if output=$(/tmp/gdocs-patch-base/bin/gdocs-patch-mcp 2>&1); then
-            echo "gdocs-patch-mcp unexpectedly started without the mcp extra" >&2
-            exit 1
-          fi
-          grep -F "MCP support is not installed" <<<"$output"
-
-      - name: Smoke-test wheel with MCP extra
-        run: |
-          wheel=$(echo dist/*.whl)
-          uv venv --python 3.14 /tmp/gdocs-patch-mcp
-          uv pip install --python /tmp/gdocs-patch-mcp/bin/python "${wheel}[mcp]"
-          /tmp/gdocs-patch-mcp/bin/gdocs-patch-mcp --help >/dev/null
-          cd /tmp
-          GDOCS_PATCH_MCP_TOKEN=smoke-test \
-            /tmp/gdocs-patch-mcp/bin/python -I -c \
-            "import gdocs_patch.mcp_server.server"
+      - run: uv sync --locked --dev
+      - name: Build and smoke-test isolated distributions
+        run: bash scripts/smoke-package.sh ${{ matrix.package }}

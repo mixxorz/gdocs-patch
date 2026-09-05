@@ -1,74 +1,74 @@
-# Releasing gdocs-patch
+# Releasing workspace packages
 
-Releases are created manually in GitHub after a version change passes CI on
-`main`. Publishing a GitHub Release builds the distributions again and uploads
-them to PyPI through Trusted Publishing.
+`gdocs-patch` and `gsheets-patch` have independent versions. Publishing a GitHub
+Release triggers `.github/workflows/release.yml`, which builds and uploads only
+the package named by the tag. A branch push or pull request never publishes.
 
-## Choose a version
+## Prepare a release
 
-Use canonical PEP 440 versions and tags without a `v` prefix:
-
-- Alpha: `0.2.0a1`
-- Beta: `0.2.0b1`
-- Release candidate: `0.2.0rc1`
-- Final: `0.2.0`
-
-PyPI distributions are immutable. Never reuse a version that has been uploaded.
-
-## Prepare the release
-
-Create a branch from the latest `main`, then update the project version and
-lockfile:
+From a feature branch based on current `main`, update the selected member:
 
 ```console
-uv version VERSION
+uv version --package gsheets-patch 0.1.0
 uv lock
-```
-
-Replace `VERSION` with the exact PEP 440 version. Verify that both
-`pyproject.toml` and `uv.lock` contain it.
-
-Synchronize all development and optional dependencies and run the complete
-local checks:
-
-```console
-uv sync --locked --dev --all-extras
+uv sync --locked --all-packages --all-extras --dev
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
-uv run fixit lint .
+uv run python -m fixit lint .
 uv run pyright
 uv run pre-commit run --all-files
-rm -rf dist
-uv build
-uv run twine check --strict dist/*
+bash scripts/smoke-package.sh gsheets-patch
 ```
 
-Commit the version change, open a pull request, and merge it only after all
-required CI checks pass.
+Use canonical PEP 440 versions: `0.1.0a1`, `0.1.0b1`, `0.1.0rc1`, or `0.1.0`.
+Check the selected member's `pyproject.toml` and the root lockfile. The other
+package's version does not need to change.
 
-## Publish the release
+Commit, open a PR, and merge only after all required checks pass. Release-tooling
+tests run under development Python 3.14; package CI covers Python 3.10–3.14.
 
-From GitHub's **Releases** page:
+## Trusted Publishing prerequisite
 
-1. Draft a new release.
-2. Create a tag that exactly matches the version in `pyproject.toml` and target
-   the merged commit on `main`.
-3. Use the version as the release title.
-4. Generate the release notes and edit them if needed.
-5. For an alpha, beta, or release candidate, select **Set as a pre-release**.
-6. Publish the release.
+Configure a PyPI Trusted Publisher for **each distribution** using:
 
-Publishing triggers `.github/workflows/release.yml`. The workflow verifies the
-tag, version, lockfile, and relationship to `main`; builds and validates the
-wheel and source distribution; and authenticates to PyPI with GitHub OIDC.
+- GitHub owner: `mixxorz`
+- Repository: `gdocs-patch`
+- Workflow: `release.yml`
+- GitHub environment: `pypi`
 
-## Recover from a failed release
+For a new distribution, configure a pending publisher before its first release.
+The existing Docs publisher can keep the same repository/workflow/environment.
+The `pypi` GitHub environment may require approval according to its existing rules.
+These account settings are external setup, not something the workflow creates.
 
-If the workflow fails before PyPI accepts any artifact, correct the repository
-or Trusted Publisher configuration and rerun the failed workflow.
+## Publish
 
-If any artifact reached PyPI, or PyPI reports that the version already exists,
-do not delete, replace, or skip that artifact. Prepare and publish a new version
-instead. For example, follow `0.2.0a1` with `0.2.0a2` or follow a broken `0.2.0`
-with `0.2.1`.
+In GitHub Releases, create a tag targeting the merged commit:
+
+```text
+gdocs-patch/0.2.1
+gsheets-patch/0.1.0
+```
+
+The version suffix must exactly match the selected member's version. Mark alpha,
+beta, and release-candidate versions as GitHub pre-releases. Use the package and
+version in the release title and describe only that package's changes.
+
+Publishing the release verifies:
+
+1. The tagged commit is contained in `main`.
+2. The tag selects an allowed workspace member.
+3. The version matches its metadata and is canonical PEP 440.
+4. The GitHub prerelease flag agrees with that version.
+5. The shared lockfile is current and built distributions have valid metadata.
+
+Only that member's wheel and sdist are passed to PyPI through GitHub OIDC.
+Existing historical unqualified Docs tags remain untouched. New workspace
+releases reject unqualified tags; do not reuse old tags to test the new workflow.
+
+## Failed releases
+
+PyPI versions are immutable. If no artifact was accepted, fix the cause and rerun
+the failed workflow. If any artifact reached PyPI, prepare a new version instead
+of replacing, deleting, or skipping it. Never publish merely to test CI.

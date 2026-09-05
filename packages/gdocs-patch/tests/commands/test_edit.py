@@ -8,7 +8,8 @@ from gdocs_patch.commands.edit import (
     apply_xhtml_edits,
     edit_document,
 )
-from tests.commands.support import FakeGoogleDocsClient
+
+from .support import FakeGoogleDocsClient
 
 
 def test_edits_canonical_xhtml_and_updates_google_document() -> None:

@@ -10,6 +10,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.select.outputs.package }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,43 +43,17 @@ jobs:
       - name: Install build tools
         run: uv sync --locked --dev
 
-      - name: Verify release version
+      - name: Select package and verify release version
+        id: select
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
-        run: |
-          uv run python - <<'PY'
-          import os
-          import tomllib
-          from packaging.version import Version
+        run: uv run python scripts/release.py >> "$GITHUB_OUTPUT"
 
-          with open("pyproject.toml", "rb") as pyproject_file:
-              project_version = tomllib.load(pyproject_file)["project"]["version"]
-
-          release_tag = os.environ["RELEASE_TAG"]
-          if release_tag != project_version:
-              raise SystemExit(
-                  f"Release tag {release_tag} does not match project version "
-                  f"{project_version}"
-              )
-
-          parsed_version = Version(project_version)
-          if str(parsed_version) != project_version:
-              raise SystemExit(
-                  f"Version {project_version} is not canonical PEP 440; use "
-                  f"{parsed_version}"
-              )
-
-          release_is_prerelease = os.environ["RELEASE_IS_PRERELEASE"] == "true"
-          if parsed_version.is_prerelease != release_is_prerelease:
-              expected = "a pre-release" if parsed_version.is_prerelease else "a final release"
-              raise SystemExit(
-                  f"Version {project_version} must be marked as {expected} on GitHub"
-              )
-          PY
-
-      - name: Build distributions
-        run: uv build
+      - name: Build selected distribution only
+        env:
+          PACKAGE: ${{ steps.select.outputs.package }}
+        run: uv build --package "$PACKAGE"
 
       - name: Check distribution metadata
         run: uv run twine check --strict dist/*
@@ -95,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/gdocs-patch
+      url: https://pypi.org/p/${{ needs.build.outputs.package }}
     permissions:
       contents: read
       id-token: write

@@ -12,6 +12,23 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "gdocs-patch",
+    "gsheets-patch",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "fixit", specifier = ">=2.2.1" },
+    { name = "packaging", specifier = ">=26.0" },
+    { name = "pre-commit", specifier = ">=4.6.1" },
+    { name = "pyright", specifier = ">=1.1.411" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "ruff", specifier = ">=0.16.1" },
+    { name = "twine", specifier = ">=6.2.0" },
+]
+
 [[package]]
 name = "aiofile"
 version = "3.9.0"
@@ -665,7 +682,7 @@ wheels = [
 [[package]]
 name = "gdocs-patch"
 version = "0.2.0"
-source = { editable = "." }
+source = { editable = "packages/gdocs-patch" }
 dependencies = [
     { name = "google-api-python-client" },
     { name = "google-auth-oauthlib" },
@@ -677,17 +694,6 @@ mcp = [
     { name = "fastmcp" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "fixit" },
-    { name = "packaging" },
-    { name = "pre-commit" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "twine" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==3.4.4" },
@@ -696,17 +702,6 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.4.0" },
 ]
 provides-extras = ["mcp"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "fixit", specifier = ">=2.2.1" },
-    { name = "packaging", specifier = ">=26.0" },
-    { name = "pre-commit", specifier = ">=4.6.1" },
-    { name = "pyright", specifier = ">=1.1.411" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "ruff", specifier = ">=0.16.1" },
-    { name = "twine", specifier = ">=6.2.0" },
-]
 
 [[package]]
 name = "google-api-core"
@@ -799,6 +794,28 @@ sdist = { url = "https://files.pythonhosted.org/packages/33/e4/8d187ea29c2e30b3a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e4/d3/5268aeabf2ad82658c4e2ff3a060648d0f02f3926cb53247c0e4d0dab49e/griffelib-2.1.0-py3-none-any.whl", hash = "sha256:cc7b3d2d2865ad0b909fcc38086e3f554b5ea7acbaa7bbb7ecaa3f5dfb7d9f00", size = 142560, upload-time = "2026-06-19T12:05:38.742Z" },
 ]
+
+[[package]]
+name = "gsheets-patch"
+version = "0.1.0"
+source = { editable = "packages/gsheets-patch" }
+dependencies = [
+    { name = "google-api-python-client" },
+    { name = "google-auth-oauthlib" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "fastmcp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==3.4.4" },
+    { name = "google-api-python-client", specifier = ">=2.198.0" },
+    { name = "google-auth-oauthlib", specifier = ">=1.4.0" },
+]
+provides-extras = ["mcp"]
 
 [[package]]
 name = "h11"
