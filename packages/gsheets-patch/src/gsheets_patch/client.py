@@ -30,19 +30,20 @@ class GoogleSheetsClient:
         )
 
     def call(self, native_method: str, **snake_case_params: Any) -> dict[str, Any]:
+        # Discovery resources are factories: spreadsheets.values.get becomes
+        # service.spreadsheets().values().get(...).
         resource = self._service
         parts = native_method.split(".")
         for name in parts[:-1]:
             resource = getattr(resource, name)()
         method = getattr(resource, parts[-1])
-        params = {
-            _camel_case(name): value
-            for name, value in snake_case_params.items()
-            if value is not None
-        }
+        # Translate only parameter names, never keys inside the native JSON body.
+        # None means an omitted option; false and zero must still reach Google.
+        params: dict[str, Any] = {}
+        for name, value in snake_case_params.items():
+            if value is not None:
+                native_name = re.sub(r"_([a-z])", lambda match: match[1].upper(), name)
+                params[native_name] = value
         request = method(**params)
+        # An ambiguous failure may already have applied an append or structural edit.
         return cast(dict[str, Any], request.execute(num_retries=0))
-
-
-def _camel_case(name: str) -> str:
-    return re.sub(r"_([a-z])", lambda match: match[1].upper(), name)

@@ -19,14 +19,12 @@ METHODS = (
 )
 
 
-def _document() -> dict[str, Any]:
-    path = files("googleapiclient.discovery_cache.documents").joinpath("sheets.v4.json")
-    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
-
-
 def describe_schema(name: str | None = None) -> dict[str, Any]:
     """List supported methods and native schemas, or return one definition."""
-    document = _document()
+    # Use the client's bundled discovery data so lookup stays offline and agrees
+    # with the installed SDK. Leave $ref links intact for separate lookups.
+    path = files("googleapiclient.discovery_cache.documents").joinpath("sheets.v4.json")
+    document = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     schemas = cast(dict[str, Any], document["schemas"])
     if name is None:
         return {"methods": list(METHODS), "schemas": sorted(schemas)}

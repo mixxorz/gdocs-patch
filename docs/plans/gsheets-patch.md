@@ -94,6 +94,10 @@ implementation metric within the agreed functionality and correctness floor.
 
 - Prefer direct code and existing library capabilities over custom infrastructure,
   speculative abstractions, elaborate class hierarchies, and duplicated schemas.
+- Follow-up user preference: readability takes precedence over shaving lines.
+  Forward actual named arguments, never **locals(). Avoid fragmented chains of
+  private helpers; keep only useful shared operations with descriptive names.
+  Explain API groupings and non-obvious choices in comments.
 - Share endpoint plumbing and behavior across CLI/MCP without building a generic
   framework. A small operation table is appropriate if it genuinely reduces the
   code and knowledge needed to add or understand an operation.
@@ -434,6 +438,23 @@ minimal LOC/no-speculative-validation constraints in every assignment.
 Actual PyPI publication was intentionally not exercised. A Sheets Trusted
 Publisher must be configured before the first release. No release, tag push,
 merge, other remote branch change, or permanent live integration suite was made.
+
+## Follow-up: readability review
+
+- Replaced all 13 MCP **locals() calls with explicit named arguments.
+- Reduced CLI helpers from six to three, with descriptive names; inlined the
+  one-use schema loader and camel-case helper. No private helper functions remain
+  in Sheets production modules; actual shared adapters are retained.
+- Grouped CLI setup into spreadsheet operations, value reads, body-based batch
+  operations, single-range writes, and local commands, with explanatory comments.
+- Replaced nested input ternaries with ordinary branches and clarified native
+  parameter translation and the no-retry decision.
+- No API behavior, validation policy, or tests added. Existing 241 tests and all
+  required local checks passed. A one-off comparison confirmed unchanged parser
+  namespaces and complete explicit argument forwarding for all 13 MCP tools.
+- Independent review found no blockers. Sheets production is now 904 physical
+  LOC; tests remain 586 LOC and 37 cases. The increase is deliberate explicitness
+  and documentation, not new functionality.
 
 ## Unattended execution guardrails
 

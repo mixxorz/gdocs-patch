@@ -45,7 +45,8 @@ server = FastMCP(
 )
 
 
-def _call(native_method: str, **params: Any) -> ToolResult:
+def call_api(native_method: str, **params: Any) -> ToolResult:
+    # Keep transport/error adaptation here so tools only describe their API call.
     try:
         result = GoogleSheetsClient(credentials=load_credentials()).call(
             native_method, **params
@@ -87,7 +88,14 @@ def get_spreadsheet(
     fields: str | None = None,
 ) -> ToolResult:
     """Get spreadsheet metadata, properties, and optionally grid data."""
-    return _call("spreadsheets.get", **locals())
+    return call_api(
+        "spreadsheets.get",
+        spreadsheet_id=spreadsheet_id,
+        include_grid_data=include_grid_data,
+        exclude_tables_in_banded_ranges=exclude_tables_in_banded_ranges,
+        ranges=ranges,
+        fields=fields,
+    )
 
 
 @tool(read_only=True)
@@ -95,7 +103,12 @@ def get_spreadsheet_by_data_filter(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Get spreadsheet data selected by native data filters."""
-    return _call("spreadsheets.getByDataFilter", **locals())
+    return call_api(
+        "spreadsheets.getByDataFilter",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -103,7 +116,12 @@ def batch_update_spreadsheet(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Apply a native spreadsheets.batchUpdate request."""
-    return _call("spreadsheets.batchUpdate", **locals())
+    return call_api(
+        "spreadsheets.batchUpdate",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool(read_only=True)
@@ -117,7 +135,15 @@ def get_values(
     fields: str | None = None,
 ) -> ToolResult:
     """Get values from one range."""
-    return _call("spreadsheets.values.get", **locals())
+    return call_api(
+        "spreadsheets.values.get",
+        spreadsheet_id=spreadsheet_id,
+        range=range,
+        major_dimension=major_dimension,
+        value_render_option=value_render_option,
+        date_time_render_option=date_time_render_option,
+        fields=fields,
+    )
 
 
 @tool(read_only=True)
@@ -131,7 +157,15 @@ def batch_get_values(
     fields: str | None = None,
 ) -> ToolResult:
     """Get values from multiple ranges."""
-    return _call("spreadsheets.values.batchGet", **locals())
+    return call_api(
+        "spreadsheets.values.batchGet",
+        spreadsheet_id=spreadsheet_id,
+        ranges=ranges,
+        major_dimension=major_dimension,
+        value_render_option=value_render_option,
+        date_time_render_option=date_time_render_option,
+        fields=fields,
+    )
 
 
 @tool(read_only=True)
@@ -139,7 +173,12 @@ def batch_get_values_by_data_filter(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Get values selected by native data filters."""
-    return _call("spreadsheets.values.batchGetByDataFilter", **locals())
+    return call_api(
+        "spreadsheets.values.batchGetByDataFilter",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -155,7 +194,17 @@ def update_values(
     fields: str | None = None,
 ) -> ToolResult:
     """Update values in one range."""
-    return _call("spreadsheets.values.update", **locals())
+    return call_api(
+        "spreadsheets.values.update",
+        spreadsheet_id=spreadsheet_id,
+        range=range,
+        body=body,
+        value_input_option=value_input_option,
+        include_values_in_response=include_values_in_response,
+        response_value_render_option=response_value_render_option,
+        response_date_time_render_option=response_date_time_render_option,
+        fields=fields,
+    )
 
 
 @tool()
@@ -163,7 +212,12 @@ def batch_update_values(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Update values in multiple ranges."""
-    return _call("spreadsheets.values.batchUpdate", **locals())
+    return call_api(
+        "spreadsheets.values.batchUpdate",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -171,7 +225,12 @@ def batch_update_values_by_data_filter(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Update values selected by native data filters."""
-    return _call("spreadsheets.values.batchUpdateByDataFilter", **locals())
+    return call_api(
+        "spreadsheets.values.batchUpdateByDataFilter",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -188,7 +247,18 @@ def append_values(
     fields: str | None = None,
 ) -> ToolResult:
     """Append values after the detected table in a range."""
-    return _call("spreadsheets.values.append", **locals())
+    return call_api(
+        "spreadsheets.values.append",
+        spreadsheet_id=spreadsheet_id,
+        range=range,
+        body=body,
+        value_input_option=value_input_option,
+        insert_data_option=insert_data_option,
+        include_values_in_response=include_values_in_response,
+        response_value_render_option=response_value_render_option,
+        response_date_time_render_option=response_date_time_render_option,
+        fields=fields,
+    )
 
 
 @tool()
@@ -196,7 +266,13 @@ def clear_values(
     *, spreadsheet_id: str, range: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Clear values in one range."""
-    return _call("spreadsheets.values.clear", **locals())
+    return call_api(
+        "spreadsheets.values.clear",
+        spreadsheet_id=spreadsheet_id,
+        range=range,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -204,7 +280,12 @@ def batch_clear_values(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Clear values in multiple ranges."""
-    return _call("spreadsheets.values.batchClear", **locals())
+    return call_api(
+        "spreadsheets.values.batchClear",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool()
@@ -212,7 +293,12 @@ def batch_clear_values_by_data_filter(
     *, spreadsheet_id: str, body: dict[str, Any], fields: str | None = None
 ) -> ToolResult:
     """Clear values selected by native data filters."""
-    return _call("spreadsheets.values.batchClearByDataFilter", **locals())
+    return call_api(
+        "spreadsheets.values.batchClearByDataFilter",
+        spreadsheet_id=spreadsheet_id,
+        body=body,
+        fields=fields,
+    )
 
 
 @tool(read_only=True)
