@@ -1,6 +1,7 @@
 # Workspace migration and gsheets-patch
 
-Status: approved for implementation; execution in progress.
+Status: implementation, local verification, independent review, and live smoke
+check complete. Draft PR #21 is open; final remote CI verification is in progress.
 
 ## Goal
 
@@ -199,8 +200,8 @@ complete the proposed execution plan; they do not broaden the approved scope.
    live tests. Sheets OAuth login succeeded with separate credentials saved at
    ~/.config/gsheets-patch/credentials.json. A read-only metadata request returned
    HTTP 200: title 'gsheets-patch scratch doc', tab Sheet1 (sheetId 0), 1000 rows
-   by 26 columns. No spreadsheet mutations have been made; write access remains
-   to be verified during the authorized live tests.
+   by 26 columns. The later manual smoke check verified writes, formatting, and
+   readback through CLI/HTTP MCP, then deleted only its two temporary tabs.
 9. **Delivery permissions — decided:** local commits, pushing only
    feat/gsheets-patch, and opening a draft PR targeting main are authorized.
    Do not modify, push, delete, or force-update any other GitHub branch. No
@@ -325,9 +326,10 @@ computing expectations from the same operation registry as the implementation.
 
 User authorized the proposed live testing and supplied existing disposable
 spreadsheet 1HrUw4hclx2npR2yfzRrsDa4iENfh1OUwa5GPzOl_-PY. Separate Sheets OAuth
-login succeeded and metadata read returned HTTP 200. No spreadsheet mutations
-have been made; write access is not yet verified. Spreadsheet creation is not
-part of this product's surface.
+login succeeded and metadata read returned HTTP 200. The one-off manual smoke
+check subsequently passed reads/writes/formatting through CLI and actual HTTP MCP;
+its two temporary tabs were deleted and original tab metadata matched afterward.
+Spreadsheet creation is not part of this product's surface.
 
 - Reproduce the Wagtail inventory workflow with a small fixed example dataset:
   create two uniquely named test tabs, write page types and fields, format/freeze
@@ -339,7 +341,7 @@ part of this product's surface.
   tabs or rely on the live check for exhaustive endpoint coverage.
 - Report live evidence separately from offline contract-test evidence.
 
-## Current repository constraints
+## Original repository baseline
 
 - gdocs-patch is currently version 0.2.0, with source and tests at repo root.
 - Python 3.10+ is supported; CI tests Python 3.10 through 3.14.
@@ -381,76 +383,54 @@ part of this product's surface.
 ## Implementation outline
 
 Implement in reviewable local commits, keeping the migration distinct from Sheets
-functionality. Independent work may be delegated within this worktree; coordinate
-file ownership and keep planning decisions in the main agent. Include the minimal
-LOC and no-speculative-validation constraints in every implementation/review
-assignment; they are acceptance criteria, not optional style preferences.
+functionality. Per the user's follow-up, run implementation subagents sequentially,
+then review afterward. Keep planning decisions in the main agent and include the
+minimal LOC/no-speculative-validation constraints in every assignment.
 
-### Phase 1: Behavior-preserving workspace migration
+### Phase 1: Workspace migration — complete
 
-- [ ] Establish baseline checks and record any pre-existing failures.
-- [ ] Apply the approved packages/<project>/src/<module>/ layout, moving only
-      tracked project files as needed.
-- [ ] Configure workspace membership, member build metadata, and root dev tools.
-- [ ] Update test discovery, typing paths, fixtures, package resources, and any
-      scripts or documentation that assume the old layout.
-- [ ] Preserve license/readme inclusion in both wheels and source distributions.
-- [ ] Update CI to install/check workspace members and build packages explicitly.
-- [ ] Adapt release validation and artifact selection for independent packages.
-- [ ] Document new development and release commands.
-- [ ] Verify installed distributions outside the source tree, with and without
-      the MCP extra. Use project-local temporary environments.
-- [ ] Run all required checks and review the migration independently of Sheets.
+- [x] Baseline: 198 Docs tests and all quality tools passed after installing the
+      optional MCP extra in the new worktree.
+- [x] Moved Docs source/tests into the approved workspace layout; source files
+      were moved unchanged. Updated fixture imports, build metadata, shared
+      quality tooling, and package docs/license paths.
+- [x] Verified Docs tests and isolated distributions after migration.
+- [x] Committed migration separately: 91582c8.
 
-Acceptance: existing Docs usage remains compatible; tests and quality checks
-pass; installable distributions work without relying on workspace imports.
+### Phases 2–3: Sheets foundation and surface — complete
 
-### Phase 2: Sheets foundation
+- [x] Implemented all 13 API operations plus offline schema lookup in CLI/MCP.
+- [x] Mirrored Docs auth UX with separate Sheets credentials and static MCP token.
+- [x] Kept native JSON, 60-second network timeout, no API retries, and no custom
+      Sheets validation/preflight layer.
+- [x] Added 37 offline Sheets cases covering distinct adapter/auth/schema risks.
+- [x] Independent review found a missing native query option and OAuth-denial
+      error reporting; both fixed. Follow-up review reported no blockers.
+- [x] Live manual check: two inventory tabs, 21 cells, bold/frozen headers,
+      filters and column sizing, exact CLI readbacks, actual authenticated HTTP
+      MCP read/write, 14-tool discovery, and HTTP 401 without a bearer token.
+      Cleanup deleted only the two created tabs and preserved original tabs.
+- [x] Committed Sheets implementation separately: 9bff603.
 
-- [ ] Create the Sheets package with the approved Python/dependency policy.
-- [ ] Implement the agreed authentication and API client boundary.
-- [ ] Establish thin native parameter/body/response forwarding with representative
-      tests, without implementing local Sheets semantic validation.
-- [ ] Implement an initial read and write vertical slice through the chosen surfaces.
+### Phase 4: CI, verification, and handoff
 
-Acceptance: requests reach the intended Google client methods without changing
-native body semantics; responses and useful API errors reach the caller.
+- [x] CI tests both packages on Python 3.10–3.14 and builds each independently.
+      Release selection accepts package-qualified tags and builds one member.
+- [x] Updated development/release guides and documented PyPI Trusted Publishing.
+- [x] Local pytest: 241 passed (198 Docs, 37 Sheets, 6 release-tooling cases).
+- [x] Ruff lint/format, Fixit, Pyright, pre-commit, and lockfile checks passed.
+- [x] Both package sdists/wheels passed metadata and isolated CLI/MCP checks,
+      including wheels rebuilt from sdists. No sibling-package dependency.
+- [x] LOC review reduced initial Sheets production code from 1,240 to 819
+      physical lines. Tests: 586 lines. Shared Python release tooling/tests: 66
+      lines. Smoke shell: 35 lines. CI workflows: 169 lines (69 fewer than baseline).
+- [x] Pushed only feat/gsheets-patch and opened draft PR #21:
+      https://github.com/mixxorz/gdocs-patch/pull/21
+- [ ] Verify remote CI for the final pushed commit and report final handoff.
 
-### Phase 3: Complete thin API surface
-
-- [ ] Expose the 13 selected Sheets REST methods as individual MCP tools and
-      CLI operations backed by the same API forwarding implementation. Do not
-      expose spreadsheets.create, sheets.copyTo, or dedicated developerMetadata
-      endpoints.
-- [ ] Test CLI/MCP parity for native parameters, JSON bodies, responses, and errors.
-- [ ] Test endpoint routing, optional parameter forwarding, native body/response
-      preservation, and the agreed transport error/retry behavior.
-- [ ] Verify advanced batchUpdate bodies pass through without maintaining a
-      client-side whitelist or nested schema for each request type.
-- [ ] Document authentication, native API semantics, and agent usage examples.
-- [ ] Implement the schema CLI command and MCP tool for on-demand native method
-      and batch-request documentation, without adding runtime semantic validation.
-- [ ] Add package and MCP smoke tests; perform the authorized one-off manual
-      live check without adding a committed live integration-test suite.
-
-Acceptance: the Wagtail page-type/field inventory workflow can be expressed using
-native spreadsheet inspection, tab creation, value writes, formatting, and readback.
-Live testing on the designated disposable spreadsheet is authorized and read
-access is verified. API coverage does not imply protection from native API misuse.
-
-### Phase 4: Verification and handoff
-
-- [ ] Run pytest, Ruff lint/format, Fixit, Pyright, and pre-commit.
-- [ ] Validate the lockfile, build distributions, and check package metadata.
-- [ ] Smoke-test each package independently of the workspace source tree.
-- [ ] Review for regressions, credential leakage, and unintended file changes.
-- [ ] Review for unnecessary code and duplicate test coverage; simplify before
-      handoff. Report production/test LOC and collected new test-case counts.
-- [ ] Report completed scope, exact checks/results, limitations, and remaining
-      decisions. Clearly distinguish offline evidence from live API evidence.
-- [ ] Commit and push only feat/gsheets-patch; open a draft PR targeting main.
-      Inspect remote CI results once triggered. Do not publish, merge, push tags,
-      or change other remote branches.
+Actual PyPI publication was intentionally not exercised. A Sheets Trusted
+Publisher must be configured before the first release. No release, tag push,
+merge, other remote branch change, or permanent live integration suite was made.
 
 ## Unattended execution guardrails
 

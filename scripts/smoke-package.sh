@@ -9,8 +9,9 @@ mcp="$root/.smoke/$package-mcp"
 module=${package//-/_}
 token_var=$(printf '%s_MCP_TOKEN' "$module" | tr '[:lower:]' '[:upper:]')
 
+rm -rf "$dist"
 uv build --package "$package" --out-dir "$dist"
-uv run twine check --strict "$dist"/*
+uv run twine check --strict "$dist"/*.whl "$dist"/*.tar.gz
 sdist=("$dist"/*.tar.gz)
 uv build "${sdist[0]}" --wheel --out-dir "$dist/from-sdist"
 wheel=("$dist/from-sdist"/*.whl)
