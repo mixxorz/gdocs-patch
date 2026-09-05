@@ -1,7 +1,7 @@
 # Workspace migration and gsheets-patch
 
-Status: implementation, local verification, independent review, and live smoke
-check complete. Draft PR #21 is open; final remote CI verification is in progress.
+Status: complete. Implementation, local verification, independent review, live
+smoke check, and remote CI passed. Draft PR #21 remains open and unmerged.
 
 ## Goal
 
@@ -426,7 +426,10 @@ minimal LOC/no-speculative-validation constraints in every assignment.
       lines. Smoke shell: 35 lines. CI workflows: 169 lines (69 fewer than baseline).
 - [x] Pushed only feat/gsheets-patch and opened draft PR #21:
       https://github.com/mixxorz/gdocs-patch/pull/21
-- [ ] Verify remote CI for the final pushed commit and report final handoff.
+- [x] Remote CI passed all 13 jobs: quality/release-tooling checks, ten package
+      test jobs on Python 3.10–3.14, and two isolated distribution builds.
+      Code verification: https://github.com/mixxorz/gdocs-patch/actions/runs/33974319979
+      (e3c44f5). Subsequent changes only finalize this report.
 
 Actual PyPI publication was intentionally not exercised. A Sheets Trusted
 Publisher must be configured before the first release. No release, tag push,
