@@ -1,3 +1,5 @@
+from parsers.maximal_document import expected_maximal_document
+
 from gdocs_patch.models import (
     UNSET,
     Body,
@@ -14,7 +16,6 @@ from gdocs_patch.models import (
     TreeNode,
 )
 from gdocs_patch.xhtml import deserialize_document, serialize_document
-from tests.parsers.maximal_document import expected_maximal_document
 
 
 def _prepend_leading_section(document: Document) -> None:

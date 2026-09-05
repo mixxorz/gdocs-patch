@@ -18,7 +18,7 @@ repos:
         pass_filenames: false
       - id: fixit-fix
         name: Fixit - lint and apply autofixes
-        entry: uv run fixit fix --automatic
+        entry: uv run python -m fixit fix --automatic
         language: system
         types: [python]
   - repo: https://github.com/gitleaks/gitleaks

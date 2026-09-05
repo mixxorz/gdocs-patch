@@ -27,7 +27,8 @@ from gdocs_patch.parsers.document import (
     tab_parser,
 )
 from gdocs_patch.parsers.table import table_of_contents_parser
-from tests.parsers.maximal_document import expected_maximal_document
+
+from .maximal_document import expected_maximal_document
 
 
 def test_parses_document_style() -> None:

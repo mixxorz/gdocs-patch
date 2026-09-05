@@ -1,5 +1,6 @@
 from gdocs_patch.commands.read import read_document
-from tests.commands.support import FakeGoogleDocsClient
+
+from .support import FakeGoogleDocsClient
 
 
 def test_reads_requested_xhtml_lines() -> None:

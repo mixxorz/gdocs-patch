@@ -1,67 +1,5 @@
-[project]
-name = "gdocs-patch"
-version = "0.2.0"
-description = "Efficient Google Doc editing for agents"
-authors = [{ name = "Mitchel Cabuloy", email = "mixxorz@gmail.com" }]
-readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
-requires-python = ">=3.10"
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Environment :: Console",
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-]
-dependencies = [
-    "google-api-python-client>=2.198.0",
-    "google-auth-oauthlib>=1.4.0",
-    "typing-extensions>=4.4.0",
-]
-
-[project.urls]
-Homepage = "https://github.com/mixxorz/gdocs-patch"
-Repository = "https://github.com/mixxorz/gdocs-patch"
-Issues = "https://github.com/mixxorz/gdocs-patch/issues"
-
-[project.scripts]
-gdocs-patch = "gdocs_patch.cli:main"
-gdocs-patch-mcp = "gdocs_patch.mcp_server:main"
-
-[project.optional-dependencies]
-mcp = [
-    "fastmcp==3.4.4",
-]
-
-[build-system]
-requires = ["uv_build>=0.11.26,<0.12.0"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-root = ""
-source-exclude = ["**/.DS_Store"]
-
-[tool.ruff]
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP"]
-
-[tool.fixit]
-enable = ["codemods"]
-
-[tool.pyright]
-include = ["gdocs_patch"]
-pythonVersion = "3.10"
-typeCheckingMode = "strict"
-venvPath = "."
-venv = ".venv"
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [dependency-groups]
 dev = [
@@ -73,3 +11,25 @@ dev = [
     "ruff>=0.16.1",
     "twine>=6.2.0",
 ]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["packages", "scripts"]
+
+[tool.ruff]
+src = ["packages/gdocs-patch/src", "packages/gsheets-patch/src"]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.fixit]
+enable = ["codemods"]
+
+[tool.pyright]
+include = ["packages/*/src"]
+extraPaths = ["packages/gdocs-patch/src", "packages/gsheets-patch/src"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
